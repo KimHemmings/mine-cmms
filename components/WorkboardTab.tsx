@@ -1,212 +1,365 @@
-import { CheckCircle2, Clock, User, History, FileText, AlertTriangle } from 'lucide-react';
-import { Asset, STAGES, DefectItem } from '@/types';
+import { useState } from 'react';
+import { 
+  CheckCircle2, 
+  Clock, 
+  User, 
+  History, 
+  FileText, 
+  AlertTriangle, 
+  Plus, 
+  Copy, 
+  Check, 
+  ShieldAlert,
+  ChevronRight
+} from 'lucide-react';
+import { Asset, STAGES, DefectItem, MachineWorkOrder, HistoryNote } from '@/types';
 import { formatDateTime, getElapsedDown, getEtuStatus } from '@/utils/helpers';
+import { generateSapClipboardText, copyToClipboard } from '@/utils/sapFormatter';
 
 interface WorkboardTabProps {
   shiftJobs: Asset[];
+  workOrders: MachineWorkOrder[];
   defects: DefectItem[];
+  notes: HistoryNote[];
   loading: boolean;
-  updateStage: (id: string, newStage: string) => void;
+  updateWorkOrderStage: (woId: string, assetId: string, newStage: string) => void;
+  signOffWorkOrder: (woId: string, assetId: string) => void;
+  openAddWorkOrder: (asset: Asset) => void;
   openHistory: (asset: Asset) => void;
   openDefects: (asset: Asset) => void;
-  completeShiftJob: (id: string) => void;
+  releaseMachineToProduction: (assetId: string) => void;
 }
 
 export default function WorkboardTab({
   shiftJobs,
+  workOrders,
   defects,
+  notes,
   loading,
-  updateStage,
+  updateWorkOrderStage,
+  signOffWorkOrder,
+  openAddWorkOrder,
   openHistory,
   openDefects,
-  completeShiftJob
+  releaseMachineToProduction,
 }: WorkboardTabProps) {
-  if (loading) return <p className="text-slate-400 text-sm py-12 text-center">Loading shift workboard...</p>;
+  const [copiedWoId, setCopiedWoId] = useState<string | null>(null);
 
-  if (shiftJobs.length === 0) {
+  async function handleCopySapForOrder(asset: Asset, wo: MachineWorkOrder) {
+    const text = generateSapClipboardText(asset, wo, notes);
+    const success = await copyToClipboard(text);
+    if (success) {
+      setCopiedWoId(wo.id);
+      setTimeout(() => setCopiedWoId(null), 2000);
+    }
+  }
+
+  if (loading) {
     return (
-      <div className="p-12 text-center bg-slate-800/60 border border-slate-700 rounded-2xl max-w-xl mx-auto mt-8 shadow-md">
-        <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-        <h2 className="text-xl font-bold text-slate-100">No Open Work on this Shift</h2>
-        <p className="text-xs text-slate-400 mt-1">All fleet units operational or ready for deployment.</p>
+      <div className="py-20 text-center">
+        <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-amber-500 border-t-transparent mb-3" />
+        <p className="text-slate-600 text-sm font-semibold">Loading active shift workboard...</p>
+      </div>
+    );
+  }
+
+  // RULE: No machine appears on the workboard without at least 1 work order
+  const validShiftJobs = shiftJobs.filter((asset) => 
+    workOrders.some((wo) => wo.asset_id === asset.id)
+  );
+
+  if (validShiftJobs.length === 0) {
+    return (
+      <div className="p-12 text-center bg-white border border-slate-300 rounded-2xl max-w-xl mx-auto mt-8 shadow-md">
+        <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto mb-3" />
+        <h2 className="text-xl font-bold text-slate-900">Zero Active Work Orders</h2>
+        <p className="text-xs text-slate-500 mt-1">All machines are clear, or no work orders have been attached.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {shiftJobs.map((asset) => {
+    <div className="space-y-6">
+      {validShiftJobs.map((asset) => {
         const isP1 = asset.priority === 'P1';
         const isP2 = asset.priority === 'P2';
         const etu = getEtuStatus(asset.expected_up);
 
-        // Fetch defects tied to this machine
+        const machineOrders = workOrders.filter((w) => w.asset_id === asset.id);
+        const openOrders = machineOrders.filter((w) => w.status === 'OPEN');
+        
         const machineDefects = defects.filter((d) => d.asset_id === asset.id);
-        const openDefectsCount = machineDefects.filter((d) => d.status === 'OPEN').length;
+        const activeDefects = machineDefects.filter((d) => d.status === 'OPEN'); 
 
-        // Multi-component systems array
-        const systems = asset.component_systems && asset.component_systems.length > 0
-          ? asset.component_systems
-          : asset.component_system ? [asset.component_system] : ['General'];
+        const canRelease = openOrders.length === 0 && activeDefects.length === 0;
 
         return (
           <div
             key={asset.id}
-            className={`p-5 rounded-2xl border transition shadow-md ${
+            className={`bg-white rounded-2xl border transition-all duration-200 shadow-md overflow-hidden ${
               isP1
-                ? 'bg-rose-950/30 border-rose-600/80'
+                ? 'border-l-8 border-l-rose-600 border-slate-300'
                 : isP2
-                ? 'bg-slate-800/90 border-amber-600/60'
-                : 'bg-slate-800/80 border-slate-700 hover:border-slate-600'
+                ? 'border-l-8 border-l-amber-500 border-slate-300'
+                : 'border-l-8 border-l-slate-400 border-slate-300'
             }`}
           >
-            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
-              {/* Machine ID, Priority, Multi-Area Systems & SAP */}
-              <div className="flex items-start gap-4 min-w-65">
-                {asset.priority ? (
-                  <span
-                    className={`text-xs font-black px-3 py-1.5 rounded-lg border uppercase tracking-wider shrink-0 ${
-                      isP1
-                        ? 'bg-rose-600 text-white border-rose-500'
-                        : isP2
-                        ? 'bg-amber-600 text-white border-amber-500'
-                        : 'bg-slate-700 text-slate-200 border-slate-600'
-                    }`}
-                  >
-                    {asset.priority}
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-bold px-2 py-1 rounded bg-slate-700/60 text-slate-400 border border-slate-600 shrink-0">
-                    ROUTINE
-                  </span>
-                )}
+            {/* 1. MACHINE HEADER */}
+            <div className="p-5 bg-slate-50/90 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <span
+                  className={`text-xs font-black px-3 py-1.5 rounded-lg border uppercase tracking-wider shrink-0 ${
+                    isP1
+                      ? 'bg-rose-100 text-rose-800 border-rose-300'
+                      : isP2
+                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                      : 'bg-slate-200 text-slate-700 border-slate-300'
+                  }`}
+                >
+                  {asset.priority || 'ROUTINE'}
+                </span>
 
                 <div>
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-2xl font-black text-white tracking-wide">{asset.fleet_id}</span>
-                    <span className="text-xs text-slate-400 font-semibold">({asset.make_model})</span>
+                  <div className="flex items-baseline gap-2.5">
+                    <h2 className="text-2xl font-black text-slate-900 tracking-wide">{asset.fleet_id}</h2>
+                    <span className="text-sm font-semibold text-slate-700">{asset.make_model}</span>
+                    
+                    {/* Machine Owner Badge */}
+                    <span className="text-xs font-black px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      Owner: {asset.machine_owner || 'Central'}
+                    </span>
                   </div>
-
-                  {/* Multi-Component Area Tags */}
-                  <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    {systems.map((sys) => (
-                      <span
-                        key={sys}
-                        className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-700 text-amber-300 border border-slate-600"
-                      >
-                        {sys}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Work Order & SAP Notification Badges */}
-                  <div className="flex flex-wrap items-center gap-2 mt-2">
-                    {asset.work_order_num && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-sky-300 bg-sky-950/60 border border-sky-800/80 px-2 py-0.5 rounded">
-                        <FileText className="w-3 h-3 text-sky-400" />
-                        {asset.work_order_num}
-                      </span>
-                    )}
-                    {asset.sap_notification && (
-                      <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
-                        {asset.sap_notification}
-                      </span>
-                    )}
-                  </div>
+                  <p className="text-xs font-medium text-slate-500 mt-1">
+                    Bay / Location: <strong className="text-slate-800">{asset.location || 'Workshop Yard'}</strong>
+                  </p>
                 </div>
               </div>
 
-              {/* Work Scope & Fitter */}
-              <div className="flex-1 min-w-55">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Work Scope</span>
-                <p className="text-sm font-bold text-slate-100 mt-0.5">{asset.shift_task || 'No task logged'}</p>
-                <p className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mt-2">
-                  <User className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Fitter: <strong className="text-white">{asset.fitter_assigned || 'Unassigned'}</strong></span>
-                </p>
-              </div>
-
-              {/* Down Time & Elapsed */}
-              <div className="min-w-35 bg-slate-900/80 p-3 rounded-xl border border-slate-700/80">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-rose-400" /> Down Since
-                </span>
-                <div className="text-xs font-bold text-slate-200 mt-1">{formatDateTime(asset.down_since)}</div>
-                <div className="text-xs font-mono font-bold text-rose-400 mt-0.5">
-                  Elapsed: {getElapsedDown(asset.down_since)}
-                </div>
-              </div>
-
-              {/* ETU */}
-              <div className="min-w-40 bg-slate-900/80 p-3 rounded-xl border border-slate-700/80">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Expected Up (ETU)
-                </span>
-                <div className="text-xs font-bold text-slate-200 mt-1">{formatDateTime(asset.expected_up)}</div>
-                {etu && (
-                  <div
-                    className={`text-[10px] font-bold mt-1 inline-flex items-center px-2 py-0.5 rounded border ${
-                      etu.overdue
-                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                        : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    }`}
-                  >
-                    {etu.label}
+              {/* Timing & Notes Button */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="bg-white px-3.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs text-xs">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-rose-600" /> Down Since
+                  </span>
+                  <div className="font-bold text-slate-800">{formatDateTime(asset.down_since)}</div>
+                  <div className="text-[11px] font-mono font-bold text-rose-700">
+                    Elapsed: {getElapsedDown(asset.down_since)}
                   </div>
-                )}
-              </div>
+                </div>
 
-              {/* Stage Dropdown */}
-              <div className="min-w-35">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                  Current Stage
-                </span>
-                <select
-                  value={asset.shift_stage || 'DIAGNOSING'}
-                  onChange={(e) => updateStage(asset.id, e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 text-amber-400 font-bold text-xs p-2.5 rounded-xl focus:outline-none focus:border-amber-500 cursor-pointer shadow-inner"
-                >
-                  {STAGES.map((s) => (
-                    <option key={s} value={s} className="bg-slate-900 text-white">
-                      {s.replace('_', ' ')}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Actions: Defects, History, Actual Up */}
-              <div className="flex flex-col sm:flex-row xl:flex-col gap-2 shrink-0">
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => openDefects(asset)}
-                    className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
-                      openDefectsCount > 0
-                        ? 'bg-rose-950/70 text-rose-300 border-rose-600 hover:bg-rose-900'
-                        : 'bg-slate-700 hover:bg-slate-600 text-slate-200 border-slate-600'
-                    }`}
-                    title="Manage Machine Defects"
-                  >
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                    Defects ({openDefectsCount})
-                  </button>
-
-                  <button
-                    onClick={() => openHistory(asset)}
-                    className="px-3 py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition"
-                  >
-                    <History className="w-3.5 h-3.5 text-amber-400" />
-                    Notes
-                  </button>
+                <div className="bg-white px-3.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs text-xs">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Expected Up (ETU)
+                  </span>
+                  <div className="font-bold text-slate-800">{formatDateTime(asset.expected_up)}</div>
+                  {etu && (
+                    <span
+                      className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded mt-0.5 ${
+                        etu.overdue ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                      }`}
+                    >
+                      {etu.label}
+                    </span>
+                  )}
                 </div>
 
                 <button
-                  onClick={() => completeShiftJob(asset.id)}
-                  className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black tracking-wider uppercase rounded-xl transition shadow flex items-center justify-center gap-1.5"
+                  onClick={() => openHistory(asset)}
+                  className="flex items-center gap-1.5 px-4 py-3 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-xl text-xs font-bold transition shadow-sm"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
-                  Actual Up
+                  <History className="w-4 h-4 text-amber-600" /> History & Notes
                 </button>
               </div>
+            </div>
+
+            {/* 2. WORK ORDERS LIST (INDIVIDUAL SAP PASTE PER WO) */}
+            <div className="p-5 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Active Work Orders ({machineOrders.length})
+                </span>
+                <button
+                  onClick={() => openAddWorkOrder(asset)}
+                  className="flex items-center gap-1 text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg transition shadow-2xs"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Attach Work Order
+                </button>
+              </div>
+
+              <div className="divide-y divide-slate-100">
+                {machineOrders.map((wo) => {
+                  const isDone = wo.status === 'COMPLETED';
+                  return (
+                    <div
+                      key={wo.id}
+                      className={`py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                        isDone ? 'opacity-60 bg-slate-50/60 px-3 rounded-xl' : ''
+                      }`}
+                    >
+                      <div className="space-y-1.5 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${
+                              isDone
+                                ? 'bg-slate-200 text-slate-700 border-slate-300'
+                                : 'bg-sky-50 text-sky-800 border-sky-200'
+                            }`}
+                          >
+                            <FileText className="w-3.5 h-3.5 inline mr-1" />
+                            {wo.wo_number || 'NO SAP WO'} ({wo.order_type})
+                          </span>
+
+                          {wo.notification_num && (
+                            <span className="text-xs font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                              {wo.notification_num}
+                            </span>
+                          )}
+
+                          {wo.component_systems?.map((sys) => (
+                            <span
+                              key={sys}
+                              className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200"
+                            >
+                              {sys}
+                            </span>
+                          ))}
+
+                          {isDone && (
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                              <Check className="w-3 h-3" /> COMPLETED & STAMPED
+                            </span>
+                          )}
+                        </div>
+
+                        <p className={`text-base text-slate-900 ${isDone ? 'line-through text-slate-500' : 'font-bold'}`}>
+                          {wo.task_description}
+                        </p>
+
+                        <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-slate-400" />
+                          <span>
+                            Assigned Fitter: <strong className="text-slate-800">{wo.fitter_assigned || 'Unassigned'}</strong>
+                          </span>
+                          {isDone && wo.completed_at && (
+                            <span className="text-emerald-700 ml-2">
+                              (Signed off {formatDateTime(wo.completed_at)})
+                            </span>
+                          )}
+                        </p>
+                      </div>
+
+                      {/* Work Order Actions: Copy for SAP, Stage Selector, Sign Off */}
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => handleCopySapForOrder(asset, wo)}
+                          className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl text-xs font-bold transition shadow-2xs ${
+                            copiedWoId === wo.id
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                              : 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-700'
+                          }`}
+                          title="Copy confirmation text for this specific SAP Work Order"
+                        >
+                          {copiedWoId === wo.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copiedWoId === wo.id ? 'Copied for SAP!' : 'Copy for SAP'}
+                        </button>
+
+                        {!isDone && (
+                          <>
+                            <select
+                              value={wo.stage || 'DIAGNOSING'}
+                              onChange={(e) => updateWorkOrderStage(wo.id, asset.id, e.target.value)}
+                              className="bg-white border border-slate-300 text-slate-700 font-bold text-xs p-2.5 rounded-xl focus:border-amber-500 shadow-2xs cursor-pointer"
+                            >
+                              {STAGES.map((s) => (
+                                <option key={s} value={s}>
+                                  {s.replace('_', ' ')}
+                                </option>
+                              ))}
+                            </select>
+
+                            <button
+                              onClick={() => signOffWorkOrder(wo.id, asset.id)}
+                              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition shadow-md flex items-center gap-1.5"
+                            >
+                              <Check className="w-4 h-4 text-emerald-400" /> Sign Off Task
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3. DEFECT RIBBON ALONG THE BOTTOM */}
+            {activeDefects.length > 0 ? (
+              <div
+                onClick={() => openDefects(asset)}
+                className="bg-rose-50 border-t border-rose-200 px-5 py-3.5 cursor-pointer hover:bg-rose-100 transition flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-inner"
+              >
+                <div className="flex items-center gap-2 text-rose-800 font-bold text-xs uppercase tracking-wide">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{activeDefects.length} Open Defect(s) Identified:</span>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeDefects.map((d) => (
+                    <span
+                      key={d.id}
+                      className="bg-white border border-rose-300 text-rose-900 text-xs font-bold px-2.5 py-1 rounded-md shadow-2xs"
+                    >
+                      [{d.severity}] {d.description}
+                    </span>
+                  ))}
+                  <span className="text-xs font-bold text-rose-700 underline flex items-center ml-2">
+                    Manage Defects <ChevronRight className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div
+                onClick={() => openDefects(asset)}
+                className="bg-slate-50 hover:bg-slate-100 border-t border-slate-200 px-5 py-2.5 cursor-pointer transition flex items-center justify-between text-xs text-slate-500"
+              >
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  No open defects logged against this machine.
+                </span>
+                <span className="text-xs font-bold text-amber-700 underline">
+                  + Log New Defect
+                </span>
+              </div>
+            )}
+
+            {/* 4. RELEASE FOOTER */}
+            <div className="px-5 py-4 bg-slate-100/90 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs">
+                {canRelease ? (
+                  <span className="text-emerald-700 font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    All work orders and defects signed off. Ready for release.
+                  </span>
+                ) : (
+                  <span className="text-slate-700 font-medium flex items-center gap-1.5">
+                    <ShieldAlert className="w-4 h-4 text-amber-600" />
+                    Machine Held Down: <strong className="text-slate-900">{openOrders.length} task(s)</strong> and{' '}
+                    <strong className="text-slate-900">{activeDefects.length} defect(s)</strong> still open.
+                  </span>
+                )}
+              </div>
+
+              <button
+                disabled={!canRelease}
+                onClick={() => releaseMachineToProduction(asset.id)}
+                className={`px-6 py-3 rounded-xl text-xs font-black tracking-wider uppercase transition shadow-md flex items-center justify-center gap-2 ${
+                  canRelease
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                    : 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-60'
+                }`}
+              >
+                <CheckCircle2 className="w-4 h-4" /> Release to Production
+              </button>
             </div>
           </div>
         );
