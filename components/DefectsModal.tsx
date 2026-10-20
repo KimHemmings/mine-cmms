@@ -13,7 +13,7 @@ import {
 import { Asset, DefectItem, COMPONENT_SYSTEMS, STAGES, HistoryNote } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 import { formatDateTime } from '@/utils/helpers';
-import { generateDefectSapClipboardText, copyToClipboard } from '@/utils/sapFormatter';
+import { generateSapNotesText, copyToClipboard } from '@/utils/sapFormatter';
 
 interface DefectsModalProps {
   asset: Asset | null;
@@ -152,9 +152,12 @@ export default function DefectsModal({ asset, defects, notes = [], onClose, onRe
     onRefresh();
   }
 
+  // UPDATED: Now uses generateSapNotesText to only copy clean notes
   async function handleCopyDefectSap(defect: DefectItem) {
     if (!asset) return;
-    const text = generateDefectSapClipboardText(asset, defect, notes);
+    const defectNotes = notes.filter((n) => n.asset_id === asset.id && n.note.includes(defect.description.slice(0, 15)));
+    const text = generateSapNotesText(defectNotes);
+    
     const success = await copyToClipboard(text);
     if (success) {
       setCopiedDefectId(defect.id);
@@ -241,13 +244,14 @@ export default function DefectsModal({ asset, defects, notes = [], onClose, onRe
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {/* Copy Defect SAP */}
+                      {/* Copy Defect SAP Notes */}
                       <button
                         onClick={() => handleCopyDefectSap(defect)}
-                        className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition"
-                        title="Copy Defect confirmation for SAP PM03"
+                        className="flex items-center gap-1.5 p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-bold transition"
+                        title="Copy clean SAP Notes for this defect"
                       >
                         {copiedDefectId === defect.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copiedDefectId === defect.id ? 'Copied' : 'SAP Notes'}
                       </button>
 
                       {/* Stage Selector */}

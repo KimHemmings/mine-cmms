@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { Wrench, Plus, Shield, BookOpen, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { Wrench, Plus, Shield, BookOpen, FileSpreadsheet, RefreshCw, UserCheck } from 'lucide-react';
 
 import { Asset, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord } from '@/types';
 import WorkboardTab from '@/components/WorkboardTab';
@@ -12,6 +12,7 @@ import AssignJobModal from '@/components/AssignJobModal';
 import AddWorkOrderModal from '@/components/AddWorkOrderModal';
 import HistoryModal from '@/components/HistoryModal';
 import DefectsModal from '@/components/DefectsModal';
+import QuickEditAssetModal from '@/components/QuickEditAssetModal';
 
 export default function Home() {
   const [allAssets, setAllAssets] = useState<Asset[]>([]);
@@ -20,6 +21,9 @@ export default function Home() {
   const [notes, setNotes] = useState<HistoryNote[]>([]);
   const [activeShift, setActiveShift] = useState<ShiftRecord | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Persistent Fitter Identity
+  const [activeFitter, setActiveFitter] = useState('D. Kelly (#4821)');
 
   // Tab & Role State
   const [currentTab, setCurrentTab] = useState<'board' | 'handover' | 'dossier'>('board');
@@ -30,12 +34,20 @@ export default function Home() {
   const [targetAddWoAsset, setTargetAddWoAsset] = useState<Asset | null>(null);
   const [activeHistoryAsset, setActiveHistoryAsset] = useState<Asset | null>(null);
   const [activeDefectAsset, setActiveDefectAsset] = useState<Asset | null>(null);
+  const [quickEditAsset, setQuickEditAsset] = useState<Asset | null>(null);
 
   const supabase = createClient();
 
   useEffect(() => {
+    const savedFitter = localStorage.getItem('mine_cmms_active_fitter');
+    if (savedFitter) setActiveFitter(savedFitter);
     fetchAllData();
   }, []);
+
+  function handleUpdateActiveFitter(name: string) {
+    setActiveFitter(name);
+    localStorage.setItem('mine_cmms_active_fitter', name);
+  }
 
   async function fetchAllData() {
     setLoading(true);
@@ -91,7 +103,6 @@ export default function Home() {
     if (data) setNotes(data as HistoryNote[]);
   }
 
-  // Update stage of an individual child work order
   async function updateWorkOrderStage(woId: string, assetId: string, newStage: string) {
     const { error } = await supabase
       .from('machine_work_orders')
@@ -102,7 +113,7 @@ export default function Home() {
       await supabase.from('asset_history_notes').insert([
         {
           asset_id: assetId,
-          fitter_name: userRole === 'management' ? 'Dispatcher/Planner' : 'Shift Fitter',
+          fitter_name: activeFitter || 'Fitter',
           note: `Work order stage updated to ${newStage.replace('_', ' ')}`,
           stage: newStage,
         },
@@ -112,7 +123,6 @@ export default function Home() {
     }
   }
 
-  // Sign off an individual task (stamps completion timestamp & fitter)
   async function signOffWorkOrder(woId: string, assetId: string) {
     const { error } = await supabase
       .from('machine_work_orders')
@@ -120,7 +130,7 @@ export default function Home() {
         status: 'COMPLETED',
         stage: 'COMPLETED',
         completed_at: new Date().toISOString(),
-        completed_by: userRole === 'management' ? 'Planner Signoff' : 'Shift Fitter',
+        completed_by: activeFitter || 'Signoff Fitter',
       })
       .eq('id', woId);
 
@@ -128,8 +138,8 @@ export default function Home() {
       await supabase.from('asset_history_notes').insert([
         {
           asset_id: assetId,
-          fitter_name: userRole === 'management' ? 'Planner Signoff' : 'Shift Fitter',
-          note: `Work order task signed off & completed.`,
+          fitter_name: activeFitter || 'Signoff Fitter',
+          note: `Work order completed and signed off.`,
           stage: 'COMPLETED',
         },
       ]);
@@ -138,7 +148,6 @@ export default function Home() {
     }
   }
 
-  // Release entire machine back to production (once all child tasks and defects are clear)
   async function releaseMachineToProduction(assetId: string) {
     const now = new Date().toISOString();
     const { error } = await supabase
@@ -155,8 +164,8 @@ export default function Home() {
       await supabase.from('asset_history_notes').insert([
         {
           asset_id: assetId,
-          fitter_name: 'Workshop Superintendent',
-          note: `All tasks & defects signed off. Machine released to production.`,
+          fitter_name: activeFitter || 'Supervisor',
+          note: `All scopes and defects signed off. Machine released to production.`,
           stage: 'OPERATIONAL',
         },
       ]);
@@ -164,11 +173,9 @@ export default function Home() {
     }
   }
 
-  // Shift Rollover Logic: Freezes current shift and rolls open jobs to next shift
   async function handleRolloverShift() {
     if (!activeShift) return;
 
-    // 1. Close active shift
     await supabase
       .from('shift_records')
       .update({
@@ -177,21 +184,19 @@ export default function Home() {
       })
       .eq('id', activeShift.id);
 
-    // 2. Open new incoming shift
     const nextShiftName = activeShift.shift_name.toLowerCase().includes('day') ? 'Night Shift' : 'Day Shift';
     const { data: newShift } = await supabase
       .from('shift_records')
       .insert([
         {
           shift_name: nextShiftName,
-          supervisor: 'Incoming Shift Supervisor',
+          supervisor: activeFitter || 'Supervisor',
           status: 'ACTIVE',
         },
       ])
       .select()
       .single();
 
-    // 3. Roll any OPEN work orders to the new shift ID
     if (newShift) {
       await supabase
         .from('machine_work_orders')
@@ -209,7 +214,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-slate-200 text-slate-900 p-4 md:p-8 font-sans">
-      {/* Top Navigation Header */}
+      {/* Top Header */}
       <header className="flex flex-col md:flex-row md:items-center justify-between pb-5 border-b border-slate-300 gap-4 print:hidden">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-amber-500 text-white rounded-xl shadow-sm">
@@ -220,7 +225,7 @@ export default function Home() {
               <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900">
                 MINE SHIFT WORKBOARD
               </h1>
-              <span className="text-xs font-black px-2 py-0.5 rounded bg-slate-200 text-slate-700 border border-slate-300 uppercase">
+              <span className="text-xs font-black px-2 py-0.5 rounded bg-slate-300 text-slate-800 border border-slate-400 uppercase">
                 {activeShift?.shift_name || 'Active Shift'}
               </span>
             </div>
@@ -231,27 +236,18 @@ export default function Home() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Fitter vs Management Role Switch */}
-          <div className="bg-white border border-slate-300 rounded-xl flex p-1 text-xs font-bold shadow-2xs">
-            <button
-              onClick={() => {
-                setUserRole('fitter');
-                setCurrentTab('board');
-              }}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                userRole === 'fitter' ? 'bg-amber-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Fitter View
-            </button>
-            <button
-              onClick={() => setUserRole('management')}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${
-                userRole === 'management' ? 'bg-slate-900 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Shield className="w-3.5 h-3.5" /> Management
-            </button>
+          {/* Active Fitter / User Stamp */}
+          <div className="flex items-center gap-1.5 bg-white border border-slate-300 px-3 py-1.5 rounded-xl shadow-2xs text-xs">
+            <UserCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-bold text-slate-500 text-[11px] uppercase">Fitter on Duty:</span>
+            <input
+              type="text"
+              value={activeFitter}
+              onChange={(e) => handleUpdateActiveFitter(e.target.value)}
+              placeholder="e.g. D. Kelly (#4821)"
+              className="font-bold text-slate-900 focus:outline-none w-36 bg-transparent"
+              title="Your Name & ID will stamp on all progressive notes and sign-offs"
+            />
           </div>
 
           {/* Navigation Tabs */}
@@ -310,12 +306,15 @@ export default function Home() {
             defects={defects}
             notes={notes}
             loading={loading}
+            activeFitter={activeFitter}
             updateWorkOrderStage={updateWorkOrderStage}
             signOffWorkOrder={signOffWorkOrder}
             openAddWorkOrder={setTargetAddWoAsset}
             openHistory={setActiveHistoryAsset}
             openDefects={setActiveDefectAsset}
+            openQuickEdit={setQuickEditAsset}
             releaseMachineToProduction={releaseMachineToProduction}
+            onRefresh={fetchAllData}
           />
         )}
 
@@ -337,12 +336,12 @@ export default function Home() {
 
       {/* MODALS */}
       <AssignJobModal
-  isOpen={showAssignModal}
-  activeShiftId={activeShift?.id || null}
-  onClose={() => setShowAssignModal(false)}
-  onSuccess={fetchAllData}
-  unassignedMachines={unassignedMachines}
-/>
+        isOpen={showAssignModal}
+        activeShiftId={activeShift?.id || null}
+        onClose={() => setShowAssignModal(false)}
+        onSuccess={fetchAllData}
+        unassignedMachines={unassignedMachines}
+      />
 
       <AddWorkOrderModal
         asset={targetAddWoAsset}
@@ -355,13 +354,22 @@ export default function Home() {
         asset={activeHistoryAsset}
         onClose={() => setActiveHistoryAsset(null)}
         userRole={userRole}
+        activeFitter={activeFitter}
       />
 
       <DefectsModal
         asset={activeDefectAsset}
         defects={defects}
+        notes={notes}
         onClose={() => setActiveDefectAsset(null)}
-        onRefresh={fetchDefects}
+        onRefresh={fetchAllData}
+      />
+
+      <QuickEditAssetModal
+        asset={quickEditAsset}
+        activeFitter={activeFitter}
+        onClose={() => setQuickEditAsset(null)}
+        onSuccess={fetchAllData}
       />
     </main>
   );
