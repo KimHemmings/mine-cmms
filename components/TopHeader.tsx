@@ -1,7 +1,17 @@
 'use client';
 
 import React from 'react';
-import { Wrench, Plus, BookOpen, FileSpreadsheet, RefreshCw, UserCheck } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import {
+  Wrench,
+  Plus,
+  BookOpen,
+  FileSpreadsheet,
+  RefreshCw,
+  UserCheck,
+  LogOut,
+} from 'lucide-react';
+import { createClient } from '@/utils/supabase/client';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 import { ShiftRecord } from '@/types';
 
@@ -30,6 +40,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenAssign,
   onRefresh,
 }) => {
+  const router = useRouter();
+  const supabase = createClient();
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.replace('/login');
+    router.refresh();
+  }
+
   return (
     <header className="flex flex-col md:flex-row md:items-center justify-between pb-5 border-b border-slate-300 gap-4 print:hidden">
       <div className="flex items-center gap-3">
@@ -68,6 +87,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
         <div className="bg-white border border-slate-300 p-1 rounded-xl flex items-center shadow-2xs">
           <button
+            type="button"
             onClick={() => onTabChange('board')}
             className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition ${
               currentTab === 'board' ? 'bg-slate-200 text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
@@ -76,6 +96,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             Active Shift Work ({shiftJobsCount})
           </button>
           <button
+            type="button"
             onClick={() => onTabChange('dossier')}
             className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
               currentTab === 'dossier' ? 'bg-slate-200 text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
@@ -85,6 +106,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           </button>
           {userRole === 'management' && (
             <button
+              type="button"
               onClick={() => onTabChange('handover')}
               className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
                 currentTab === 'handover' ? 'bg-slate-200 text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
@@ -96,6 +118,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
 
         <button
+          type="button"
           onClick={onOpenAssign}
           className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-sm transition"
         >
@@ -103,11 +126,21 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </button>
 
         <button
+          type="button"
           onClick={onRefresh}
           className="p-2.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-xl transition shadow-2xs"
           title="Refresh All Data"
         >
           <RefreshCw className="w-4 h-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="p-2.5 bg-white hover:bg-rose-50 border border-slate-300 hover:border-rose-300 text-slate-700 hover:text-rose-600 rounded-xl transition shadow-2xs"
+          title="Sign Out"
+        >
+          <LogOut className="w-4 h-4" />
         </button>
       </div>
     </header>

@@ -14,15 +14,17 @@ export const FleetDossierCard: React.FC<FleetDossierCardProps> = ({
   onAssignJob,
 }) => {
   const isDown = asset.status !== 'OPERATIONAL';
+  const priorityText = asset.priority ? ' • ' + asset.priority : '';
 
   return (
     <div
       onClick={() => openHistory(asset)}
-      className={`flex flex-col justify-between rounded-xl border-2 p-4 transition-all shadow-xs cursor-pointer select-none ${
-        isDown
+      className={
+        'flex flex-col justify-between rounded-xl border-2 p-4 transition-all shadow-xs cursor-pointer select-none ' +
+        (isDown
           ? 'bg-rose-50/40 border-rose-300 hover:border-rose-400'
-          : 'bg-white border-slate-200 hover:border-slate-300'
-      }`}
+          : 'bg-white border-slate-200 hover:border-slate-300')
+      }
     >
       <div>
         {/* Header: Fleet ID & Status */}
@@ -31,18 +33,20 @@ export const FleetDossierCard: React.FC<FleetDossierCardProps> = ({
             {asset.fleet_id}
           </span>
           <span
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider ${
-              isDown
+            className={
+              'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider ' +
+              (isDown
                 ? 'bg-rose-600 text-white shadow-xs'
-                : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-            }`}
+                : 'bg-emerald-100 text-emerald-800 border border-emerald-300')
+            }
           >
             <span
-              className={`w-2 h-2 rounded-full ${
-                isDown ? 'bg-white animate-pulse' : 'bg-emerald-600'
-              }`}
+              className={
+                'w-2 h-2 rounded-full ' +
+                (isDown ? 'bg-white animate-pulse' : 'bg-emerald-600')
+              }
             />
-            {isDown ? `DOWN ${asset.priority ? `• \${asset.priority}` : ''}` : 'RUNNING'}
+            {isDown ? 'DOWN' + priorityText : 'RUNNING'}
           </span>
         </div>
 
@@ -81,7 +85,7 @@ export const FleetDossierCard: React.FC<FleetDossierCardProps> = ({
         </div>
       </div>
 
-      {/* Primary Action Button (Touch Target: 44px) */}
+      {/* Primary Action Button */}
       <div className="mt-3.5">
         {isDown ? (
           <button
