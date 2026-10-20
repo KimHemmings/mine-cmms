@@ -2,13 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { CheckCircle2 } from 'lucide-react';
-import { Asset, DefectItem, MachineWorkOrder, HistoryNote } from '@/types';
+import { Asset, MachineWorkOrder, HistoryNote, DefectItem } from '@/types';
 import MachineWorkboardCard from '@/components/MachineWorkboardCard';
 
 interface WorkboardTabProps {
   shiftJobs: Asset[];
   workOrders: MachineWorkOrder[];
-  defects: DefectItem[];
+  defects?: DefectItem[];
   notes: HistoryNote[];
   loading: boolean;
   activeFitter: string;
@@ -16,7 +16,7 @@ interface WorkboardTabProps {
   signOffWorkOrder: (woId: string, assetId: string) => void;
   openAddWorkOrder: (asset: Asset) => void;
   openHistory: (asset: Asset) => void;
-  openDefects: (asset: Asset) => void;
+  openDefects?: (asset: Asset) => void;
   openQuickEdit: (asset: Asset) => void;
   releaseMachineToProduction: (assetId: string) => void;
   onRefresh: () => void;
@@ -27,7 +27,6 @@ const STORAGE_KEY = 'mine_cmms_expanded_cards';
 export default function WorkboardTab({
   shiftJobs,
   workOrders,
-  defects,
   notes,
   loading,
   activeFitter,
@@ -35,7 +34,6 @@ export default function WorkboardTab({
   signOffWorkOrder,
   openAddWorkOrder,
   openHistory,
-  openDefects,
   openQuickEdit,
   releaseMachineToProduction,
   onRefresh,
@@ -125,7 +123,6 @@ export default function WorkboardTab({
           key={asset.id}
           asset={asset}
           workOrders={workOrders}
-          defects={defects}
           notes={notes}
           activeFitter={activeFitter}
           isDetailsExpanded={expandedDetailsAssetIds.has(asset.id)}
@@ -134,7 +131,6 @@ export default function WorkboardTab({
           signOffWorkOrder={signOffWorkOrder}
           openAddWorkOrder={openAddWorkOrder}
           openHistory={openHistory}
-          openDefects={openDefects}
           openQuickEdit={openQuickEdit}
           releaseMachineToProduction={releaseMachineToProduction}
           onRefresh={onRefresh}

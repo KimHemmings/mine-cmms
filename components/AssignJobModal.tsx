@@ -1,7 +1,11 @@
-import { useState, useEffect } from 'react';
-import { X, Check, Star, Wrench, AlertOctagon } from 'lucide-react';
-import { Asset, COMPONENT_SYSTEMS } from '@/types';
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { X, Check, Star } from 'lucide-react';
+import { Asset, COMPONENT_SYSTEMS, OrderType, PRIORITY_OPTIONS } from '@/types';
 import { createClient } from '@/utils/supabase/client';
+import OrderTypeSelector from './assign-job/OrderTypeSelector';
+import EtuPresetsPicker from './assign-job/EtuPresetsPicker';
 
 interface AssignJobModalProps {
   isOpen: boolean;
@@ -9,7 +13,7 @@ interface AssignJobModalProps {
   onClose: () => void;
   onSuccess: () => void;
   unassignedMachines: Asset[];
-  preselectedAssetId?: string; 
+  preselectedAssetId?: string;
 }
 
 export default function AssignJobModal({
@@ -18,52 +22,21 @@ export default function AssignJobModal({
   onClose,
   onSuccess,
   unassignedMachines,
-  preselectedAssetId, 
+  preselectedAssetId,
 }: AssignJobModalProps) {
   const [selectedAssetId, setSelectedAssetId] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('');
   const [selectedSystems, setSelectedSystems] = useState<string[]>(['Hydraulics']);
-  const [orderType, setOrderType] = useState<'PLANNED' | 'UNPLANNED'>('UNPLANNED');
+  const [orderType, setOrderType] = useState<OrderType>('UNPLANNED');
   const [workOrderNum, setWorkOrderNum] = useState('');
   const [sapNotification, setSapNotification] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
   const [assignedFitter, setAssignedFitter] = useState('');
   const [downSinceInput, setDownSinceInput] = useState('');
   const [expectedUpInput, setExpectedUpInput] = useState('');
+  const [activePreset, setActivePreset] = useState<string | null>('4h');
 
   const supabase = createClient();
-
-  function toggleSystem(sys: string) {
-    if (selectedSystems.includes(sys)) {
-      if (selectedSystems.length > 1) setSelectedSystems(selectedSystems.filter((s) => s !== sys));
-    } else {
-      setSelectedSystems([...selectedSystems, sys]);
-    }
-  }
-
-  function applyEtuPreset(hoursFromNow: number) {
-    const target = new Date(Date.now() + hoursFromNow * 60 * 60 * 1000);
-    const localTarget = new Date(target.getTime() - target.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-    setExpectedUpInput(localTarget);
-  }
-
-  function setEndOfShiftEtu() {
-    const now = new Date();
-    const isDayShift = now.getHours() >= 6 && now.getHours() < 18;
-    const target = new Date();
-    if (isDayShift) {
-      target.setHours(17, 30, 0, 0);
-    } else {
-      if (now.getHours() >= 18) target.setDate(target.getDate() + 1);
-      target.setHours(5, 30, 0, 0);
-    }
-    const localTarget = new Date(target.getTime() - target.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-    setExpectedUpInput(localTarget);
-  }
 
   useEffect(() => {
     if (isOpen) {
@@ -72,7 +45,13 @@ export default function AssignJobModal({
         .toISOString()
         .slice(0, 16);
       setDownSinceInput(localNow);
-      applyEtuPreset(4);
+
+      const target = new Date(Date.now() + 4 * 60 * 60 * 1000);
+      setExpectedUpInput(
+        new Date(target.getTime() - target.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+      );
+      setActivePreset('4h');
+
       setSelectedAssetId(preselectedAssetId || '');
       setTaskDesc('');
       setAssignedFitter('');
@@ -86,14 +65,22 @@ export default function AssignJobModal({
 
   if (!isOpen) return null;
 
+  function toggleSystem(sys: string) {
+    if (selectedSystems.includes(sys)) {
+      if (selectedSystems.length > 1) {
+        setSelectedSystems(selectedSystems.filter((s) => s !== sys));
+      }
+    } else {
+      setSelectedSystems([...selectedSystems, sys]);
+    }
+  }
+
   async function handleAssignToShift(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedAssetId || !taskDesc.trim() || !workOrderNum.trim()) return;
+    if (!selectedAssetId || !taskDesc.trim()) return;
 
-    // Dynamically set PLANNED (Green) vs UNPLANNED (Red)
     const assetStatus = orderType === 'PLANNED' ? 'DOWN_PLANNED' : 'DOWN_UNPLANNED';
 
-    // 1. Stand machine down with the matching status
     const { error: assetError } = await supabase
       .from('assets')
       .update({
@@ -106,31 +93,29 @@ export default function AssignJobModal({
       })
       .eq('id', selectedAssetId);
 
-    // 2. Insert primary work order stamped as the Main Down Time Event
     const { error: woError } = await supabase.from('machine_work_orders').insert([
       {
         asset_id: selectedAssetId,
         shift_id: activeShiftId,
-        wo_number: workOrderNum.trim(),
+        wo_number: workOrderNum.trim() || null,
         notification_num: sapNotification.trim() || null,
         order_type: orderType,
         task_description: taskDesc.trim(),
         component_systems: selectedSystems,
         fitter_assigned: assignedFitter.trim() || 'Unassigned',
-        stage: 'DIAGNOSING',
+        stage: 'IN_PROGRESS',
         status: 'OPEN',
         is_main_event: true,
       },
     ]);
 
-    // 3. Stamp history note, trigger board refresh, and close modal
     if (!assetError && !woError) {
       await supabase.from('asset_history_notes').insert([
         {
           asset_id: selectedAssetId,
           fitter_name: assignedFitter.trim() || 'Maintenance Planner',
-          note: `Main Down Time Event logged [${orderType} - ${workOrderNum.trim()}]: ${taskDesc.trim()}`,
-          stage: 'DIAGNOSING',
+          note: `Main Event logged [${orderType} - ${workOrderNum.trim() || 'No WO'}]: ${taskDesc.trim()}`,
+          stage: 'IN_PROGRESS',
         },
       ]);
       onSuccess();
@@ -145,23 +130,23 @@ export default function AssignJobModal({
           <div>
             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Star className="w-5 h-5 text-amber-500 fill-amber-400" />
-              Assign Machine & Define Main Down Time Event
+              Assign Machine & Define Main Event
             </h3>
             <p className="text-xs text-slate-500">Record the primary reason for this unit being on the shift workboard.</p>
           </div>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg">
+          <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <form onSubmit={handleAssignToShift} className="space-y-4 mt-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">EQUIPMENT</label>
               <select
                 value={selectedAssetId}
                 onChange={(e) => setSelectedAssetId(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-bold text-slate-800"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
                 required
               >
                 <option value="">-- Choose Unit --</option>
@@ -173,70 +158,46 @@ export default function AssignJobModal({
               </select>
             </div>
             <div>
-              <label className="flex justify-between text-xs font-bold text-slate-700 mb-1">
-                PRIORITY <span className="text-slate-500 font-normal">(Optional)</span>
-              </label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">PRIORITY</label>
               <select
                 value={selectedPriority}
                 onChange={(e) => setSelectedPriority(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-slate-400"
               >
-                <option value="">None (Routine Shift Maintenance)</option>
-                <option value="P1">P1 - Production Stopping</option>
-                <option value="P2">P2 - High Production Choke</option>
-                <option value="P3">P3 - Pit & Dump Support</option>
-                <option value="P4">P4 - Ancillary & PM Backlog</option>
+                {PRIORITY_OPTIONS.map((p) => (
+                  <option key={p.label} value={p.value || ''}>
+                    {p.label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 bg-amber-50/50 p-3 rounded-xl border border-amber-200">
-            <div className="col-span-2">
-  <label className="block text-xs font-bold text-slate-700 mb-1">ORDER TYPE</label>
-  <div className="flex gap-2">
-    <button
-      type="button"
-      onClick={() => setOrderType('UNPLANNED')}
-      className={`flex-1 py-2 px-3 rounded-lg border-2 flex items-center justify-center gap-1.5 text-xs font-black transition ${
-        orderType === 'UNPLANNED'
-          ? 'bg-rose-50 border-rose-500 text-rose-700 shadow-sm'
-          : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-      }`}
-    >
-      <AlertOctagon className="w-4 h-4" /> UNPLANNED (BREAKDOWN)
-    </button>
-    <button
-      type="button"
-      onClick={() => setOrderType('PLANNED')}
-      className={`flex-1 py-2 px-3 rounded-lg border-2 flex items-center justify-center gap-1.5 text-xs font-black transition ${
-        orderType === 'PLANNED'
-          ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm'
-          : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-      }`}
-    >
-      <Wrench className="w-4 h-4" /> PLANNED
-    </button>
-  </div>
-</div>
+          <OrderTypeSelector orderType={orderType} setOrderType={setOrderType} />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
             <div>
-              <label className="block text-xs font-bold text-indigo-700 mb-1">SAP WORK ORDER # *</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                SAP WORK ORDER # <span className="font-normal text-slate-400">(Optional)</span>
+              </label>
               <input
                 type="text"
-                placeholder="e.g. 40082910"
+                placeholder="e.g. 40082910 (Optional)"
                 value={workOrderNum}
                 onChange={(e) => setWorkOrderNum(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-mono font-bold text-slate-800"
-                required
+                className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">SAP NOTIF #</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                SAP NOTIF # <span className="font-normal text-slate-400">(Optional)</span>
+              </label>
               <input
                 type="text"
                 placeholder="e.g. 1004821"
                 value={sapNotification}
                 onChange={(e) => setSapNotification(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-mono text-slate-800"
+                className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
             </div>
           </div>
@@ -253,7 +214,7 @@ export default function AssignJobModal({
                     key={sys}
                     type="button"
                     onClick={() => toggleSystem(sys)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition flex items-center gap-1 ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition flex items-center gap-1 cursor-pointer ${
                       isSelected
                         ? 'bg-amber-100 border-amber-500 text-amber-900'
                         : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
@@ -273,8 +234,8 @@ export default function AssignJobModal({
               value={taskDesc}
               onChange={(e) => setTaskDesc(e.target.value)}
               rows={2}
-              placeholder="e.g. 500hr PM Service Pack, Front LH strut swap out, circle drive backlash..."
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800"
+              placeholder="e.g. 500hr PM Service Pack, Front LH strut swap out, accident damage to steps..."
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
               required
             />
           </div>
@@ -286,49 +247,25 @@ export default function AssignJobModal({
               placeholder="e.g. D. Kelly / Apprentice"
               value={assignedFitter}
               onChange={(e) => setAssignedFitter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 pt-1">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">DATE & TIME DOWN</label>
-              <input
-                type="datetime-local"
-                value={downSinceInput}
-                onChange={(e) => setDownSinceInput(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-800"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">EXPECTED UP TIME (ETU)</label>
-              <input
-                type="datetime-local"
-                value={expectedUpInput}
-                onChange={(e) => setExpectedUpInput(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-800"
-                required
-              />
-            </div>
-          </div>
-
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Quick ETU Presets</span>
-            <div className="grid grid-cols-4 gap-2">
-              <button type="button" onClick={() => applyEtuPreset(1)} className="py-1 px-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-xs font-bold text-slate-700">+1 Hour</button>
-              <button type="button" onClick={() => applyEtuPreset(2)} className="py-1 px-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-xs font-bold text-slate-700">+2 Hours</button>
-              <button type="button" onClick={() => applyEtuPreset(4)} className="py-1 px-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-xs font-bold text-slate-700">+4 Hours</button>
-              <button type="button" onClick={setEndOfShiftEtu} className="py-1 px-2 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded text-xs font-bold text-amber-900">End of Shift</button>
-            </div>
-          </div>
+          <EtuPresetsPicker
+            downSinceInput={downSinceInput}
+            setDownSinceInput={setDownSinceInput}
+            expectedUpInput={expectedUpInput}
+            setExpectedUpInput={setExpectedUpInput}
+            activePreset={activePreset}
+            setActivePreset={setActivePreset}
+          />
 
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer">
               Cancel
             </button>
-            <button type="submit" className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl shadow-md transition">
-              Log Main Down Time Event
+            <button type="submit" className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl shadow-md transition cursor-pointer">
+              Log Main Event
             </button>
           </div>
         </form>
