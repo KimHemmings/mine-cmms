@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Check, Star } from 'lucide-react';
+import { X, Check, Star, Wrench, AlertOctagon } from 'lucide-react';
 import { Asset, COMPONENT_SYSTEMS } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 
@@ -9,6 +9,7 @@ interface AssignJobModalProps {
   onClose: () => void;
   onSuccess: () => void;
   unassignedMachines: Asset[];
+  preselectedAssetId?: string; 
 }
 
 export default function AssignJobModal({
@@ -17,11 +18,12 @@ export default function AssignJobModal({
   onClose,
   onSuccess,
   unassignedMachines,
+  preselectedAssetId, 
 }: AssignJobModalProps) {
   const [selectedAssetId, setSelectedAssetId] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('');
   const [selectedSystems, setSelectedSystems] = useState<string[]>(['Hydraulics']);
-  const [orderType, setOrderType] = useState('PM01');
+  const [orderType, setOrderType] = useState<'PLANNED' | 'UNPLANNED'>('UNPLANNED');
   const [workOrderNum, setWorkOrderNum] = useState('');
   const [sapNotification, setSapNotification] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
@@ -41,7 +43,9 @@ export default function AssignJobModal({
 
   function applyEtuPreset(hoursFromNow: number) {
     const target = new Date(Date.now() + hoursFromNow * 60 * 60 * 1000);
-    const localTarget = new Date(target.getTime() - target.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const localTarget = new Date(target.getTime() - target.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
     setExpectedUpInput(localTarget);
   }
 
@@ -55,26 +59,30 @@ export default function AssignJobModal({
       if (now.getHours() >= 18) target.setDate(target.getDate() + 1);
       target.setHours(5, 30, 0, 0);
     }
-    const localTarget = new Date(target.getTime() - target.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const localTarget = new Date(target.getTime() - target.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
     setExpectedUpInput(localTarget);
   }
 
   useEffect(() => {
     if (isOpen) {
       const now = new Date();
-      const localNow = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      const localNow = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16);
       setDownSinceInput(localNow);
       applyEtuPreset(4);
-      setSelectedAssetId('');
+      setSelectedAssetId(preselectedAssetId || '');
       setTaskDesc('');
       setAssignedFitter('');
       setSelectedPriority('');
       setWorkOrderNum('');
       setSapNotification('');
-      setSelectedSystems(['Scheduled PM Service']);
-      setOrderType('PM02');
+      setSelectedSystems(['Hydraulics']);
+      setOrderType('UNPLANNED');
     }
-  }, [isOpen]);
+  }, [isOpen, preselectedAssetId]);
 
   if (!isOpen) return null;
 
@@ -82,12 +90,15 @@ export default function AssignJobModal({
     e.preventDefault();
     if (!selectedAssetId || !taskDesc.trim() || !workOrderNum.trim()) return;
 
-    // 1. Stand machine down
+    // Dynamically set PLANNED (Green) vs UNPLANNED (Red)
+    const assetStatus = orderType === 'PLANNED' ? 'DOWN_PLANNED' : 'DOWN_UNPLANNED';
+
+    // 1. Stand machine down with the matching status
     const { error: assetError } = await supabase
       .from('assets')
       .update({
         in_shift: true,
-        status: 'DOWN_UNPLANNED',
+        status: assetStatus,
         priority: selectedPriority || null,
         down_since: new Date(downSinceInput).toISOString(),
         expected_up: expectedUpInput ? new Date(expectedUpInput).toISOString() : null,
@@ -108,16 +119,17 @@ export default function AssignJobModal({
         fitter_assigned: assignedFitter.trim() || 'Unassigned',
         stage: 'DIAGNOSING',
         status: 'OPEN',
-        is_main_event: true, // Marked as the Main Down Time Event
+        is_main_event: true,
       },
     ]);
 
+    // 3. Stamp history note, trigger board refresh, and close modal
     if (!assetError && !woError) {
       await supabase.from('asset_history_notes').insert([
         {
           asset_id: selectedAssetId,
           fitter_name: assignedFitter.trim() || 'Maintenance Planner',
-          note: `Main Down Time Event logged [${workOrderNum.trim()} - ${orderType}]: ${taskDesc.trim()}`,
+          note: `Main Down Time Event logged [${orderType} - ${workOrderNum.trim()}]: ${taskDesc.trim()}`,
           stage: 'DIAGNOSING',
         },
       ]);
@@ -179,18 +191,33 @@ export default function AssignJobModal({
           </div>
 
           <div className="grid grid-cols-3 gap-3 bg-amber-50/50 p-3 rounded-xl border border-amber-200">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">ORDER TYPE</label>
-              <select
-                value={orderType}
-                onChange={(e) => setOrderType(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-bold text-slate-800"
-              >
-                <option value="PM02">PM02 - Scheduled Service</option>
-                <option value="PM01">PM01 - Unplanned Breakdown</option>
-                <option value="PM03">PM03 - Defect Rectification</option>
-              </select>
-            </div>
+            <div className="col-span-2">
+  <label className="block text-xs font-bold text-slate-700 mb-1">ORDER TYPE</label>
+  <div className="flex gap-2">
+    <button
+      type="button"
+      onClick={() => setOrderType('UNPLANNED')}
+      className={`flex-1 py-2 px-3 rounded-lg border-2 flex items-center justify-center gap-1.5 text-xs font-black transition ${
+        orderType === 'UNPLANNED'
+          ? 'bg-rose-50 border-rose-500 text-rose-700 shadow-sm'
+          : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+      }`}
+    >
+      <AlertOctagon className="w-4 h-4" /> UNPLANNED (BREAKDOWN)
+    </button>
+    <button
+      type="button"
+      onClick={() => setOrderType('PLANNED')}
+      className={`flex-1 py-2 px-3 rounded-lg border-2 flex items-center justify-center gap-1.5 text-xs font-black transition ${
+        orderType === 'PLANNED'
+          ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm'
+          : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+      }`}
+    >
+      <Wrench className="w-4 h-4" /> PLANNED
+    </button>
+  </div>
+</div>
             <div>
               <label className="block text-xs font-bold text-indigo-700 mb-1">SAP WORK ORDER # *</label>
               <input
