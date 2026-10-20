@@ -4,24 +4,19 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { Wrench, Plus, Shield, BookOpen, FileSpreadsheet, RefreshCw, UserCheck } from 'lucide-react';
 
+// Realtime hook
+import { useWorkboardData } from '@/hooks/useWorkboardData';
+
 import { Asset, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord } from '@/types';
 import WorkboardTab from '@/components/WorkboardTab';
 import FleetDossierTab from '@/components/FleetDossierTab';
 import HandoverReportTab from '@/components/HandoverReportTab';
-import AssignJobModal from '@/components/AssignJobModal';
-import AddWorkOrderModal from '@/components/AddWorkOrderModal';
-import HistoryModal from '@/components/HistoryModal';
-import DefectsModal from '@/components/DefectsModal';
-import QuickEditAssetModal from '@/components/QuickEditAssetModal';
+import WorkboardModals from '@/components/WorkboardModals';
+
+// Status badge component
+import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 
 export default function Home() {
-  const [allAssets, setAllAssets] = useState<Asset[]>([]);
-  const [workOrders, setWorkOrders] = useState<MachineWorkOrder[]>([]);
-  const [defects, setDefects] = useState<DefectItem[]>([]);
-  const [notes, setNotes] = useState<HistoryNote[]>([]);
-  const [activeShift, setActiveShift] = useState<ShiftRecord | null>(null);
-  const [loading, setLoading] = useState(true);
-
   // Persistent Fitter Identity
   const [activeFitter, setActiveFitter] = useState('D. Kelly (#4821)');
 
@@ -36,181 +31,34 @@ export default function Home() {
   const [activeDefectAsset, setActiveDefectAsset] = useState<Asset | null>(null);
   const [quickEditAsset, setQuickEditAsset] = useState<Asset | null>(null);
 
-  const supabase = createClient();
+  // Load and synchronize all Workboard data via hook
+  const {
+    allAssets,
+    workOrders,
+    defects,
+    notes,
+    activeShift,
+    loading,
+    syncStatus,
+    shiftJobs,
+    completedJobs,
+    unassignedMachines,
+    fetchAllData,
+    updateWorkOrderStage,
+    signOffWorkOrder,
+    releaseMachineToProduction,
+    handleRolloverShift,
+  } = useWorkboardData({ activeFitter });
 
   useEffect(() => {
     const savedFitter = localStorage.getItem('mine_cmms_active_fitter');
     if (savedFitter) setActiveFitter(savedFitter);
-    fetchAllData();
   }, []);
 
   function handleUpdateActiveFitter(name: string) {
     setActiveFitter(name);
     localStorage.setItem('mine_cmms_active_fitter', name);
   }
-
-  async function fetchAllData() {
-    setLoading(true);
-    await Promise.all([
-      fetchShift(),
-      fetchFleet(),
-      fetchWorkOrders(),
-      fetchDefects(),
-      fetchNotes(),
-    ]);
-    setLoading(false);
-  }
-
-  async function fetchShift() {
-    const { data } = await supabase
-      .from('shift_records')
-      .select('*')
-      .eq('status', 'ACTIVE')
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (data) setActiveShift(data as ShiftRecord);
-  }
-
-  async function fetchFleet() {
-    const { data } = await supabase.from('assets').select('*').order('fleet_id', { ascending: true });
-    if (data) {
-      const sorted = data.sort((a, b) => {
-        const pOrder = { P1: 1, P2: 2, P3: 3, P4: 4 };
-        const valA = a.priority ? pOrder[a.priority as keyof typeof pOrder] : 5;
-        const valB = b.priority ? pOrder[b.priority as keyof typeof pOrder] : 5;
-        if (valA !== valB) return valA - valB;
-        if (a.down_since && b.down_since) return new Date(a.down_since).getTime() - new Date(b.down_since).getTime();
-        return 0;
-      });
-      setAllAssets(sorted as Asset[]);
-    }
-  }
-
-  async function fetchWorkOrders() {
-    const { data } = await supabase.from('machine_work_orders').select('*').order('created_at', { ascending: true });
-    if (data) setWorkOrders(data as MachineWorkOrder[]);
-  }
-
-  async function fetchDefects() {
-    const { data } = await supabase.from('defect_watchlist').select('*').order('created_at', { ascending: false });
-    if (data) setDefects(data as DefectItem[]);
-  }
-
-  async function fetchNotes() {
-    const { data } = await supabase.from('asset_history_notes').select('*').order('created_at', { ascending: false });
-    if (data) setNotes(data as HistoryNote[]);
-  }
-
-  async function updateWorkOrderStage(woId: string, assetId: string, newStage: string) {
-    const { error } = await supabase
-      .from('machine_work_orders')
-      .update({ stage: newStage })
-      .eq('id', woId);
-
-    if (!error) {
-      await supabase.from('asset_history_notes').insert([
-        {
-          asset_id: assetId,
-          fitter_name: activeFitter || 'Fitter',
-          note: `Work order stage updated to ${newStage.replace('_', ' ')}`,
-          stage: newStage,
-        },
-      ]);
-      fetchWorkOrders();
-      fetchNotes();
-    }
-  }
-
-  async function signOffWorkOrder(woId: string, assetId: string) {
-    const { error } = await supabase
-      .from('machine_work_orders')
-      .update({
-        status: 'COMPLETED',
-        stage: 'COMPLETED',
-        completed_at: new Date().toISOString(),
-        completed_by: activeFitter || 'Signoff Fitter',
-      })
-      .eq('id', woId);
-
-    if (!error) {
-      await supabase.from('asset_history_notes').insert([
-        {
-          asset_id: assetId,
-          fitter_name: activeFitter || 'Signoff Fitter',
-          note: `Work order completed and signed off.`,
-          stage: 'COMPLETED',
-        },
-      ]);
-      fetchWorkOrders();
-      fetchNotes();
-    }
-  }
-
-  async function releaseMachineToProduction(assetId: string) {
-    const now = new Date().toISOString();
-    const { error } = await supabase
-      .from('assets')
-      .update({
-        in_shift: false,
-        status: 'OPERATIONAL',
-        actual_up: now,
-        priority: null,
-      })
-      .eq('id', assetId);
-
-    if (!error) {
-      await supabase.from('asset_history_notes').insert([
-        {
-          asset_id: assetId,
-          fitter_name: activeFitter || 'Supervisor',
-          note: `All scopes and defects signed off. Machine released to production.`,
-          stage: 'OPERATIONAL',
-        },
-      ]);
-      fetchAllData();
-    }
-  }
-
-  async function handleRolloverShift() {
-    if (!activeShift) return;
-
-    await supabase
-      .from('shift_records')
-      .update({
-        status: 'HANDED_OVER',
-        closed_at: new Date().toISOString(),
-      })
-      .eq('id', activeShift.id);
-
-    const nextShiftName = activeShift.shift_name.toLowerCase().includes('day') ? 'Night Shift' : 'Day Shift';
-    const { data: newShift } = await supabase
-      .from('shift_records')
-      .insert([
-        {
-          shift_name: nextShiftName,
-          supervisor: activeFitter || 'Supervisor',
-          status: 'ACTIVE',
-        },
-      ])
-      .select()
-      .single();
-
-    if (newShift) {
-      await supabase
-        .from('machine_work_orders')
-        .update({ shift_id: newShift.id })
-        .eq('status', 'OPEN');
-    }
-
-    alert(`Shift successfully rolled over to ${nextShiftName}. All active breakdowns carried forward.`);
-    fetchAllData();
-  }
-
-  const shiftJobs = allAssets.filter((a) => a.in_shift);
-  const completedJobs = allAssets.filter((a) => !a.in_shift && a.actual_up);
-  const unassignedMachines = allAssets.filter((a) => !a.in_shift);
 
   return (
     <main className="min-h-screen bg-slate-200 text-slate-900 p-4 md:p-8 font-sans">
@@ -228,6 +76,7 @@ export default function Home() {
               <span className="text-xs font-black px-2 py-0.5 rounded bg-slate-300 text-slate-800 border border-slate-400 uppercase">
                 {activeShift?.shift_name || 'Active Shift'}
               </span>
+              <SyncStatusBadge status={syncStatus} />
             </div>
             <p className="text-xs text-slate-500 mt-0.5 font-medium">
               High-contrast crib room & field workstation • SAP Work Orders & Defect Tracking
@@ -334,42 +183,25 @@ export default function Home() {
         )}
       </section>
 
-      {/* MODALS */}
-      <AssignJobModal
-        isOpen={showAssignModal}
+      {/* MODALS CONTAINER */}
+      <WorkboardModals
+        showAssignModal={showAssignModal}
+        onCloseAssignModal={() => setShowAssignModal(false)}
+        targetAddWoAsset={targetAddWoAsset}
+        onCloseAddWoModal={() => setTargetAddWoAsset(null)}
+        activeHistoryAsset={activeHistoryAsset}
+        onCloseHistoryModal={() => setActiveHistoryAsset(null)}
+        activeDefectAsset={activeDefectAsset}
+        onCloseDefectsModal={() => setActiveDefectAsset(null)}
+        quickEditAsset={quickEditAsset}
+        onCloseQuickEditModal={() => setQuickEditAsset(null)}
         activeShiftId={activeShift?.id || null}
-        onClose={() => setShowAssignModal(false)}
-        onSuccess={fetchAllData}
         unassignedMachines={unassignedMachines}
-      />
-
-      <AddWorkOrderModal
-        asset={targetAddWoAsset}
-        activeShiftId={activeShift?.id || null}
-        onClose={() => setTargetAddWoAsset(null)}
-        onSuccess={fetchAllData}
-      />
-
-      <HistoryModal
-        asset={activeHistoryAsset}
-        onClose={() => setActiveHistoryAsset(null)}
-        userRole={userRole}
-        activeFitter={activeFitter}
-      />
-
-      <DefectsModal
-        asset={activeDefectAsset}
         defects={defects}
         notes={notes}
-        onClose={() => setActiveDefectAsset(null)}
-        onRefresh={fetchAllData}
-      />
-
-      <QuickEditAssetModal
-        asset={quickEditAsset}
+        userRole={userRole}
         activeFitter={activeFitter}
-        onClose={() => setQuickEditAsset(null)}
-        onSuccess={fetchAllData}
+        onSuccessRefresh={fetchAllData}
       />
     </main>
   );

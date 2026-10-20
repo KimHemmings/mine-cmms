@@ -4,7 +4,7 @@ import {
   Copy, Check, ShieldAlert, ChevronDown, ChevronUp, Edit3, Star, 
   MessageSquare, PlusCircle, Wrench, AlertOctagon 
 } from 'lucide-react';
-import { Asset, STAGES, DefectItem, MachineWorkOrder, HistoryNote } from '@/types';
+import { Asset, STAGE_OPTIONS, DefectItem, MachineWorkOrder, HistoryNote } from '@/types';
 import { formatDateTime, getElapsedDown, getEtuStatus } from '@/utils/helpers';
 import { generateSapNotesText, copyToClipboard } from '@/utils/sapFormatter';
 import { createClient } from '@/utils/supabase/client';
@@ -65,22 +65,65 @@ export default function MachineWorkboardCard({
 
   const canRelease = openOrders.length === 0 && activeDefects.length === 0;
 
-  // Red for Unplanned Breakdown, Green for Planned Maintenance
-  const sideBorder = isPlanned ? 'border-l-emerald-500' : 'border-l-rose-600';
+  // 4 Event Classifications (Planned, Breakdown, Inspection, Accident Damage)
+  const eventType = (mainEvent?.order_type || (isPlanned ? 'PLANNED' : 'UNPLANNED')).toUpperCase();
 
-  // 1-Critical, 2-Medium, 3-Low priority tags
-  const priorityBadgeBg = asset.priority === 'P1'
-    ? 'bg-rose-100 text-rose-800 border-rose-300'
-    : asset.priority === 'P2'
-    ? 'bg-amber-100 text-amber-900 border-amber-300'
-    : asset.priority === 'P3'
-    ? 'bg-blue-100 text-blue-800 border-blue-300'
-    : 'bg-slate-100 text-slate-700 border-slate-300';
-  
-  const priorityLabel = asset.priority === 'P1' ? '1 - CRITICAL' 
-                      : asset.priority === 'P2' ? '2 - MEDIUM' 
-                      : asset.priority === 'P3' ? '3 - LOW' 
-                      : 'ROUTINE';
+  const eventConfig = {
+    PLANNED: {
+      border: 'border-l-emerald-500',
+      badge: 'bg-emerald-600 text-white',
+      label: 'PLANNED',
+      icon: <Wrench className="w-3 h-3" />,
+    },
+    INSPECTION: {
+      border: 'border-l-sky-500',
+      badge: 'bg-sky-600 text-white',
+      label: 'INSPECTION',
+      icon: <FileText className="w-3 h-3" />,
+    },
+    ACCIDENT_DAMAGE: {
+      border: 'border-l-orange-500',
+      badge: 'bg-orange-600 text-white',
+      label: 'ACCIDENT DAMAGE',
+      icon: <AlertTriangle className="w-3 h-3" />,
+    },
+    UNPLANNED: {
+      border: 'border-l-rose-600',
+      badge: 'bg-rose-600 text-white',
+      label: 'BREAKDOWN',
+      icon: <AlertOctagon className="w-3 h-3" />,
+    },
+  }[eventType] || {
+    border: isPlanned ? 'border-l-emerald-500' : 'border-l-rose-600',
+    badge: isPlanned ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white',
+    label: isPlanned ? 'PLANNED' : 'BREAKDOWN',
+    icon: isPlanned ? <Wrench className="w-3 h-3" /> : <AlertOctagon className="w-3 h-3" />,
+  };
+
+  const sideBorder = eventConfig.border;
+
+  // Standardized Priority Matrix: P1 - Critical, P2 - High, P3 - Medium, P4 - Low, No Priority
+  const priorityBadgeBg =
+    asset.priority === 'P1'
+      ? 'bg-rose-100 text-rose-800 border-rose-300'
+      : asset.priority === 'P2'
+      ? 'bg-orange-100 text-orange-800 border-orange-300'
+      : asset.priority === 'P3'
+      ? 'bg-amber-100 text-amber-800 border-amber-300'
+      : asset.priority === 'P4'
+      ? 'bg-blue-100 text-blue-800 border-blue-300'
+      : 'bg-slate-100 text-slate-700 border-slate-300';
+
+  const priorityLabel =
+    asset.priority === 'P1'
+      ? 'P1 - CRITICAL'
+      : asset.priority === 'P2'
+      ? 'P2 - HIGH'
+      : asset.priority === 'P3'
+      ? 'P3 - MEDIUM'
+      : asset.priority === 'P4'
+      ? 'P4 - LOW'
+      : 'NO PRIORITY';
 
   function toggleItemNotes(id: string) {
     setExpandedNotesItemIds((prev) => {
@@ -149,9 +192,9 @@ export default function MachineWorkboardCard({
       {/* 1. TOP BANNER */}
       <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1 ${isPlanned ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`}>
-            {isPlanned ? <Wrench className="w-3 h-3" /> : <AlertOctagon className="w-3 h-3" />}
-            {isPlanned ? 'PLANNED' : 'BREAKDOWN'}
+          <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1 ${eventConfig.badge}`}>
+            {eventConfig.icon}
+            {eventConfig.label}
           </span>
 
           <button
@@ -174,8 +217,8 @@ export default function MachineWorkboardCard({
             onClick={() => openQuickEdit(asset)}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-white border border-slate-200 hover:border-amber-400 text-xs font-semibold text-slate-700 transition shadow-2xs"
           >
-            <span className="text-slate-400">Bay:</span>
-            <strong className="text-slate-900">{asset.location || 'Yard'}</strong>
+            <span className="text-slate-400">Loc / Bay:</span>
+            <strong className="text-slate-900">{asset.location || 'Unassigned'}</strong>
             <Edit3 className="w-3 h-3 text-amber-600 ml-0.5" />
           </button>
         </div>
@@ -228,11 +271,11 @@ export default function MachineWorkboardCard({
             </div>
             {mainEvent.status === 'COMPLETED' ? (
               <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded flex items-center gap-1">
-                <Check className="w-3 h-3" /> MAIN EVENT COMPLETED
+                <Check className="w-3 h-3" /> COMPLETE
               </span>
             ) : (
               <span className="text-[10px] font-bold text-amber-900 bg-amber-200 border border-amber-300 px-2 py-0.5 rounded uppercase">
-                ACTIVE EVENT
+                {STAGE_OPTIONS.find((s) => s.value === (mainEvent.stage || 'IN_PROGRESS'))?.label || 'IN PROGRESS'}
               </span>
             )}
           </div>
@@ -271,7 +314,7 @@ export default function MachineWorkboardCard({
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
-                onClick={() => handleCopySapNotes(mainEvent.id, mainEvent.task_description.slice(0, 15))}
+  onClick={() => handleCopySapNotes(mainEvent.id, 'Main Event')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold transition shadow-2xs ${
                   copiedId === mainEvent.id ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'
                 }`}
@@ -290,11 +333,21 @@ export default function MachineWorkboardCard({
               {mainEvent.status !== 'COMPLETED' && (
                 <>
                   <select
-                    value={mainEvent.stage || 'DIAGNOSING'}
-                    onChange={(e) => updateWorkOrderStage(mainEvent.id, asset.id, e.target.value)}
-                    className="bg-white border border-slate-300 text-slate-700 font-bold text-xs p-1.5 rounded-lg"
+                    value={mainEvent.stage || 'IN_PROGRESS'}
+                    onChange={(e) => {
+                      if (e.target.value === 'COMPLETED') {
+                        signOffWorkOrder(mainEvent.id, asset.id);
+                      } else {
+                        updateWorkOrderStage(mainEvent.id, asset.id, e.target.value);
+                      }
+                    }}
+                    className="bg-white border border-slate-300 text-slate-700 font-bold text-xs p-1.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400"
                   >
-                    {STAGES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                    {STAGE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
 
                   <button
@@ -329,7 +382,7 @@ export default function MachineWorkboardCard({
       >
         <div className="flex items-center gap-2">
           {isDetailsExpanded ? <ChevronUp className="w-4 h-4 text-slate-600" /> : <ChevronDown className="w-4 h-4 text-slate-600" />}
-          <span>{isDetailsExpanded ? 'Hide' : 'Show'} Additional Scopes ({additionalOrders.length}) & Defects ({machineDefects.length})</span>
+          <span>{isDetailsExpanded ? 'Hide' : 'Show'} Active Work Orders ({additionalOrders.length}) & Defects ({machineDefects.length})</span>
           {activeDefects.length > 0 && (
             <span className="px-1.5 py-0.2 bg-rose-100 text-rose-800 rounded border border-rose-300 text-[10px]">
               {activeDefects.length} Open Defect(s)
@@ -348,13 +401,13 @@ export default function MachineWorkboardCard({
           <div className="space-y-3">
             <div className="flex items-center justify-between pb-1 border-b border-slate-200">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                Additional Work Orders & Scopes ({additionalOrders.length})
+                Active Work Orders ({additionalOrders.length})
               </span>
               <button
                 onClick={() => openAddWorkOrder(asset)}
                 className="flex items-center gap-1 text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1 rounded-lg transition"
               >
-                <Plus className="w-3.5 h-3.5" /> Attach Additional Scope
+                <Plus className="w-3.5 h-3.5" /> Add Work Order
               </button>
             </div>
 
@@ -417,10 +470,27 @@ export default function MachineWorkboardCard({
 
                           {!isDone && (
                             <>
-                              <select value={wo.stage || 'DIAGNOSING'} onChange={(e) => updateWorkOrderStage(wo.id, asset.id, e.target.value)} className="bg-white border border-slate-300 text-slate-700 font-bold text-xs p-1 rounded">
-                                {STAGES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                              <select
+                                value={wo.stage || 'IN_PROGRESS'}
+                                onChange={(e) => {
+                                  if (e.target.value === 'COMPLETED') {
+                                    signOffWorkOrder(wo.id, asset.id);
+                                  } else {
+                                    updateWorkOrderStage(wo.id, asset.id, e.target.value);
+                                  }
+                                }}
+                                className="bg-white border border-slate-300 text-slate-700 font-bold text-xs p-1 rounded focus:outline-none focus:ring-2 focus:ring-slate-400"
+                              >
+                                {STAGE_OPTIONS.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
                               </select>
-                              <button onClick={() => signOffWorkOrder(wo.id, asset.id)} className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded transition flex items-center gap-1">
+                              <button
+                                onClick={() => signOffWorkOrder(wo.id, asset.id)}
+                                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded transition flex items-center gap-1"
+                              >
                                 <Check className="w-3.5 h-3.5 text-emerald-400" /> Sign Off
                               </button>
                             </>
@@ -430,9 +500,27 @@ export default function MachineWorkboardCard({
 
                       {isAttachingWo && (
                         <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2">
-                          <input type="text" placeholder="SAP WO #" value={inlineWoInputs[wo.id] || ''} onChange={(e) => setInlineWoInputs({ ...inlineWoInputs, [wo.id]: e.target.value })} className="bg-slate-50 border border-slate-300 rounded p-1 text-xs font-mono font-bold w-44" />
-                          <button onClick={() => handleSaveInlineWo('WORK_ORDER', wo.id)} className="px-2.5 py-1 bg-indigo-600 text-white font-bold text-xs rounded">Save WO</button>
-                          <button onClick={() => setActiveInlineWoTarget(null)} className="px-2 py-1 text-xs text-slate-400">Cancel</button>
+                          <input
+                            type="text"
+                            placeholder="SAP WO #"
+                            value={inlineWoInputs[wo.id] || ''}
+                            onChange={(e) =>
+                              setInlineWoInputs({ ...inlineWoInputs, [wo.id]: e.target.value })
+                            }
+                            className="bg-slate-50 border border-slate-300 rounded p-1 text-xs font-mono font-bold w-44 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                          />
+                          <button
+                            onClick={() => handleSaveInlineWo('WORK_ORDER', wo.id)}
+                            className="px-2.5 py-1 bg-indigo-600 text-white font-bold text-xs rounded hover:bg-indigo-500 transition"
+                          >
+                            Save WO
+                          </button>
+                          <button
+                            onClick={() => setActiveInlineWoTarget(null)}
+                            className="px-2 py-1 text-xs text-slate-400 hover:text-slate-600"
+                          >
+                            Cancel
+                          </button>
                         </div>
                       )}
 
@@ -478,11 +566,26 @@ export default function MachineWorkboardCard({
                   const isAttachingWo = activeInlineWoTarget === defect.id;
 
                   return (
-                    <div key={defect.id} className={`p-3 rounded-lg border transition ${isFixed ? 'opacity-50 bg-slate-50 border-slate-200' : 'bg-rose-50/30 border-rose-200'}`}>
+                    <div
+                      key={defect.id}
+                      className={`p-3 rounded-lg border transition ${
+                        isFixed
+                          ? 'opacity-50 bg-slate-50 border-slate-200'
+                          : 'bg-rose-50/30 border-rose-200'
+                      }`}
+                    >
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                         <div className="space-y-1 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase ${defect.severity === 'CAT1' ? 'bg-rose-100 text-rose-800 border-rose-300' : defect.severity === 'CAT2' ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-sky-100 text-sky-800 border-sky-300'}`}>
+                            <span
+                              className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase ${
+                                defect.severity === 'CAT1'
+                                  ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                  : defect.severity === 'CAT2'
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                  : 'bg-sky-100 text-sky-800 border-sky-300'
+                              }`}
+                            >
                               {defect.severity}
                             </span>
 
@@ -491,31 +594,72 @@ export default function MachineWorkboardCard({
                                 <FileText className="w-3 h-3 inline mr-1" /> {defect.wo_number} (PM03)
                               </span>
                             ) : (
-                              <button onClick={() => setActiveInlineWoTarget(defect.id)} className="text-[10px] font-bold text-amber-700 bg-white border border-amber-300 px-2 py-0.5 rounded hover:bg-amber-50 flex items-center gap-1">
+                              <button
+                                onClick={() => setActiveInlineWoTarget(defect.id)}
+                                className="text-[10px] font-bold text-amber-700 bg-white border border-amber-300 px-2 py-0.5 rounded hover:bg-amber-50 flex items-center gap-1"
+                              >
                                 <PlusCircle className="w-3 h-3" /> Attach SAP WO
                               </button>
                             )}
 
                             {defect.component_systems?.map((sys) => (
-                              <span key={sys} className="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-slate-600 border border-slate-200">{sys}</span>
+                              <span
+                                key={sys}
+                                className="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-slate-600 border border-slate-200"
+                              >
+                                {sys}
+                              </span>
                             ))}
                           </div>
 
-                          <p className={`text-sm text-slate-900 ${isFixed ? 'line-through text-slate-400' : 'font-semibold'}`}>{defect.description}</p>
-                          <p className="text-xs text-slate-500">Reported by: <strong className="text-slate-700">{defect.reported_by}</strong> {isFixed && `• Fixed by ${defect.rectified_by || 'Fitter'}`}</p>
+                          <p
+                            className={`text-sm text-slate-900 ${
+                              isFixed ? 'line-through text-slate-400' : 'font-semibold'
+                            }`}
+                          >
+                            {defect.description}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Reported by:{' '}
+                            <strong className="text-slate-700">{defect.reported_by}</strong>{' '}
+                            {isFixed && `• Fixed by ${defect.rectified_by || 'Fitter'}`}
+                          </p>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 shrink-0">
-                          <button onClick={() => handleCopySapNotes(defect.id, defect.description.slice(0, 15))} className={`flex items-center gap-1 px-2.5 py-1 border rounded text-xs font-bold transition ${copiedId === defect.id ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-600'}`}>
-                            {copiedId === defect.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          <button
+                            onClick={() =>
+                              handleCopySapNotes(defect.id, defect.description.slice(0, 15))
+                            }
+                            className={`flex items-center gap-1 px-2.5 py-1 border rounded text-xs font-bold transition ${
+                              copiedId === defect.id
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                                : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-600'
+                            }`}
+                          >
+                            {copiedId === defect.id ? (
+                              <Check className="w-3.5 h-3.5" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
                             {copiedId === defect.id ? 'Copied' : 'SAP Notes'}
                           </button>
 
-                          <button onClick={() => toggleItemNotes(defect.id)} className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 bg-white hover:bg-slate-50 rounded text-xs font-bold text-slate-600">
+                          <button
+                            onClick={() => toggleItemNotes(defect.id)}
+                            className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 bg-white hover:bg-slate-50 rounded text-xs font-bold text-slate-600"
+                          >
                             <MessageSquare className="w-3 h-3 text-slate-500" /> Notes
                           </button>
 
-                          <button onClick={() => handleToggleDefectFixed(defect)} className={`px-3 py-1 font-bold text-xs rounded transition flex items-center gap-1 ${isFixed ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}>
+                          <button
+                            onClick={() => handleToggleDefectFixed(defect)}
+                            className={`px-3 py-1 font-bold text-xs rounded transition flex items-center gap-1 ${
+                              isFixed
+                                ? 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                                : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                            }`}
+                          >
                             <CheckCircle2 className="w-3.5 h-3.5" /> {isFixed ? 'Reopen' : 'Mark Fixed'}
                           </button>
                         </div>
@@ -523,9 +667,27 @@ export default function MachineWorkboardCard({
 
                       {isAttachingWo && (
                         <div className="mt-2 pt-2 border-t border-rose-100 flex items-center gap-2">
-                          <input type="text" placeholder="SAP WO #" value={inlineWoInputs[defect.id] || ''} onChange={(e) => setInlineWoInputs({ ...inlineWoInputs, [defect.id]: e.target.value })} className="bg-white border border-slate-300 rounded p-1 text-xs font-mono font-bold w-44" />
-                          <button onClick={() => handleSaveInlineWo('DEFECT', defect.id)} className="px-2.5 py-1 bg-indigo-600 text-white font-bold text-xs rounded">Save WO</button>
-                          <button onClick={() => setActiveInlineWoTarget(null)} className="px-2 py-1 text-xs text-slate-400">Cancel</button>
+                          <input
+                            type="text"
+                            placeholder="SAP WO #"
+                            value={inlineWoInputs[defect.id] || ''}
+                            onChange={(e) =>
+                              setInlineWoInputs({ ...inlineWoInputs, [defect.id]: e.target.value })
+                            }
+                            className="bg-white border border-slate-300 rounded p-1 text-xs font-mono font-bold w-44 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                          />
+                          <button
+                            onClick={() => handleSaveInlineWo('DEFECT', defect.id)}
+                            className="px-2.5 py-1 bg-indigo-600 text-white font-bold text-xs rounded hover:bg-indigo-500 transition"
+                          >
+                            Save WO
+                          </button>
+                          <button
+                            onClick={() => setActiveInlineWoTarget(null)}
+                            className="px-2 py-1 text-xs text-slate-400 hover:text-slate-600"
+                          >
+                            Cancel
+                          </button>
                         </div>
                       )}
 
@@ -556,7 +718,8 @@ export default function MachineWorkboardCard({
               ) : (
                 <span className="text-slate-700 font-medium flex items-center gap-1.5">
                   <ShieldAlert className="w-4 h-4 text-amber-600" />
-                  Held Down: <strong className="text-slate-900">{openOrders.length} task(s)</strong> and <strong className="text-slate-900">{activeDefects.length} defect(s)</strong> open.
+                  Held Down: <strong className="text-slate-900">{openOrders.length} task(s)</strong> and{' '}
+                  <strong className="text-slate-900">{activeDefects.length} defect(s)</strong> open.
                 </span>
               )}
             </div>
@@ -565,7 +728,9 @@ export default function MachineWorkboardCard({
               disabled={!canRelease}
               onClick={() => releaseMachineToProduction(asset.id)}
               className={`px-5 py-2.5 rounded-lg text-xs font-black tracking-wider uppercase transition shadow-sm flex items-center justify-center gap-1.5 ${
-                canRelease ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer' : 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-60'
+                canRelease
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                  : 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-60'
               }`}
             >
               <CheckCircle2 className="w-4 h-4" /> Release Machine

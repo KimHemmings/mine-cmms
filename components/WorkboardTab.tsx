@@ -1,4 +1,6 @@
-import { useState } from 'react';
+'use client';
+
+import { useState, useEffect } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { Asset, DefectItem, MachineWorkOrder, HistoryNote } from '@/types';
 import MachineWorkboardCard from '@/components/MachineWorkboardCard';
@@ -20,6 +22,8 @@ interface WorkboardTabProps {
   onRefresh: () => void;
 }
 
+const STORAGE_KEY = 'mine_cmms_expanded_cards';
+
 export default function WorkboardTab({
   shiftJobs,
   workOrders,
@@ -36,7 +40,29 @@ export default function WorkboardTab({
   releaseMachineToProduction,
   onRefresh,
 }: WorkboardTabProps) {
-  const [expandedDetailsAssetIds, setExpandedDetailsAssetIds] = useState<Set<string>>(new Set());
+  // Initialize expanded cards from sessionStorage to retain open drawers across updates and tabs
+  const [expandedDetailsAssetIds, setExpandedDetailsAssetIds] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = sessionStorage.getItem(STORAGE_KEY);
+        if (saved) return new Set(JSON.parse(saved));
+      } catch {
+        // Fallback to empty set
+      }
+    }
+    return new Set();
+  });
+
+  // Sync expanded card IDs to sessionStorage whenever they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(expandedDetailsAssetIds)));
+      } catch {
+        // Ignore storage write errors
+      }
+    }
+  }, [expandedDetailsAssetIds]);
 
   function toggleExpandDetails(assetId: string) {
     setExpandedDetailsAssetIds((prev) => {
@@ -47,7 +73,8 @@ export default function WorkboardTab({
     });
   }
 
-  if (loading) {
+  // Only show the spinner on the initial page load, not on background updates
+  if (loading && shiftJobs.length === 0) {
     return (
       <div className="py-20 text-center">
         <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-amber-500 border-t-transparent mb-3" />
@@ -56,7 +83,7 @@ export default function WorkboardTab({
     );
   }
 
-  const validShiftJobs = shiftJobs.filter((asset) => 
+  const validShiftJobs = shiftJobs.filter((asset) =>
     workOrders.some((wo) => wo.asset_id === asset.id)
   );
 
@@ -76,15 +103,17 @@ export default function WorkboardTab({
         <span>Active Breakdown Fleet ({validShiftJobs.length} Units Down)</span>
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={() => setExpandedDetailsAssetIds(new Set(validShiftJobs.map((a) => a.id)))}
-            className="hover:text-slate-900 underline"
+            className="hover:text-slate-900 underline cursor-pointer"
           >
             Expand All Drawers
           </button>
           <span>•</span>
           <button
+            type="button"
             onClick={() => setExpandedDetailsAssetIds(new Set())}
-            className="hover:text-slate-900 underline"
+            className="hover:text-slate-900 underline cursor-pointer"
           >
             Collapse All Drawers
           </button>
