@@ -24,30 +24,7 @@ export interface MachineWorkOrder {
   completed_at: string | null;
   completed_by: string | null;
   created_at: string;
-}
-
-export interface Asset {
-  id: string;
-  fleet_id: string;
-  asset_type: string;
-  make_model: string;
-  location: string;
-  machine_owner?: string | null; // Added here
-  status: 'OPERATIONAL' | 'DOWN_UNPLANNED' | 'DOWN_PLANNED';
-  priority: 'P1' | 'P2' | 'P3' | 'P4' | null;
-  in_shift: boolean;
-  down_since: string | null;
-  expected_up: string | null;
-  actual_up: string | null;
-  
-  // Legacy / fallback fields
-  component_system?: string | null;
-  component_systems?: string[] | null;
-  work_order_num?: string | null;
-  sap_notification?: string | null;
-  shift_task?: string | null;
-  fitter_assigned?: string | null;
-  shift_stage?: string;
+  is_main_event?: boolean; // Distinguishes Main Down Time Event from Additional WOs
 }
 
 export interface DefectItem {
@@ -61,6 +38,38 @@ export interface DefectItem {
   rectified_by?: string | null;
   rectified_at?: string | null;
   created_at: string;
+  
+  // Work Order fields for Defects
+  wo_number?: string | null;
+  notification_num?: string | null;
+  order_type?: string;
+  component_systems?: string[];
+  fitter_assigned?: string | null;
+  stage?: string;
+}
+
+export interface Asset {
+  id: string;
+  fleet_id: string;
+  asset_type: string;
+  make_model: string;
+  location: string;
+  machine_owner?: string | null;
+  status: 'OPERATIONAL' | 'DOWN_UNPLANNED' | 'DOWN_PLANNED';
+  priority: 'P1' | 'P2' | 'P3' | 'P4' | null;
+  in_shift: boolean;
+  down_since: string | null;
+  expected_up: string | null;
+  actual_up: string | null;
+  
+  // Fallbacks
+  component_system?: string | null;
+  component_systems?: string[] | null;
+  work_order_num?: string | null;
+  sap_notification?: string | null;
+  shift_task?: string | null;
+  fitter_assigned?: string | null;
+  shift_stage?: string;
 }
 
 export interface HistoryNote {

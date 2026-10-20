@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Check } from 'lucide-react';
+import { X, Check, Star } from 'lucide-react';
 import { Asset, COMPONENT_SYSTEMS } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 
@@ -33,9 +33,7 @@ export default function AssignJobModal({
 
   function toggleSystem(sys: string) {
     if (selectedSystems.includes(sys)) {
-      if (selectedSystems.length > 1) {
-        setSelectedSystems(selectedSystems.filter((s) => s !== sys));
-      }
+      if (selectedSystems.length > 1) setSelectedSystems(selectedSystems.filter((s) => s !== sys));
     } else {
       setSelectedSystems([...selectedSystems, sys]);
     }
@@ -73,8 +71,8 @@ export default function AssignJobModal({
       setSelectedPriority('');
       setWorkOrderNum('');
       setSapNotification('');
-      setSelectedSystems(['Hydraulics']);
-      setOrderType('PM01');
+      setSelectedSystems(['Scheduled PM Service']);
+      setOrderType('PM02');
     }
   }, [isOpen]);
 
@@ -97,7 +95,7 @@ export default function AssignJobModal({
       })
       .eq('id', selectedAssetId);
 
-    // 2. Automatically create its initial Work Order
+    // 2. Insert primary work order stamped as the Main Down Time Event
     const { error: woError } = await supabase.from('machine_work_orders').insert([
       {
         asset_id: selectedAssetId,
@@ -110,6 +108,7 @@ export default function AssignJobModal({
         fitter_assigned: assignedFitter.trim() || 'Unassigned',
         stage: 'DIAGNOSING',
         status: 'OPEN',
+        is_main_event: true, // Marked as the Main Down Time Event
       },
     ]);
 
@@ -118,7 +117,7 @@ export default function AssignJobModal({
         {
           asset_id: selectedAssetId,
           fitter_name: assignedFitter.trim() || 'Maintenance Planner',
-          note: `Stood down for [${workOrderNum.trim()} - ${orderType}]: ${taskDesc.trim()}`,
+          note: `Main Down Time Event logged [${workOrderNum.trim()} - ${orderType}]: ${taskDesc.trim()}`,
           stage: 'DIAGNOSING',
         },
       ]);
@@ -132,8 +131,11 @@ export default function AssignJobModal({
       <div className="bg-white border border-slate-300 rounded-2xl max-w-2xl w-full p-6 shadow-2xl my-8">
         <div className="flex items-center justify-between pb-3 border-b border-slate-200">
           <div>
-            <h3 className="text-lg font-bold text-slate-900">Assign Machine & Create Work Order</h3>
-            <p className="text-xs text-slate-500">Every machine assigned to the board must have an active SAP Work Order.</p>
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Star className="w-5 h-5 text-amber-500 fill-amber-400" />
+              Assign Machine & Define Main Down Time Event
+            </h3>
+            <p className="text-xs text-slate-500">Record the primary reason for this unit being on the shift workboard.</p>
           </div>
           <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg">
             <X className="w-5 h-5" />
@@ -167,7 +169,7 @@ export default function AssignJobModal({
                 onChange={(e) => setSelectedPriority(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800"
               >
-                <option value="">None (Routine Shift Breakdown)</option>
+                <option value="">None (Routine Shift Maintenance)</option>
                 <option value="P1">P1 - Production Stopping</option>
                 <option value="P2">P2 - High Production Choke</option>
                 <option value="P3">P3 - Pit & Dump Support</option>
@@ -176,7 +178,7 @@ export default function AssignJobModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <div className="grid grid-cols-3 gap-3 bg-amber-50/50 p-3 rounded-xl border border-amber-200">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">ORDER TYPE</label>
               <select
@@ -184,9 +186,9 @@ export default function AssignJobModal({
                 onChange={(e) => setOrderType(e.target.value)}
                 className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-bold text-slate-800"
               >
-                <option value="PM01">PM01 - Breakdown</option>
-                <option value="PM02">PM02 - Scheduled PM</option>
-                <option value="PM03">PM03 - Defect Rect</option>
+                <option value="PM02">PM02 - Scheduled Service</option>
+                <option value="PM01">PM01 - Unplanned Breakdown</option>
+                <option value="PM03">PM03 - Defect Rectification</option>
               </select>
             </div>
             <div>
@@ -214,7 +216,7 @@ export default function AssignJobModal({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              AREAS BEING WORKED ON <span className="text-slate-500 font-normal">(Select multiple)</span>
+              PRIMARY SYSTEM / COMPONENT <span className="text-slate-500 font-normal">(Select multiple)</span>
             </label>
             <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
               {COMPONENT_SYSTEMS.map((sys) => {
@@ -239,12 +241,12 @@ export default function AssignJobModal({
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">TASK / SCOPE OF WORK *</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1">MAIN EVENT SCOPE / REASON *</label>
             <textarea
               value={taskDesc}
               onChange={(e) => setTaskDesc(e.target.value)}
               rows={2}
-              placeholder="e.g. Blown hydraulic hose, replace front strut, 250hr service..."
+              placeholder="e.g. 500hr PM Service Pack, Front LH strut swap out, circle drive backlash..."
               className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800"
               required
             />
@@ -299,7 +301,7 @@ export default function AssignJobModal({
               Cancel
             </button>
             <button type="submit" className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl shadow-md transition">
-              Assign & Create Work Order
+              Log Main Down Time Event
             </button>
           </div>
         </form>

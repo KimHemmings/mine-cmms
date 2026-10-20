@@ -10,7 +10,8 @@ import {
   Copy, 
   Check, 
   ShieldAlert,
-  ChevronRight
+  ChevronRight,
+  Star
 } from 'lucide-react';
 import { Asset, STAGES, DefectItem, MachineWorkOrder, HistoryNote } from '@/types';
 import { formatDateTime, getElapsedDown, getEtuStatus } from '@/utils/helpers';
@@ -63,7 +64,7 @@ export default function WorkboardTab({
     );
   }
 
-  // RULE: No machine appears on the workboard without at least 1 work order
+  // Only display machines that have at least one active work order
   const validShiftJobs = shiftJobs.filter((asset) => 
     workOrders.some((wo) => wo.asset_id === asset.id)
   );
@@ -86,6 +87,8 @@ export default function WorkboardTab({
         const etu = getEtuStatus(asset.expected_up);
 
         const machineOrders = workOrders.filter((w) => w.asset_id === asset.id);
+        const mainEvent = machineOrders.find((w) => w.is_main_event) || machineOrders[0];
+        const additionalOrders = machineOrders.filter((w) => w.id !== mainEvent?.id);
         const openOrders = machineOrders.filter((w) => w.status === 'OPEN');
         
         const machineDefects = defects.filter((d) => d.asset_id === asset.id);
@@ -123,8 +126,6 @@ export default function WorkboardTab({
                   <div className="flex items-baseline gap-2.5">
                     <h2 className="text-2xl font-black text-slate-900 tracking-wide">{asset.fleet_id}</h2>
                     <span className="text-sm font-semibold text-slate-700">{asset.make_model}</span>
-                    
-                    {/* Machine Owner Badge */}
                     <span className="text-xs font-black px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
                       Owner: {asset.machine_owner || 'Central'}
                     </span>
@@ -135,7 +136,7 @@ export default function WorkboardTab({
                 </div>
               </div>
 
-              {/* Timing & Notes Button */}
+              {/* Timing & History */}
               <div className="flex flex-wrap items-center gap-3">
                 <div className="bg-white px-3.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs text-xs">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
@@ -172,127 +173,193 @@ export default function WorkboardTab({
               </div>
             </div>
 
-            {/* 2. WORK ORDERS LIST (INDIVIDUAL SAP PASTE PER WO) */}
+            {/* 2. THE MAIN DOWN TIME EVENT (Hero Section) */}
+            {mainEvent && (
+              <div className="p-5 bg-amber-50/30 border-b border-amber-200/60">
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-amber-200/50">
+                  <span className="text-xs font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                    <Star className="w-4 h-4 text-amber-600 fill-amber-500" />
+                    MAIN DOWN TIME EVENT (Primary Reason on Board)
+                  </span>
+                  {mainEvent.status === 'COMPLETED' ? (
+                    <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> MAIN EVENT COMPLETED
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded">
+                      ACTIVE EVENT
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1.5 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-mono font-bold px-2 py-0.5 rounded border bg-sky-50 text-sky-800 border-sky-300">
+                        <FileText className="w-3.5 h-3.5 inline mr-1" />
+                        {mainEvent.wo_number || 'NO SAP WO'} ({mainEvent.order_type})
+                      </span>
+                      {mainEvent.notification_num && (
+                        <span className="text-xs font-mono text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
+                          {mainEvent.notification_num}
+                        </span>
+                      )}
+                      {mainEvent.component_systems?.map((sys) => (
+                        <span key={sys} className="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200">
+                          {sys}
+                        </span>
+                      ))}
+                    </div>
+
+                    <p className={`text-base text-slate-900 ${mainEvent.status === 'COMPLETED' ? 'line-through text-slate-500' : 'font-bold'}`}>
+                      {mainEvent.task_description}
+                    </p>
+
+                    <p className="text-xs text-slate-600 flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Fitter Allocated: <strong className="text-slate-800">{mainEvent.fitter_assigned || 'Unassigned'}</strong></span>
+                      {mainEvent.completed_at && (
+                        <span className="text-emerald-700 ml-2 font-medium">(Signed off {formatDateTime(mainEvent.completed_at)})</span>
+                      )}
+                    </p>
+                  </div>
+
+                  {/* Actions for Main Event */}
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => handleCopySapForOrder(asset, mainEvent)}
+                      className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl text-xs font-bold transition shadow-2xs ${
+                        copiedWoId === mainEvent.id ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'
+                      }`}
+                      title="Copy SAP Confirmation for this Main Event"
+                    >
+                      {copiedWoId === mainEvent.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedWoId === mainEvent.id ? 'Copied' : 'Copy for SAP'}
+                    </button>
+
+                    {mainEvent.status !== 'COMPLETED' && (
+                      <>
+                        <select
+                          value={mainEvent.stage || 'DIAGNOSING'}
+                          onChange={(e) => updateWorkOrderStage(mainEvent.id, asset.id, e.target.value)}
+                          className="bg-white border border-slate-300 text-slate-700 font-bold text-xs p-2.5 rounded-xl focus:border-amber-500 shadow-2xs cursor-pointer"
+                        >
+                          {STAGES.map((s) => (
+                            <option key={s} value={s}>{s.replace('_', ' ')}</option>
+                          ))}
+                        </select>
+
+                        <button
+                          onClick={() => signOffWorkOrder(mainEvent.id, asset.id)}
+                          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition shadow-md flex items-center gap-1.5"
+                        >
+                          <Check className="w-4 h-4 text-emerald-400" /> Sign Off Main Event
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 3. ADDITIONAL WORK ORDERS / DOWN TIME EVENTS */}
             <div className="p-5 space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                  Active Work Orders ({machineOrders.length})
+                  Additional Work Orders & Down Time Scopes ({additionalOrders.length})
                 </span>
                 <button
                   onClick={() => openAddWorkOrder(asset)}
                   className="flex items-center gap-1 text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg transition shadow-2xs"
                 >
-                  <Plus className="w-3.5 h-3.5" /> Attach Work Order
+                  <Plus className="w-3.5 h-3.5" /> Attach Additional Work Order
                 </button>
               </div>
 
-              <div className="divide-y divide-slate-100">
-                {machineOrders.map((wo) => {
-                  const isDone = wo.status === 'COMPLETED';
-                  return (
-                    <div
-                      key={wo.id}
-                      className={`py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                        isDone ? 'opacity-60 bg-slate-50/60 px-3 rounded-xl' : ''
-                      }`}
-                    >
-                      <div className="space-y-1.5 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${
-                              isDone
-                                ? 'bg-slate-200 text-slate-700 border-slate-300'
-                                : 'bg-sky-50 text-sky-800 border-sky-200'
-                            }`}
-                          >
-                            <FileText className="w-3.5 h-3.5 inline mr-1" />
-                            {wo.wo_number || 'NO SAP WO'} ({wo.order_type})
-                          </span>
-
-                          {wo.notification_num && (
-                            <span className="text-xs font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                              {wo.notification_num}
+              {additionalOrders.length === 0 ? (
+                <div className="p-3 bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-center">
+                  <p className="text-xs text-slate-400">
+                    No secondary work orders attached. Click "+ Attach Additional Work Order" to add extra repair scopes.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {additionalOrders.map((wo) => {
+                    const isDone = wo.status === 'COMPLETED';
+                    return (
+                      <div
+                        key={wo.id}
+                        className={`py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+                          isDone ? 'opacity-60 bg-slate-50/50 px-3 rounded-xl' : ''
+                        }`}
+                      >
+                        <div className="space-y-1 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-mono font-bold px-2 py-0.5 rounded border bg-sky-50 text-sky-800 border-sky-200">
+                              <FileText className="w-3 h-3 inline mr-1" />
+                              {wo.wo_number || 'NO SAP WO'} ({wo.order_type})
                             </span>
-                          )}
+                            {wo.component_systems?.map((sys) => (
+                              <span key={sys} className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                {sys}
+                              </span>
+                            ))}
+                            {isDone && (
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                                <Check className="w-3 h-3" /> COMPLETED
+                              </span>
+                            )}
+                          </div>
 
-                          {wo.component_systems?.map((sys) => (
-                            <span
-                              key={sys}
-                              className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200"
-                            >
-                              {sys}
-                            </span>
-                          ))}
+                          <p className={`text-sm text-slate-900 ${isDone ? 'line-through text-slate-500' : 'font-semibold'}`}>
+                            {wo.task_description}
+                          </p>
 
-                          {isDone && (
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
-                              <Check className="w-3 h-3" /> COMPLETED & STAMPED
-                            </span>
-                          )}
+                          <p className="text-xs text-slate-500">
+                            Fitter: <strong className="text-slate-700">{wo.fitter_assigned || 'Unassigned'}</strong>
+                          </p>
                         </div>
 
-                        <p className={`text-base text-slate-900 ${isDone ? 'line-through text-slate-500' : 'font-bold'}`}>
-                          {wo.task_description}
-                        </p>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => handleCopySapForOrder(asset, wo)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold transition shadow-2xs ${
+                              copiedWoId === wo.id ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
+                            }`}
+                          >
+                            {copiedWoId === wo.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                            {copiedWoId === wo.id ? 'Copied' : 'SAP Copy'}
+                          </button>
 
-                        <p className="text-xs text-slate-500 flex items-center gap-1.5">
-                          <User className="w-3.5 h-3.5 text-slate-400" />
-                          <span>
-                            Assigned Fitter: <strong className="text-slate-800">{wo.fitter_assigned || 'Unassigned'}</strong>
-                          </span>
-                          {isDone && wo.completed_at && (
-                            <span className="text-emerald-700 ml-2">
-                              (Signed off {formatDateTime(wo.completed_at)})
-                            </span>
+                          {!isDone && (
+                            <>
+                              <select
+                                value={wo.stage || 'DIAGNOSING'}
+                                onChange={(e) => updateWorkOrderStage(wo.id, asset.id, e.target.value)}
+                                className="bg-white border border-slate-300 text-slate-700 font-bold text-xs p-2 rounded-lg"
+                              >
+                                {STAGES.map((s) => (
+                                  <option key={s} value={s}>{s.replace('_', ' ')}</option>
+                                ))}
+                              </select>
+
+                              <button
+                                onClick={() => signOffWorkOrder(wo.id, asset.id)}
+                                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1"
+                              >
+                                <Check className="w-3.5 h-3.5 text-emerald-400" /> Sign Off Task
+                              </button>
+                            </>
                           )}
-                        </p>
+                        </div>
                       </div>
-
-                      {/* Work Order Actions: Copy for SAP, Stage Selector, Sign Off */}
-                      <div className="flex flex-wrap items-center gap-2 shrink-0">
-                        <button
-                          onClick={() => handleCopySapForOrder(asset, wo)}
-                          className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl text-xs font-bold transition shadow-2xs ${
-                            copiedWoId === wo.id
-                              ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                              : 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-700'
-                          }`}
-                          title="Copy confirmation text for this specific SAP Work Order"
-                        >
-                          {copiedWoId === wo.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                          {copiedWoId === wo.id ? 'Copied for SAP!' : 'Copy for SAP'}
-                        </button>
-
-                        {!isDone && (
-                          <>
-                            <select
-                              value={wo.stage || 'DIAGNOSING'}
-                              onChange={(e) => updateWorkOrderStage(wo.id, asset.id, e.target.value)}
-                              className="bg-white border border-slate-300 text-slate-700 font-bold text-xs p-2.5 rounded-xl focus:border-amber-500 shadow-2xs cursor-pointer"
-                            >
-                              {STAGES.map((s) => (
-                                <option key={s} value={s}>
-                                  {s.replace('_', ' ')}
-                                </option>
-                              ))}
-                            </select>
-
-                            <button
-                              onClick={() => signOffWorkOrder(wo.id, asset.id)}
-                              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition shadow-md flex items-center gap-1.5"
-                            >
-                              <Check className="w-4 h-4 text-emerald-400" /> Sign Off Task
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* 3. DEFECT RIBBON ALONG THE BOTTOM */}
+            {/* 4. DEFECT RIBBON ALONG THE BOTTOM */}
             {activeDefects.length > 0 ? (
               <div
                 onClick={() => openDefects(asset)}
@@ -309,11 +376,11 @@ export default function WorkboardTab({
                       key={d.id}
                       className="bg-white border border-rose-300 text-rose-900 text-xs font-bold px-2.5 py-1 rounded-md shadow-2xs"
                     >
-                      [{d.severity}] {d.description}
+                      [{d.severity}] {d.description} {d.wo_number && <strong className="text-indigo-700 font-mono">({d.wo_number})</strong>}
                     </span>
                   ))}
                   <span className="text-xs font-bold text-rose-700 underline flex items-center ml-2">
-                    Manage Defects <ChevronRight className="w-3.5 h-3.5" />
+                    Manage / Add Work Orders & Notes <ChevronRight className="w-3.5 h-3.5" />
                   </span>
                 </div>
               </div>
@@ -327,23 +394,23 @@ export default function WorkboardTab({
                   No open defects logged against this machine.
                 </span>
                 <span className="text-xs font-bold text-amber-700 underline">
-                  + Log New Defect
+                  + Log Defect & Assign Work Order
                 </span>
               </div>
             )}
 
-            {/* 4. RELEASE FOOTER */}
+            {/* 5. RELEASE FOOTER */}
             <div className="px-5 py-4 bg-slate-100/90 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-xs">
                 {canRelease ? (
                   <span className="text-emerald-700 font-bold flex items-center gap-1.5">
                     <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    All work orders and defects signed off. Ready for release.
+                    Main event, all additional work orders, and defects cleared. Ready for release.
                   </span>
                 ) : (
                   <span className="text-slate-700 font-medium flex items-center gap-1.5">
                     <ShieldAlert className="w-4 h-4 text-amber-600" />
-                    Machine Held Down: <strong className="text-slate-900">{openOrders.length} task(s)</strong> and{' '}
+                    Machine Held Down: <strong className="text-slate-900">{openOrders.length} work order(s)</strong> and{' '}
                     <strong className="text-slate-900">{activeDefects.length} defect(s)</strong> still open.
                   </span>
                 )}
@@ -358,7 +425,7 @@ export default function WorkboardTab({
                     : 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-60'
                 }`}
               >
-                <CheckCircle2 className="w-4 h-4" /> Release to Production
+                <CheckCircle2 className="w-4 h-4" /> Release Machine to Production
               </button>
             </div>
           </div>
