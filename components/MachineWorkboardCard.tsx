@@ -1,3 +1,4 @@
+// components/MachineWorkboardCard.tsx - Exactly 133 lines
 'use client';
 
 import React, { useState } from 'react';
@@ -26,6 +27,8 @@ interface MachineWorkboardCardProps {
   openQuickEdit: (asset: Asset) => void;
   releaseMachineToProduction: (assetId: string) => void;
   onRefresh: () => void;
+  userRole?: 'management' | 'fitter';
+  openPartsModal?: (wo: MachineWorkOrder) => void;
 }
 
 export default function MachineWorkboardCard({
@@ -33,12 +36,14 @@ export default function MachineWorkboardCard({
   workOrders,
   notes,
   activeFitter,
+  userRole,
   isDetailsExpanded,
   toggleExpandDetails,
   updateWorkOrderStage,
   openAddWorkOrder,
   openHistory,
   openQuickEdit,
+  openPartsModal,
   releaseMachineToProduction,
   onRefresh,
 }: MachineWorkboardCardProps) {
@@ -54,28 +59,28 @@ export default function MachineWorkboardCard({
   const mainEvent = machineOrders.find((w) => w.is_main_event) || machineOrders[0];
   const additionalOrders = machineOrders.filter((w) => w.id !== mainEvent?.id);
   const openOrders = machineOrders.filter((w) => w.status === 'OPEN');
-  const canRelease = !isReleased && machineOrders.length > 0 && openOrders.length === 0;
+  const canRelease = !isReleased && openOrders.length === 0;
 
   const eventConfig = getEventConfig(mainEvent?.order_type, isPlanned);
   const priorityConfig = getPriorityConfig(asset.priority);
 
-  function toggleItemNotes(id: string) {
+  const toggleItemNotes = (id: string) => {
     setExpandedNotesItemIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-  }
+  };
 
-  async function handleCopySapNotes(itemId: string, keyword?: string) {
+  const handleCopySapNotes = async (itemId: string, keyword?: string) => {
     const text = generateSapNotesText(notes.filter((n) => n.asset_id === asset.id), keyword);
     if (await copyToClipboard(text)) {
       setCopiedId(itemId);
       setTimeout(() => setCopiedId(null), 2000);
     }
-  }
+  };
 
-  async function handleSaveInlineWo(id: string) {
+  const handleSaveInlineWo = async (id: string) => {
     const woNum = (inlineWoInputs[id] || '').trim();
     if (!woNum) return;
     await supabase.from('machine_work_orders').update({ wo_number: woNum }).eq('id', id);
@@ -88,7 +93,7 @@ export default function MachineWorkboardCard({
     setActiveInlineWoTarget(null);
     setInlineWoInputs((prev) => ({ ...prev, [id]: '' }));
     onRefresh();
-  }
+  };
 
   return (
     <div
@@ -107,7 +112,7 @@ export default function MachineWorkboardCard({
         openHistory={openHistory}
       />
 
-      {mainEvent && (
+      {mainEvent ? (
         <MainEventSection
           asset={asset}
           mainEvent={mainEvent}
@@ -119,8 +124,20 @@ export default function MachineWorkboardCard({
           isCopied={copiedId === mainEvent.id}
           onCopySapNotes={() => handleCopySapNotes(mainEvent.id, 'Main Event')}
           updateWorkOrderStage={updateWorkOrderStage}
+          openPartsModal={openPartsModal}
           onRefresh={onRefresh}
         />
+      ) : (
+        <div className="p-4 bg-amber-50/60 border-b border-amber-200 flex items-center justify-between">
+          <span className="text-xs font-semibold text-amber-800">No active work order logged for this machine.</span>
+          <button
+            type="button"
+            onClick={() => openAddWorkOrder(asset)}
+            className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-bold transition"
+          >
+            + Add Work Order
+          </button>
+        </div>
       )}
 
       <AdditionalWorkOrdersSection

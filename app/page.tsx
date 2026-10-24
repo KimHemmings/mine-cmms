@@ -1,8 +1,9 @@
+// app/page.tsx - Exactly 132 lines
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useWorkboardData } from '@/hooks/useWorkboardData';
-import { Asset } from '@/types';
+import { Asset, MachineWorkOrder } from '@/types';
 
 import WorkboardTab from '@/components/WorkboardTab';
 import FleetDossierTab from '@/components/FleetDossierTab';
@@ -15,12 +16,13 @@ export default function Home() {
   const [currentTab, setCurrentTab] = useState<'board' | 'handover' | 'dossier'>('board');
   const [userRole, setUserRole] = useState<'management' | 'fitter'>('management');
 
-  // Modals Visibility State
+  // Modal Visibility State
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [targetAddWoAsset, setTargetAddWoAsset] = useState<Asset | null>(null);
   const [activeHistoryAsset, setActiveHistoryAsset] = useState<Asset | null>(null);
   const [activeDefectAsset, setActiveDefectAsset] = useState<Asset | null>(null);
   const [quickEditAsset, setQuickEditAsset] = useState<Asset | null>(null);
+  const [targetPartsWo, setTargetPartsWo] = useState<MachineWorkOrder | null>(null);
 
   const {
     allAssets,
@@ -38,17 +40,18 @@ export default function Home() {
     signOffWorkOrder,
     releaseMachineToProduction,
     handleRolloverShift,
+    addWorkOrderPart,
   } = useWorkboardData({ activeFitter });
 
   useEffect(() => {
-    const savedFitter = localStorage.getItem('mine_cmms_active_fitter');
-    if (savedFitter) setActiveFitter(savedFitter);
+    const saved = localStorage.getItem('mine_cmms_active_fitter');
+    if (saved) setActiveFitter(saved);
   }, []);
 
-  function handleUpdateActiveFitter(name: string) {
+  const handleUpdateFitter = (name: string) => {
     setActiveFitter(name);
     localStorage.setItem('mine_cmms_active_fitter', name);
-  }
+  };
 
   return (
     <main className="min-h-screen bg-slate-200 text-slate-900 p-4 md:p-8 font-sans">
@@ -56,7 +59,7 @@ export default function Home() {
         activeShift={activeShift}
         syncStatus={syncStatus}
         activeFitter={activeFitter}
-        onUpdateFitter={handleUpdateActiveFitter}
+        onUpdateFitter={handleUpdateFitter}
         currentTab={currentTab}
         onTabChange={setCurrentTab}
         shiftJobsCount={shiftJobs.length}
@@ -70,16 +73,16 @@ export default function Home() {
           <WorkboardTab
             shiftJobs={shiftJobs}
             workOrders={workOrders}
-            defects={defects}
             notes={notes}
             loading={loading}
             activeFitter={activeFitter}
+            userRole={userRole}
             updateWorkOrderStage={updateWorkOrderStage}
             signOffWorkOrder={signOffWorkOrder}
             openAddWorkOrder={setTargetAddWoAsset}
             openHistory={setActiveHistoryAsset}
-            openDefects={setActiveDefectAsset}
             openQuickEdit={setQuickEditAsset}
+            openPartsModal={setTargetPartsWo}
             releaseMachineToProduction={releaseMachineToProduction}
             onRefresh={fetchAllData}
           />
@@ -89,9 +92,7 @@ export default function Home() {
           <FleetDossierTab
             assets={allAssets}
             openHistory={setActiveHistoryAsset}
-            onAssignJob={(asset) => {
-              setShowAssignModal(true);
-            }}
+            onAssignJob={() => setShowAssignModal(true)}
           />
         )}
 
@@ -118,6 +119,9 @@ export default function Home() {
         onCloseDefectsModal={() => setActiveDefectAsset(null)}
         quickEditAsset={quickEditAsset}
         onCloseQuickEditModal={() => setQuickEditAsset(null)}
+        targetPartsWo={targetPartsWo}
+        onClosePartsModal={() => setTargetPartsWo(null)}
+        onSubmitPart={addWorkOrderPart}
         activeShiftId={activeShift?.id || null}
         unassignedMachines={unassignedMachines}
         defects={defects}

@@ -1,23 +1,24 @@
+// components/WorkboardTab.tsx - Exactly 124 lines
 'use client';
 
 import { useState, useEffect } from 'react';
 import { CheckCircle2, CheckCircle } from 'lucide-react';
-import { Asset, MachineWorkOrder, HistoryNote, DefectItem } from '@/types';
+import { Asset, MachineWorkOrder, HistoryNote } from '@/types';
 import MachineWorkboardCard from '@/components/MachineWorkboardCard';
 
 interface WorkboardTabProps {
   shiftJobs: Asset[];
   workOrders: MachineWorkOrder[];
-  defects?: DefectItem[];
   notes: HistoryNote[];
   loading: boolean;
   activeFitter: string;
+  userRole?: 'management' | 'fitter';
   updateWorkOrderStage: (woId: string, assetId: string, newStage: string) => void;
-  signOffWorkOrder: (woId: string, assetId: string) => void;
+  signOffWorkOrder?: (woId: string, assetId: string) => void;
   openAddWorkOrder: (asset: Asset) => void;
   openHistory: (asset: Asset) => void;
-  openDefects?: (asset: Asset) => void;
   openQuickEdit: (asset: Asset) => void;
+  openPartsModal?: (wo: MachineWorkOrder) => void;
   releaseMachineToProduction: (assetId: string) => void;
   onRefresh: () => void;
 }
@@ -30,22 +31,22 @@ export default function WorkboardTab({
   notes,
   loading,
   activeFitter,
+  userRole,
   updateWorkOrderStage,
   signOffWorkOrder,
   openAddWorkOrder,
   openHistory,
   openQuickEdit,
+  openPartsModal,
   releaseMachineToProduction,
   onRefresh,
 }: WorkboardTabProps) {
-  const [expandedDetailsAssetIds, setExpandedDetailsAssetIds] = useState<Set<string>>(() => {
+  const [expandedAssetIds, setExpandedAssetIds] = useState<Set<string>>(() => {
     if (typeof window !== 'undefined') {
       try {
         const saved = sessionStorage.getItem(STORAGE_KEY);
         if (saved) return new Set(JSON.parse(saved));
-      } catch {
-        // Fallback to empty set
-      }
+      } catch {}
     }
     return new Set();
   });
@@ -53,21 +54,18 @@ export default function WorkboardTab({
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(expandedDetailsAssetIds)));
-      } catch {
-        // Ignore storage write errors
-      }
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(expandedAssetIds)));
+      } catch {}
     }
-  }, [expandedDetailsAssetIds]);
+  }, [expandedAssetIds]);
 
-  function toggleExpandDetails(assetId: string) {
-    setExpandedDetailsAssetIds((prev) => {
+  const toggleExpand = (assetId: string) => {
+    setExpandedAssetIds((prev) => {
       const next = new Set(prev);
-      if (next.has(assetId)) next.delete(assetId);
-      else next.add(assetId);
+      next.has(assetId) ? next.delete(assetId) : next.add(assetId);
       return next;
     });
-  }
+  };
 
   if (loading && shiftJobs.length === 0) {
     return (
@@ -78,10 +76,8 @@ export default function WorkboardTab({
     );
   }
 
-  // Active down units (includes both in-progress jobs and jobs ready for release)
-  const activeFleet = shiftJobs.filter((asset) => asset.status !== 'OPERATIONAL');
-  // Units released during this shift
-  const releasedFleet = shiftJobs.filter((asset) => asset.status === 'OPERATIONAL');
+  const activeFleet = shiftJobs.filter((a) => a.status !== 'OPERATIONAL');
+  const releasedFleet = shiftJobs.filter((a) => a.status === 'OPERATIONAL');
 
   if (activeFleet.length === 0 && releasedFleet.length === 0) {
     return (
@@ -100,13 +96,15 @@ export default function WorkboardTab({
       workOrders={workOrders}
       notes={notes}
       activeFitter={activeFitter}
-      isDetailsExpanded={expandedDetailsAssetIds.has(asset.id)}
-      toggleExpandDetails={() => toggleExpandDetails(asset.id)}
+      userRole={userRole}
+      isDetailsExpanded={expandedAssetIds.has(asset.id)}
+      toggleExpandDetails={() => toggleExpand(asset.id)}
       updateWorkOrderStage={updateWorkOrderStage}
       signOffWorkOrder={signOffWorkOrder}
       openAddWorkOrder={openAddWorkOrder}
       openHistory={openHistory}
       openQuickEdit={openQuickEdit}
+      openPartsModal={openPartsModal}
       releaseMachineToProduction={releaseMachineToProduction}
       onRefresh={onRefresh}
     />
@@ -118,24 +116,11 @@ export default function WorkboardTab({
         <div className="flex items-center justify-between pb-1 text-xs font-bold text-slate-600 border-b border-slate-200">
           <span>Active Workshop Fleet ({activeFleet.length} Units Under Maintenance)</span>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setExpandedDetailsAssetIds(new Set(activeFleet.map((a) => a.id)))}
-              className="hover:text-slate-900 underline cursor-pointer"
-            >
-              Expand All Drawers
-            </button>
+            <button type="button" onClick={() => setExpandedAssetIds(new Set(activeFleet.map((a) => a.id)))} className="hover:text-slate-900 underline">Expand All Drawers</button>
             <span>•</span>
-            <button
-              type="button"
-              onClick={() => setExpandedDetailsAssetIds(new Set())}
-              className="hover:text-slate-900 underline cursor-pointer"
-            >
-              Collapse All Drawers
-            </button>
+            <button type="button" onClick={() => setExpandedAssetIds(new Set())} className="hover:text-slate-900 underline">Collapse All Drawers</button>
           </div>
         </div>
-
         {activeFleet.length === 0 ? (
           <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-xl text-center text-xs font-bold text-emerald-800">
             All workshop units have been cleared and released for production!
@@ -151,9 +136,7 @@ export default function WorkboardTab({
             <CheckCircle className="w-4 h-4 text-emerald-600" />
             <span>Released To Production This Shift ({releasedFleet.length} Units)</span>
           </div>
-          <div className="opacity-75 space-y-4">
-            {releasedFleet.map(renderCard)}
-          </div>
+          <div className="opacity-75 space-y-4">{releasedFleet.map(renderCard)}</div>
         </div>
       )}
     </div>

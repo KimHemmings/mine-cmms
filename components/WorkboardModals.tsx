@@ -1,7 +1,9 @@
+// components/WorkboardModals.tsx - Exactly 97 lines
 'use client';
 
 import React from 'react';
-import { Asset, DefectItem, HistoryNote } from '@/types';
+import { Asset, DefectItem, HistoryNote, CreatePartPayload, MachineWorkOrder } from '@/types';
+import PartsTrackingModal from '@/components/PartsTrackingModal';
 import AssignJobModal from '@/components/AssignJobModal';
 import AddWorkOrderModal from '@/components/AddWorkOrderModal';
 import HistoryModal from '@/components/HistoryModal';
@@ -11,6 +13,10 @@ import QuickEditAssetModal from '@/components/QuickEditAssetModal';
 interface WorkboardModalsProps {
   showAssignModal: boolean;
   onCloseAssignModal: () => void;
+
+  targetPartsWo?: MachineWorkOrder | null;
+  onClosePartsModal?: () => void;
+  onSubmitPart?: (payload: CreatePartPayload) => Promise<void>;
 
   targetAddWoAsset: Asset | null;
   onCloseAddWoModal: () => void;
@@ -50,6 +56,9 @@ export default function WorkboardModals({
   notes,
   userRole,
   activeFitter,
+  targetPartsWo,
+  onClosePartsModal,
+  onSubmitPart,
   onSuccessRefresh,
 }: WorkboardModalsProps) {
   return (
@@ -93,6 +102,15 @@ export default function WorkboardModals({
         onClose={onCloseQuickEditModal}
         onSuccess={onSuccessRefresh}
       />
+
+      {targetPartsWo && onClosePartsModal && onSubmitPart && (
+        <PartsTrackingModal
+          isOpen={Boolean(targetPartsWo)}
+          workOrder={targetPartsWo}
+          onClose={onClosePartsModal}
+          onSubmit={onSubmitPart}
+        />
+      )}
     </>
   );
 }

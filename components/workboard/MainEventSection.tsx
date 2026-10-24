@@ -1,3 +1,4 @@
+// components/workboard/MainEventSection.tsx - Exactly 118 lines
 'use client';
 
 import React from 'react';
@@ -12,6 +13,7 @@ interface MainEventSectionProps {
   mainEvent: MachineWorkOrder;
   eventConfig: { badge: string; label: string; icon: React.ReactNode };
   notes: HistoryNote[];
+  openPartsModal?: (wo: MachineWorkOrder) => void;
   activeFitter: string;
   isNotesExpanded: boolean;
   toggleNotes: () => void;
@@ -32,10 +34,12 @@ export default function MainEventSection({
   isCopied,
   onCopySapNotes,
   updateWorkOrderStage,
+  openPartsModal,
   onRefresh,
 }: MainEventSectionProps) {
   const isDone = mainEvent.status === 'COMPLETED';
   const stageTheme = STAGE_THEMES[mainEvent.stage || 'IN_PROGRESS'] || STAGE_THEMES.IN_PROGRESS;
+  const itemNotesCount = notes.filter((n) => n.asset_id === asset.id).length;
 
   return (
     <div className={`p-4 border-b border-slate-200 transition-colors ${isDone ? 'bg-slate-100/75 opacity-90' : 'bg-slate-50/70'}`}>
@@ -94,17 +98,32 @@ export default function MainEventSection({
           <button
             type="button"
             onClick={toggleNotes}
-            className="flex items-center gap-1 px-3 py-1.5 border border-slate-300 bg-white hover:bg-slate-50 rounded-lg text-xs font-bold text-slate-700 transition cursor-pointer"
+            className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold transition cursor-pointer ${
+              isNotesExpanded
+                ? 'bg-amber-50 border-amber-400 text-amber-800'
+                : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'
+            }`}
           >
-            <MessageSquare className="w-3.5 h-3.5 text-amber-600" /> Notes
+            <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
+            <span>Notes ({itemNotesCount})</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded font-extrabold uppercase ${
+              isNotesExpanded ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-500'
+            }`}>
+              {isNotesExpanded ? 'Visible' : 'Hidden'}
+            </span>
           </button>
 
           <select
             value={isDone ? 'COMPLETED' : (mainEvent.stage || 'IN_PROGRESS')}
-            onChange={(e) => updateWorkOrderStage(mainEvent.id, asset.id, e.target.value)}
-            className={`border font-bold text-xs p-1.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 transition cursor-pointer ${
-              isDone ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : stageTheme.select
-            }`}
+            onChange={(e) => {
+              const newStage = e.target.value;
+              console.log('STAGE SELECTED:', newStage, '| openPartsModal exists?:', Boolean(openPartsModal));
+              updateWorkOrderStage(mainEvent.id, asset.id, newStage);
+              if (newStage === 'WAITING_PARTS') {
+                openPartsModal?.(mainEvent);
+              }
+            }}
+            className={`text-xs font-bold rounded-lg border px-3 py-1.5 cursor-pointer outline-none transition ${stageTheme.select}`}
           >
             {STAGE_OPTIONS.filter((o) => o.value !== 'COMPLETED').map((opt) => (
               <option key={opt.value} value={opt.value}>

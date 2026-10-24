@@ -1,3 +1,9 @@
+// types/index.ts
+export * from './constants';
+export * from './parts';
+
+import type { WorkOrderPart } from './parts';
+
 export interface ShiftRecord {
   id: string;
   shift_name: string;
@@ -10,7 +16,6 @@ export interface ShiftRecord {
 }
 
 export type OrderType = 'PLANNED' | 'UNPLANNED' | 'INSPECTION' | 'ACCIDENT_DAMAGE';
-
 export type PriorityLevel = 'P1' | 'P2' | 'P3' | 'P4' | null;
 
 export type WorkOrderStage =
@@ -25,18 +30,19 @@ export interface MachineWorkOrder {
   id: string;
   asset_id: string;
   shift_id: string;
-  wo_number: string | null;
-  notification_num: string | null;
+  wo_number: string | null;          // Optional for breakdown entry
+  notification_num: string | null;   // Optional[cite: 6]
   order_type: string;
   task_description: string;
   component_systems: string[];
   fitter_assigned: string | null;
-  stage: string;
+  stage: WorkOrderStage;
   status: 'OPEN' | 'COMPLETED';
   completed_at: string | null;
   completed_by: string | null;
   created_at: string;
   is_main_event?: boolean;
+  parts?: WorkOrderPart[];           // Direct relation to parts tracker
 }
 
 export interface DefectItem {
@@ -89,51 +95,3 @@ export interface HistoryNote {
   stage: string;
   created_at: string;
 }
-
-export const COMPONENT_SYSTEMS = [
-  'Engine',
-  'Transmission / Driveline',
-  'Hydraulics',
-  'HV Electrical',
-  'Auto Electrical',
-  'Air Conditioning / Cab',
-  'Undercarriage / Track',
-  'Suspension / Chassis',
-  'GET / Bucket / Blade',
-  'Braking & Steering',
-  'Scheduled PM Service',
-  'Structural / Fabrication',
-];
-
-export const ORDER_TYPES = [
-  { value: 'PLANNED', label: 'Planned Maintenance' },
-  { value: 'UNPLANNED', label: 'Unplanned Breakdown' },
-  { value: 'INSPECTION', label: 'Inspection' },
-  { value: 'ACCIDENT_DAMAGE', label: 'Accident Damage' },
-] as const;
-
-export const PRIORITY_OPTIONS = [
-  { value: 'P1', label: 'P1 - Critical' },
-  { value: 'P2', label: 'P2 - High' },
-  { value: 'P3', label: 'P3 - Medium' },
-  { value: 'P4', label: 'P4 - Low' },
-  { value: null, label: 'No Priority' },
-] as const;
-
-export const STAGES = [
-  'IN_PROGRESS',
-  'WAITING_LABOUR',
-  'WAITING_PARTS',
-  'WAITING_PRODUCTION',
-  'WEATHER_DELAY',
-  'COMPLETED',
-] as const;
-
-export const STAGE_OPTIONS = [
-  { value: 'IN_PROGRESS', label: 'In Progress' },
-  { value: 'WAITING_LABOUR', label: 'Waiting on Labour' },
-  { value: 'WAITING_PARTS', label: 'Wait on Parts' },
-  { value: 'WAITING_PRODUCTION', label: 'Wait on Production' },
-  { value: 'WEATHER_DELAY', label: 'Weather Delay' },
-  { value: 'COMPLETED', label: 'Complete' },
-] as const;

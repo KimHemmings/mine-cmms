@@ -99,12 +99,14 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     activeFitter,
     activeShift,
     fetchAllData,
-    fetchWorkOrders,
-    fetchNotes,
   });
 
   const shiftJobs = useMemo(() => {
     return allAssets.filter((a) => {
+      // Rule: An asset MUST have at least one work order to be on the shift workboard
+      const hasWorkOrder = workOrders.some((wo) => wo.asset_id === a.id);
+      if (!hasWorkOrder) return false;
+
       if (a.in_shift) return true;
       if (a.status === 'OPERATIONAL' && a.actual_up) {
         if (activeShift?.started_at) {
@@ -114,7 +116,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
       }
       return false;
     });
-  }, [allAssets, activeShift]);
+  }, [allAssets, activeShift, workOrders]);
 
   const completedJobs = allAssets.filter((a) => !a.in_shift && a.actual_up);
   const unassignedMachines = allAssets.filter((a) => !a.in_shift);

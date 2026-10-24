@@ -1,3 +1,23 @@
+// utils/helpers.ts
+import { SupabaseClient } from '@supabase/supabase-js';
+
+export async function logAssetHistory(
+  supabase: SupabaseClient,
+  assetId: string,
+  fitterName: string,
+  note: string,
+  stage: string
+) {
+  return supabase.from('asset_history_notes').insert([
+    {
+      asset_id: assetId,
+      fitter_name: fitterName,
+      note,
+      stage,
+    },
+  ]);
+}
+
 export function formatDateTime(isoString: string | null) {
   if (!isoString) return '--';
   const date = new Date(isoString);
