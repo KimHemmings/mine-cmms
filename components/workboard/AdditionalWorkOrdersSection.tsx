@@ -22,7 +22,6 @@ interface AdditionalWorkOrdersSectionProps {
   setInlineWoInputs: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   onSaveInlineWo: (id: string) => void;
   updateWorkOrderStage: (woId: string, assetId: string, newStage: string) => void;
-  signOffWorkOrder: (woId: string, assetId: string) => void;
   openAddWorkOrder: (asset: Asset) => void;
   onRefresh: () => void;
 }
