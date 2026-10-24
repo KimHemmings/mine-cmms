@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, CheckCircle } from 'lucide-react';
 import { Asset, MachineWorkOrder, HistoryNote, DefectItem } from '@/types';
 import MachineWorkboardCard from '@/components/MachineWorkboardCard';
 
@@ -38,7 +38,6 @@ export default function WorkboardTab({
   releaseMachineToProduction,
   onRefresh,
 }: WorkboardTabProps) {
-  // Initialize expanded cards from sessionStorage to retain open drawers across updates and tabs
   const [expandedDetailsAssetIds, setExpandedDetailsAssetIds] = useState<Set<string>>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -51,7 +50,6 @@ export default function WorkboardTab({
     return new Set();
   });
 
-  // Sync expanded card IDs to sessionStorage whenever they change
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -71,7 +69,6 @@ export default function WorkboardTab({
     });
   }
 
-  // Only show the spinner on the initial page load, not on background updates
   if (loading && shiftJobs.length === 0) {
     return (
       <div className="py-20 text-center">
@@ -81,11 +78,12 @@ export default function WorkboardTab({
     );
   }
 
-  const validShiftJobs = shiftJobs.filter((asset) =>
-    workOrders.some((wo) => wo.asset_id === asset.id)
-  );
+  // Active down units (includes both in-progress jobs and jobs ready for release)
+  const activeFleet = shiftJobs.filter((asset) => asset.status !== 'OPERATIONAL');
+  // Units released during this shift
+  const releasedFleet = shiftJobs.filter((asset) => asset.status === 'OPERATIONAL');
 
-  if (validShiftJobs.length === 0) {
+  if (activeFleet.length === 0 && releasedFleet.length === 0) {
     return (
       <div className="p-12 text-center bg-white border border-slate-300 rounded-2xl max-w-xl mx-auto mt-8 shadow-md">
         <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto mb-3" />
@@ -95,47 +93,69 @@ export default function WorkboardTab({
     );
   }
 
+  const renderCard = (asset: Asset) => (
+    <MachineWorkboardCard
+      key={asset.id}
+      asset={asset}
+      workOrders={workOrders}
+      notes={notes}
+      activeFitter={activeFitter}
+      isDetailsExpanded={expandedDetailsAssetIds.has(asset.id)}
+      toggleExpandDetails={() => toggleExpandDetails(asset.id)}
+      updateWorkOrderStage={updateWorkOrderStage}
+      signOffWorkOrder={signOffWorkOrder}
+      openAddWorkOrder={openAddWorkOrder}
+      openHistory={openHistory}
+      openQuickEdit={openQuickEdit}
+      releaseMachineToProduction={releaseMachineToProduction}
+      onRefresh={onRefresh}
+    />
+  );
+
   return (
-    <div className="space-y-4 font-sans">
-      <div className="flex items-center justify-between pb-1 text-xs font-bold text-slate-600">
-        <span>Active Breakdown Fleet ({validShiftJobs.length} Units Down)</span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setExpandedDetailsAssetIds(new Set(validShiftJobs.map((a) => a.id)))}
-            className="hover:text-slate-900 underline cursor-pointer"
-          >
-            Expand All Drawers
-          </button>
-          <span>•</span>
-          <button
-            type="button"
-            onClick={() => setExpandedDetailsAssetIds(new Set())}
-            className="hover:text-slate-900 underline cursor-pointer"
-          >
-            Collapse All Drawers
-          </button>
+    <div className="space-y-6 font-sans">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between pb-1 text-xs font-bold text-slate-600 border-b border-slate-200">
+          <span>Active Workshop Fleet ({activeFleet.length} Units Under Maintenance)</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setExpandedDetailsAssetIds(new Set(activeFleet.map((a) => a.id)))}
+              className="hover:text-slate-900 underline cursor-pointer"
+            >
+              Expand All Drawers
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => setExpandedDetailsAssetIds(new Set())}
+              className="hover:text-slate-900 underline cursor-pointer"
+            >
+              Collapse All Drawers
+            </button>
+          </div>
         </div>
+
+        {activeFleet.length === 0 ? (
+          <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-xl text-center text-xs font-bold text-emerald-800">
+            All workshop units have been cleared and released for production!
+          </div>
+        ) : (
+          activeFleet.map(renderCard)
+        )}
       </div>
 
-      {validShiftJobs.map((asset) => (
-        <MachineWorkboardCard
-          key={asset.id}
-          asset={asset}
-          workOrders={workOrders}
-          notes={notes}
-          activeFitter={activeFitter}
-          isDetailsExpanded={expandedDetailsAssetIds.has(asset.id)}
-          toggleExpandDetails={() => toggleExpandDetails(asset.id)}
-          updateWorkOrderStage={updateWorkOrderStage}
-          signOffWorkOrder={signOffWorkOrder}
-          openAddWorkOrder={openAddWorkOrder}
-          openHistory={openHistory}
-          openQuickEdit={openQuickEdit}
-          releaseMachineToProduction={releaseMachineToProduction}
-          onRefresh={onRefresh}
-        />
-      ))}
+      {releasedFleet.length > 0 && (
+        <div className="pt-6 space-y-4 border-t-2 border-dashed border-slate-300">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+            <CheckCircle className="w-4 h-4 text-emerald-600" />
+            <span>Released To Production This Shift ({releasedFleet.length} Units)</span>
+          </div>
+          <div className="opacity-75 space-y-4">
+            {releasedFleet.map(renderCard)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

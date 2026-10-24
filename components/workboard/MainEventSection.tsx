@@ -19,6 +19,7 @@ interface MainEventSectionProps {
   onCopySapNotes: () => void;
   updateWorkOrderStage: (woId: string, assetId: string, newStage: string) => void;
   signOffWorkOrder: (woId: string, assetId: string) => void;
+  reopenWorkOrder: (woId: string) => void;
   onRefresh: () => void;
 }
 
@@ -34,30 +35,33 @@ export default function MainEventSection({
   onCopySapNotes,
   updateWorkOrderStage,
   signOffWorkOrder,
+  reopenWorkOrder,
   onRefresh,
 }: MainEventSectionProps) {
+  const isDone = mainEvent.status === 'COMPLETED';
   const stageTheme = STAGE_THEMES[mainEvent.stage || 'IN_PROGRESS'] || STAGE_THEMES.IN_PROGRESS;
 
-  return (
-    <div className="p-4 bg-slate-50/70 border-b border-slate-200">
-      {/* 1. Event Header: Badge + Actual Task Title + Color-coded Stage Pill */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2.5 border-b border-slate-200">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1 ${eventConfig.badge}`}>
-            {eventConfig.icon}
-            {eventConfig.label}
-          </span>
-          <h4 className={`text-base text-slate-900 ${mainEvent.status === 'COMPLETED' ? 'line-through text-slate-500 font-medium' : 'font-bold'}`}>
-            {mainEvent.task_description}
-          </h4>
-        </div>
+  function handleStageChange(newStage: string) {
+    if (newStage === 'COMPLETED') {
+      signOffWorkOrder(mainEvent.id, asset.id);
+    } else {
+      if (isDone) reopenWorkOrder(mainEvent.id);
+      updateWorkOrderStage(mainEvent.id, asset.id, newStage);
+    }
+  }
 
-        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded border uppercase tracking-wider ${stageTheme.badge}`}>
-          {mainEvent.status === 'COMPLETED' ? 'COMPLETE' : stageTheme.label}
+  return (
+    <div className={`p-4 border-b border-slate-200 transition-colors ${isDone ? 'bg-slate-100/75 opacity-90' : 'bg-slate-50/70'}`}>
+      <div className="flex items-center gap-2 pb-2 mb-2.5 border-b border-slate-200">
+        <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1 ${eventConfig.badge}`}>
+          {eventConfig.icon}
+          {eventConfig.label}
         </span>
+        <h4 className={`text-base ${isDone ? 'line-through text-slate-500 font-medium' : 'font-bold text-slate-900'}`}>
+          {mainEvent.task_description}
+        </h4>
       </div>
 
-      {/* 2. Work Order Details, Systems & Actions */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div className="space-y-1.5 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -66,10 +70,10 @@ export default function MainEventSection({
               {formatWoDisplay(mainEvent.wo_number)}
             </span>
             {mainEvent.notification_num && (
-  <span className="text-xs font-mono text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-    Notif #{mainEvent.notification_num.replace(/^(notif\s*#?|#\s*)+/gi, '')}
-  </span>
-)}
+              <span className="text-xs font-mono text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
+                Notif #{mainEvent.notification_num.replace(/^(notif\s*#?|#\s*)+/gi, '')}
+              </span>
+            )}
             {mainEvent.component_systems?.map((sys) => (
               <span key={sys} className="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200">
                 {sys}
@@ -79,9 +83,11 @@ export default function MainEventSection({
 
           <p className="text-xs text-slate-600 flex items-center gap-1.5">
             <User className="w-3.5 h-3.5 text-slate-400" />
-            <span>Allocated Fitter: <strong className="text-slate-800">{mainEvent.fitter_assigned || 'Unassigned'}</strong></span>
+            <span>Allocated: <strong className="text-slate-800">{mainEvent.fitter_assigned || 'Unassigned'}</strong></span>
             {mainEvent.completed_at && (
-              <span className="text-emerald-700 ml-2 font-medium">(Signed off {formatDateTime(mainEvent.completed_at)} by {mainEvent.completed_by})</span>
+              <span className="text-emerald-700 ml-2 font-medium">
+                (Signed off {formatDateTime(mainEvent.completed_at)} by {mainEvent.completed_by})
+              </span>
             )}
           </p>
         </div>
@@ -90,7 +96,7 @@ export default function MainEventSection({
           <button
             type="button"
             onClick={onCopySapNotes}
-            className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold transition shadow-2xs ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer ${
               isCopied ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'
             }`}
           >
@@ -101,40 +107,25 @@ export default function MainEventSection({
           <button
             type="button"
             onClick={toggleNotes}
-            className="flex items-center gap-1 px-3 py-1.5 border border-slate-300 bg-white hover:bg-slate-50 rounded-lg text-xs font-bold text-slate-700 transition"
+            className="flex items-center gap-1 px-3 py-1.5 border border-slate-300 bg-white hover:bg-slate-50 rounded-lg text-xs font-bold text-slate-700 transition cursor-pointer"
           >
             <MessageSquare className="w-3.5 h-3.5 text-amber-600" /> Notes
           </button>
 
-          {mainEvent.status !== 'COMPLETED' && (
-            <>
-              <select
-                value={mainEvent.stage || 'IN_PROGRESS'}
-                onChange={(e) => {
-                  if (e.target.value === 'COMPLETED') {
-                    signOffWorkOrder(mainEvent.id, asset.id);
-                  } else {
-                    updateWorkOrderStage(mainEvent.id, asset.id, e.target.value);
-                  }
-                }}
-                className={`border font-bold text-xs p-1.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 transition ${stageTheme.select}`}
-              >
-                {STAGE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                type="button"
-                onClick={() => signOffWorkOrder(mainEvent.id, asset.id)}
-                className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition shadow-sm flex items-center gap-1"
-              >
-                <Check className="w-4 h-4 text-emerald-400" /> Sign Off Event
-              </button>
-            </>
-          )}
+          <select
+            value={isDone ? 'COMPLETED' : (mainEvent.stage || 'IN_PROGRESS')}
+            onChange={(e) => handleStageChange(e.target.value)}
+            className={`border font-bold text-xs p-1.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 transition cursor-pointer ${
+              isDone ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : stageTheme.select
+            }`}
+          >
+            {STAGE_OPTIONS.filter((o) => o.value !== 'COMPLETED').map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+            <option value="COMPLETED">Completed</option>
+          </select>
         </div>
       </div>
 

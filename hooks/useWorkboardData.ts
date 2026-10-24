@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { Asset, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord } from '@/types';
-import { useRealtimeWorkboard, SyncStatus } from '@/hooks/useRealtimeWorkboard';
+import { useRealtimeWorkboard } from '@/hooks/useRealtimeWorkboard';
+import { useWorkboardActions } from '@/hooks/useWorkboardActions';
 
 interface UseWorkboardDataOptions {
   activeFitter: string;
@@ -38,7 +39,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
       .order('fleet_id', { ascending: true });
 
     if (data) {
-      const sorted = data.sort((a, b) => {
+      const sorted = [...data].sort((a, b) => {
         const pOrder = { P1: 1, P2: 2, P3: 3, P4: 4 };
         const valA = a.priority ? pOrder[a.priority as keyof typeof pOrder] : 5;
         const valB = b.priority ? pOrder[b.priority as keyof typeof pOrder] : 5;
@@ -80,136 +81,42 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   }, [supabase]);
 
   const fetchAllData = useCallback(async () => {
-    await Promise.all([
-      fetchShift(),
-      fetchFleet(),
-      fetchWorkOrders(),
-      fetchDefects(),
-      fetchNotes(),
-    ]);
+    await Promise.all([fetchShift(), fetchFleet(), fetchWorkOrders(), fetchDefects(), fetchNotes()]);
     setLoading(false);
   }, [fetchShift, fetchFleet, fetchWorkOrders, fetchDefects, fetchNotes]);
 
-  // Initial load
   useEffect(() => {
     fetchAllData();
   }, [fetchAllData]);
 
-  // Bind Realtime subscription
   const { syncStatus } = useRealtimeWorkboard({
     onDataChange: fetchAllData,
     debounceMs: 300,
   });
 
-  async function updateWorkOrderStage(woId: string, assetId: string, newStage: string) {
-    const { error } = await supabase
-      .from('machine_work_orders')
-      .update({ stage: newStage })
-      .eq('id', woId);
+  const actions = useWorkboardActions({
+    supabase,
+    activeFitter,
+    activeShift,
+    fetchAllData,
+    fetchWorkOrders,
+    fetchNotes,
+  });
 
-    if (!error) {
-      await supabase.from('asset_history_notes').insert([
-        {
-          asset_id: assetId,
-          fitter_name: activeFitter || 'Fitter',
-          note: `Work order stage updated to ${newStage.replace('_', ' ')}`,
-          stage: newStage,
-        },
-      ]);
-      fetchWorkOrders();
-      fetchNotes();
-    }
-  }
+  // Retain active down units AND units released during this shift
+  const shiftJobs = useMemo(() => {
+    return allAssets.filter((a) => {
+      if (a.in_shift) return true;
+      if (a.status === 'OPERATIONAL' && a.actual_up) {
+        if (activeShift?.started_at) {
+          return new Date(a.actual_up) >= new Date(activeShift.started_at);
+        }
+        return Date.now() - new Date(a.actual_up).getTime() < 14 * 60 * 60 * 1000;
+      }
+      return false;
+    });
+  }, [allAssets, activeShift]);
 
-  async function signOffWorkOrder(woId: string, assetId: string) {
-    const { error } = await supabase
-      .from('machine_work_orders')
-      .update({
-        status: 'COMPLETED',
-        stage: 'COMPLETED',
-        completed_at: new Date().toISOString(),
-        completed_by: activeFitter || 'Signoff Fitter',
-      })
-      .eq('id', woId);
-
-    if (!error) {
-      await supabase.from('asset_history_notes').insert([
-        {
-          asset_id: assetId,
-          fitter_name: activeFitter || 'Signoff Fitter',
-          note: `Work order completed and signed off.`,
-          stage: 'COMPLETED',
-        },
-      ]);
-      fetchWorkOrders();
-      fetchNotes();
-    }
-  }
-
-  async function releaseMachineToProduction(assetId: string) {
-    const now = new Date().toISOString();
-    const { error } = await supabase
-      .from('assets')
-      .update({
-        in_shift: false,
-        status: 'OPERATIONAL',
-        actual_up: now,
-        priority: null,
-      })
-      .eq('id', assetId);
-
-    if (!error) {
-      await supabase.from('asset_history_notes').insert([
-        {
-          asset_id: assetId,
-          fitter_name: activeFitter || 'Supervisor',
-          note: `All scopes and defects signed off. Machine released to production.`,
-          stage: 'OPERATIONAL',
-        },
-      ]);
-      fetchAllData();
-    }
-  }
-
-  async function handleRolloverShift() {
-    if (!activeShift) return;
-
-    await supabase
-      .from('shift_records')
-      .update({
-        status: 'HANDED_OVER',
-        closed_at: new Date().toISOString(),
-      })
-      .eq('id', activeShift.id);
-
-    const nextShiftName = activeShift.shift_name.toLowerCase().includes('day')
-      ? 'Night Shift'
-      : 'Day Shift';
-
-    const { data: newShift } = await supabase
-      .from('shift_records')
-      .insert([
-        {
-          shift_name: nextShiftName,
-          supervisor: activeFitter || 'Supervisor',
-          status: 'ACTIVE',
-        },
-      ])
-      .select()
-      .single();
-
-    if (newShift) {
-      await supabase
-        .from('machine_work_orders')
-        .update({ shift_id: newShift.id })
-        .eq('status', 'OPEN');
-    }
-
-    alert(`Shift successfully rolled over to ${nextShiftName}. All active breakdowns carried forward.`);
-    fetchAllData();
-  }
-
-  const shiftJobs = allAssets.filter((a) => a.in_shift);
   const completedJobs = allAssets.filter((a) => !a.in_shift && a.actual_up);
   const unassignedMachines = allAssets.filter((a) => !a.in_shift);
 
@@ -225,9 +132,6 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     completedJobs,
     unassignedMachines,
     fetchAllData,
-    updateWorkOrderStage,
-    signOffWorkOrder,
-    releaseMachineToProduction,
-    handleRolloverShift,
+    ...actions,
   };
 }

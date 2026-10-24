@@ -74,14 +74,16 @@ export const FleetDossierCard: React.FC<FleetDossierCardProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 font-medium text-slate-500">
-              <MapPin className="w-3.5 h-3.5 text-slate-400" /> Location
-            </span>
-            <span className="font-medium text-slate-700 truncate max-w-42.5">
-              {asset.location || 'Workshop Yard'}
-            </span>
-          </div>
+          {isDown && (
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-medium text-slate-500">
+                <MapPin className="w-3.5 h-3.5 text-slate-400" /> Workshop Location
+              </span>
+              <span className="font-medium text-slate-700 truncate max-w-42.5">
+                {asset.location || 'Workshop Yard'}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -94,23 +96,37 @@ export const FleetDossierCard: React.FC<FleetDossierCardProps> = ({
               e.stopPropagation();
               openHistory(asset);
             }}
-            className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold uppercase tracking-wider transition-colors border border-slate-300"
+            className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold uppercase tracking-wider transition-colors border border-slate-300 cursor-pointer"
           >
             <History className="w-4 h-4 text-slate-600" />
             <span>Inspect History / Notes</span>
           </button>
         ) : (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onAssignJob?.(asset);
-            }}
-            className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-xs"
-          >
-            <Wrench className="w-4 h-4" />
-            <span>+ Assign / Down Machine</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openHistory(asset);
+              }}
+              className="h-11 px-3.5 flex items-center justify-center gap-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold uppercase tracking-wider transition-colors border border-slate-300 cursor-pointer"
+              title="Inspect History / Notes"
+            >
+              <History className="w-4 h-4 text-slate-600" />
+              <span>History</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAssignJob?.(asset);
+              }}
+              className="flex-1 h-11 flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-xs cursor-pointer"
+            >
+              <Wrench className="w-4 h-4" />
+              <span>+ Assign</span>
+            </button>
+          </div>
         )}
       </div>
     </div>

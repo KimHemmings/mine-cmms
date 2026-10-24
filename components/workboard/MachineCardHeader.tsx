@@ -16,7 +16,6 @@ interface MachineCardHeaderProps {
 
 export default function MachineCardHeader({
   asset,
-  eventConfig,
   priorityBadge,
   priorityLabel,
   openQuickEdit,
@@ -27,7 +26,6 @@ export default function MachineCardHeader({
   return (
     <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
       <div className="flex flex-wrap items-center gap-3">
-        
         <button
           type="button"
           onClick={() => openQuickEdit(asset)}
@@ -48,7 +46,7 @@ export default function MachineCardHeader({
         <button
           type="button"
           onClick={() => openQuickEdit(asset)}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-white border border-slate-200 hover:border-amber-400 text-xs font-semibold text-slate-700 transition shadow-2xs"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-white border border-slate-200 hover:border-amber-400 text-xs font-semibold text-slate-700 transition shadow-2xs cursor-pointer"
         >
           <span className="text-slate-400">Loc / Bay:</span>
           <strong className="text-slate-900">{asset.location || 'Unassigned'}</strong>
@@ -60,7 +58,7 @@ export default function MachineCardHeader({
         <button
           type="button"
           onClick={() => openQuickEdit(asset)}
-          className="bg-white hover:bg-slate-50 px-2.5 py-1 rounded border border-slate-200 text-[11px] font-medium text-slate-600 transition shadow-2xs text-left"
+          className="bg-white hover:bg-slate-50 px-2.5 py-1 rounded border border-slate-200 text-[11px] font-medium text-slate-600 transition shadow-2xs text-left cursor-pointer"
         >
           Down: <strong className="font-mono text-rose-700 font-bold">{getElapsedDown(asset.down_since)}</strong>
         </button>
@@ -68,7 +66,7 @@ export default function MachineCardHeader({
         <button
           type="button"
           onClick={() => openQuickEdit(asset)}
-          className="bg-white hover:bg-slate-50 px-2.5 py-1 rounded border border-slate-200 text-[11px] font-medium text-slate-600 transition shadow-2xs text-left"
+          className="bg-white hover:bg-slate-50 px-2.5 py-1 rounded border border-slate-200 text-[11px] font-medium text-slate-600 transition shadow-2xs text-left cursor-pointer"
         >
           ETU: <strong className="font-mono text-slate-900 font-bold">{formatDateTime(asset.expected_up)}</strong>
           {etu && (
@@ -80,16 +78,8 @@ export default function MachineCardHeader({
 
         <button
           type="button"
-          onClick={() => openQuickEdit(asset)}
-          className="flex items-center gap-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 rounded text-xs font-bold transition shadow-2xs"
-        >
-          <Edit3 className="w-3.5 h-3.5 text-amber-600" /> Edit
-        </button>
-
-        <button
-          type="button"
           onClick={() => openHistory(asset)}
-          className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded text-slate-800 text-xs font-bold transition shadow-2xs"
+          className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded text-slate-800 text-xs font-bold transition shadow-2xs cursor-pointer"
         >
           <History className="w-3.5 h-3.5 text-amber-600" /> Shift History
         </button>

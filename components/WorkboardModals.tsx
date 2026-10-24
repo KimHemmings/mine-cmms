@@ -70,8 +70,11 @@ export default function WorkboardModals({
       />
 
       <HistoryModal
+        isOpen={Boolean(activeHistoryAsset)}
         asset={activeHistoryAsset}
+        notes={notes}
         onClose={onCloseHistoryModal}
+        onRefresh={onSuccessRefresh}
         userRole={userRole}
         activeFitter={activeFitter}
       />
