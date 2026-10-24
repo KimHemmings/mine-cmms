@@ -18,8 +18,6 @@ interface MainEventSectionProps {
   isCopied: boolean;
   onCopySapNotes: () => void;
   updateWorkOrderStage: (woId: string, assetId: string, newStage: string) => void;
-  signOffWorkOrder: (woId: string, assetId: string) => void;
-  reopenWorkOrder: (woId: string) => void;
   onRefresh: () => void;
 }
 
@@ -34,21 +32,10 @@ export default function MainEventSection({
   isCopied,
   onCopySapNotes,
   updateWorkOrderStage,
-  signOffWorkOrder,
-  reopenWorkOrder,
   onRefresh,
 }: MainEventSectionProps) {
   const isDone = mainEvent.status === 'COMPLETED';
   const stageTheme = STAGE_THEMES[mainEvent.stage || 'IN_PROGRESS'] || STAGE_THEMES.IN_PROGRESS;
-
-  function handleStageChange(newStage: string) {
-    if (newStage === 'COMPLETED') {
-      signOffWorkOrder(mainEvent.id, asset.id);
-    } else {
-      if (isDone) reopenWorkOrder(mainEvent.id);
-      updateWorkOrderStage(mainEvent.id, asset.id, newStage);
-    }
-  }
 
   return (
     <div className={`p-4 border-b border-slate-200 transition-colors ${isDone ? 'bg-slate-100/75 opacity-90' : 'bg-slate-50/70'}`}>
@@ -114,7 +101,7 @@ export default function MainEventSection({
 
           <select
             value={isDone ? 'COMPLETED' : (mainEvent.stage || 'IN_PROGRESS')}
-            onChange={(e) => handleStageChange(e.target.value)}
+            onChange={(e) => updateWorkOrderStage(mainEvent.id, asset.id, e.target.value)}
             className={`border font-bold text-xs p-1.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 transition cursor-pointer ${
               isDone ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : stageTheme.select
             }`}

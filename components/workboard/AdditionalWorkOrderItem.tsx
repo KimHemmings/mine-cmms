@@ -22,8 +22,6 @@ interface AdditionalWorkOrderItemProps {
   onInlineWoChange: (val: string) => void;
   onSaveInlineWo: () => void;
   updateWorkOrderStage: (woId: string, assetId: string, newStage: string) => void;
-  signOffWorkOrder: (woId: string, assetId: string) => void;
-  reopenWorkOrder: (woId: string) => void;
   onRefresh: () => void;
 }
 
@@ -43,21 +41,10 @@ export default function AdditionalWorkOrderItem({
   onInlineWoChange,
   onSaveInlineWo,
   updateWorkOrderStage,
-  signOffWorkOrder,
-  reopenWorkOrder,
   onRefresh,
 }: AdditionalWorkOrderItemProps) {
   const isDone = wo.status === 'COMPLETED';
   const orderStageTheme = STAGE_THEMES[wo.stage || 'IN_PROGRESS'] || STAGE_THEMES.IN_PROGRESS;
-
-  function handleStageChange(newStage: string) {
-    if (newStage === 'COMPLETED') {
-      signOffWorkOrder(wo.id, asset.id);
-    } else {
-      if (isDone) reopenWorkOrder(wo.id);
-      updateWorkOrderStage(wo.id, asset.id, newStage);
-    }
-  }
 
   return (
     <div
@@ -120,7 +107,7 @@ export default function AdditionalWorkOrderItem({
 
           <select
             value={isDone ? 'COMPLETED' : (wo.stage || 'IN_PROGRESS')}
-            onChange={(e) => handleStageChange(e.target.value)}
+            onChange={(e) => updateWorkOrderStage(wo.id, asset.id, e.target.value)}
             className={`border font-bold text-xs p-1 rounded focus:outline-none focus:ring-2 focus:ring-slate-400 cursor-pointer ${
               isDone ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : orderStageTheme.select
             }`}

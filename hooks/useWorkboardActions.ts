@@ -15,52 +15,61 @@ export function useWorkboardActions({
   activeFitter,
   activeShift,
   fetchAllData,
-  fetchWorkOrders,
-  fetchNotes,
 }: UseWorkboardActionsOptions) {
   async function updateWorkOrderStage(woId: string, assetId: string, newStage: string) {
-    const { error } = await supabase
+    const isComplete = newStage === 'COMPLETED';
+
+    const woUpdate = isComplete
+      ? {
+          stage: 'COMPLETED',
+          status: 'COMPLETED',
+          completed_at: new Date().toISOString(),
+          completed_by: activeFitter || 'Fitter',
+        }
+      : {
+          stage: newStage,
+          status: 'OPEN',
+          completed_at: null,
+          completed_by: null,
+        };
+
+    const { error: woError } = await supabase
       .from('machine_work_orders')
-      .update({ stage: newStage })
+      .update(woUpdate)
       .eq('id', woId);
 
-    if (!error) {
-      await supabase.from('asset_history_notes').insert([
-        {
-          asset_id: assetId,
-          fitter_name: activeFitter || 'Fitter',
-          note: `Work order stage updated to ${newStage.replace('_', ' ')}`,
-          stage: newStage,
-        },
-      ]);
-      fetchWorkOrders();
-      fetchNotes();
+    if (woError) {
+      alert('Error updating work order: ' + woError.message);
+      return;
     }
+
+    if (!isComplete) {
+      await supabase
+        .from('assets')
+        .update({
+          in_shift: true,
+          status: 'DOWN_UNPLANNED',
+          actual_up: null,
+        })
+        .eq('id', assetId);
+    }
+
+    await supabase.from('asset_history_notes').insert([
+      {
+        asset_id: assetId,
+        fitter_name: activeFitter || 'Fitter',
+        note: isComplete
+          ? 'Work order completed and signed off.'
+          : `Work order updated to ${newStage.replace('_', ' ')}. Unit returned to active shift board.`,
+        stage: newStage,
+      },
+    ]);
+
+    await fetchAllData();
   }
 
   async function signOffWorkOrder(woId: string, assetId: string) {
-    const { error } = await supabase
-      .from('machine_work_orders')
-      .update({
-        status: 'COMPLETED',
-        stage: 'COMPLETED',
-        completed_at: new Date().toISOString(),
-        completed_by: activeFitter || 'Signoff Fitter',
-      })
-      .eq('id', woId);
-
-    if (!error) {
-      await supabase.from('asset_history_notes').insert([
-        {
-          asset_id: assetId,
-          fitter_name: activeFitter || 'Signoff Fitter',
-          note: 'Work order completed and signed off.',
-          stage: 'COMPLETED',
-        },
-      ]);
-      fetchWorkOrders();
-      fetchNotes();
-    }
+    await updateWorkOrderStage(woId, assetId, 'COMPLETED');
   }
 
   async function releaseMachineToProduction(assetId: string) {
@@ -83,30 +92,7 @@ export function useWorkboardActions({
           stage: 'OPERATIONAL',
         },
       ]);
-      fetchAllData();
-    }
-  }
-
-  async function returnMachineToShift(assetId: string) {
-    const { error } = await supabase
-      .from('assets')
-      .update({
-        in_shift: true,
-        status: 'DOWN_UNPLANNED',
-        actual_up: null,
-      })
-      .eq('id', assetId);
-
-    if (!error) {
-      await supabase.from('asset_history_notes').insert([
-        {
-          asset_id: assetId,
-          fitter_name: activeFitter || 'Supervisor',
-          note: 'Reopened released machine and returned to active shift board.',
-          stage: 'IN_PROGRESS',
-        },
-      ]);
-      fetchAllData();
+      await fetchAllData();
     }
   }
 
@@ -145,14 +131,13 @@ export function useWorkboardActions({
     }
 
     alert(`Shift successfully rolled over to ${nextShiftName}. All active breakdowns carried forward.`);
-    fetchAllData();
+    await fetchAllData();
   }
 
   return {
     updateWorkOrderStage,
     signOffWorkOrder,
     releaseMachineToProduction,
-    returnMachineToShift,
     handleRolloverShift,
   };
 }

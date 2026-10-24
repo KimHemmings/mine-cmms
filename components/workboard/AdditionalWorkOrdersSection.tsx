@@ -23,7 +23,6 @@ interface AdditionalWorkOrdersSectionProps {
   onSaveInlineWo: (id: string) => void;
   updateWorkOrderStage: (woId: string, assetId: string, newStage: string) => void;
   signOffWorkOrder: (woId: string, assetId: string) => void;
-  reopenWorkOrder: (woId: string) => void;
   openAddWorkOrder: (asset: Asset) => void;
   onRefresh: () => void;
 }
@@ -45,8 +44,6 @@ export default function AdditionalWorkOrdersSection({
   setInlineWoInputs,
   onSaveInlineWo,
   updateWorkOrderStage,
-  signOffWorkOrder,
-  reopenWorkOrder,
   openAddWorkOrder,
   onRefresh,
 }: AdditionalWorkOrdersSectionProps) {
@@ -120,8 +117,6 @@ export default function AdditionalWorkOrdersSection({
                   onInlineWoChange={(val) => setInlineWoInputs({ ...inlineWoInputs, [wo.id]: val })}
                   onSaveInlineWo={() => onSaveInlineWo(wo.id)}
                   updateWorkOrderStage={updateWorkOrderStage}
-                  signOffWorkOrder={signOffWorkOrder}
-                  reopenWorkOrder={reopenWorkOrder}
                   onRefresh={onRefresh}
                 />
               ))}

@@ -103,7 +103,6 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     fetchNotes,
   });
 
-  // Retain active down units AND units released during this shift
   const shiftJobs = useMemo(() => {
     return allAssets.filter((a) => {
       if (a.in_shift) return true;
