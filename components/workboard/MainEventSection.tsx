@@ -1,4 +1,4 @@
-// components/workboard/MainEventSection.tsx - Exactly 124 lines
+// components/workboard/MainEventSection.tsx - Exactly 128 lines
 'use client';
 
 import React from 'react';
@@ -40,7 +40,11 @@ export default function MainEventSection({
 }: MainEventSectionProps) {
   const isDone = mainEvent.status === 'COMPLETED';
   const stageTheme = STAGE_THEMES[mainEvent.stage || 'IN_PROGRESS'] || STAGE_THEMES.IN_PROGRESS;
-  const itemNotesCount = notes.filter((n) => n.asset_id === asset.id).length;
+  
+  // Count notes tagged for this Main Event drawer
+  const itemNotesCount = notes.filter(
+    (n) => n.asset_id === asset.id && n.note.toLowerCase().includes('main event')
+  ).length;
 
   return (
     <div className={`p-4 border-b border-slate-200 transition-colors ${isDone ? 'bg-slate-100/75 opacity-90' : 'bg-slate-50/70'}`}>
@@ -75,6 +79,16 @@ export default function MainEventSection({
               parts={mainEvent.parts}
               onClick={() => openPartsModal?.(mainEvent)}
             />
+            {mainEvent.stage === 'WAITING_PARTS' && (!mainEvent.parts || mainEvent.parts.length === 0) && (
+              <button
+                type="button"
+                onClick={() => openPartsModal?.(mainEvent)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500 text-slate-950 border border-amber-600 hover:bg-amber-400 transition cursor-pointer animate-pulse"
+                title="Waiting on parts, but none logged yet. Click to record requisition."
+              >
+                ⚠️ Log Parts
+              </button>
+            )}
           </div>
 
           <p className="text-xs text-slate-600 flex items-center gap-1.5">

@@ -1,4 +1,4 @@
-// components/MachineWorkboardCard.tsx - Exactly 133 lines
+// components/MachineWorkboardCard.tsx - Exactly 139 lines
 'use client';
 
 import React, { useState } from 'react';
@@ -17,6 +17,7 @@ interface MachineWorkboardCardProps {
   defects?: DefectItem[];
   notes: HistoryNote[];
   activeFitter: string;
+  userRole?: 'management' | 'fitter';
   isDetailsExpanded: boolean;
   toggleExpandDetails: () => void;
   updateWorkOrderStage: (woId: string, assetId: string, newStage: string) => void;
@@ -25,10 +26,9 @@ interface MachineWorkboardCardProps {
   openHistory: (asset: Asset) => void;
   openDefects?: (asset: Asset) => void;
   openQuickEdit: (asset: Asset) => void;
+  openPartsModal?: (wo: MachineWorkOrder) => void;
   releaseMachineToProduction: (assetId: string) => void;
   onRefresh: () => void;
-  userRole?: 'management' | 'fitter';
-  openPartsModal?: (wo: MachineWorkOrder) => void;
 }
 
 export default function MachineWorkboardCard({
@@ -40,8 +40,10 @@ export default function MachineWorkboardCard({
   isDetailsExpanded,
   toggleExpandDetails,
   updateWorkOrderStage,
+  signOffWorkOrder,
   openAddWorkOrder,
   openHistory,
+  openDefects,
   openQuickEdit,
   openPartsModal,
   releaseMachineToProduction,
@@ -140,26 +142,28 @@ export default function MachineWorkboardCard({
         </div>
       )}
 
-      <AdditionalWorkOrdersSection
-        asset={asset}
-        additionalOrders={additionalOrders}
-        notes={notes}
-        activeFitter={activeFitter}
-        isDetailsExpanded={isDetailsExpanded}
-        toggleExpandDetails={toggleExpandDetails}
-        expandedNotesItemIds={expandedNotesItemIds}
-        toggleItemNotes={toggleItemNotes}
-        copiedId={copiedId}
-        onCopySapNotes={handleCopySapNotes}
-        activeInlineWoTarget={activeInlineWoTarget}
-        setActiveInlineWoTarget={setActiveInlineWoTarget}
-        inlineWoInputs={inlineWoInputs}
-        setInlineWoInputs={setInlineWoInputs}
-        onSaveInlineWo={handleSaveInlineWo}
-        updateWorkOrderStage={updateWorkOrderStage}
-        openAddWorkOrder={openAddWorkOrder}
-        onRefresh={onRefresh}
-      />
+      {additionalOrders.length > 0 && (
+        <AdditionalWorkOrdersSection
+          asset={asset}
+          additionalOrders={additionalOrders}
+          notes={notes}
+          activeFitter={activeFitter}
+          isDetailsExpanded={isDetailsExpanded}
+          toggleExpandDetails={toggleExpandDetails}
+          expandedNotesItemIds={expandedNotesItemIds}
+          toggleItemNotes={toggleItemNotes}
+          copiedId={copiedId}
+          onCopySapNotes={handleCopySapNotes}
+          activeInlineWoTarget={activeInlineWoTarget}
+          setActiveInlineWoTarget={setActiveInlineWoTarget}
+          inlineWoInputs={inlineWoInputs}
+          setInlineWoInputs={setInlineWoInputs}
+          onSaveInlineWo={handleSaveInlineWo}
+          updateWorkOrderStage={updateWorkOrderStage}
+          openAddWorkOrder={openAddWorkOrder}
+          onRefresh={onRefresh}
+        />
+      )}
 
       <MachineReleaseFooter
         assetId={asset.id}

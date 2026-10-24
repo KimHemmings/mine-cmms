@@ -87,9 +87,12 @@ export interface Asset {
   shift_stage?: string;
 }
 
+// AFTER:
 export interface HistoryNote {
   id: string;
   asset_id: string;
+  item_id?: string | null;
+  work_order_id?: string | null;
   fitter_name: string;
   note: string;
   stage: string;
