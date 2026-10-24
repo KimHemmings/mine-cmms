@@ -19,9 +19,10 @@ interface MachineWorkboardCardProps {
   isDetailsExpanded: boolean;
   toggleExpandDetails: () => void;
   updateWorkOrderStage: (woId: string, assetId: string, newStage: string) => void;
-  signOffWorkOrder: (woId: string, assetId: string) => void;
+  signOffWorkOrder?: (woId: string, assetId: string) => void;
   openAddWorkOrder: (asset: Asset) => void;
   openHistory: (asset: Asset) => void;
+  openDefects?: (asset: Asset) => void;
   openQuickEdit: (asset: Asset) => void;
   releaseMachineToProduction: (assetId: string) => void;
   onRefresh: () => void;
@@ -35,7 +36,6 @@ export default function MachineWorkboardCard({
   isDetailsExpanded,
   toggleExpandDetails,
   updateWorkOrderStage,
-  signOffWorkOrder,
   openAddWorkOrder,
   openHistory,
   openQuickEdit,
@@ -59,36 +59,6 @@ export default function MachineWorkboardCard({
   const eventConfig = getEventConfig(mainEvent?.order_type, isPlanned);
   const priorityConfig = getPriorityConfig(asset.priority);
 
-  async function handleReopenWorkOrder(woId: string) {
-    const { error } = await supabase
-      .from('machine_work_orders')
-      .update({ status: 'OPEN', stage: 'IN_PROGRESS', completed_at: null, completed_by: null })
-      .eq('id', woId);
-
-    if (error) return alert('Error reopening job: ' + error.message);
-
-    if (isReleased) {
-      await supabase
-        .from('assets')
-        .update({
-          status: isPlanned ? 'DOWN_PLANNED' : 'DOWN_UNPLANNED',
-          in_shift: true,
-          actual_up: null,
-          priority: asset.priority || 'P3',
-        })
-        .eq('id', asset.id);
-    }
-
-    await supabase.from('asset_history_notes').insert([{
-      asset_id: asset.id,
-      fitter_name: activeFitter || 'Shift Fitter',
-      note: 'Reopened job to IN_PROGRESS. Machine returned to active workboard.',
-      stage: 'IN_PROGRESS',
-    }]);
-
-    onRefresh();
-  }
-
   function toggleItemNotes(id: string) {
     setExpandedNotesItemIds((prev) => {
       const next = new Set(prev);
@@ -110,8 +80,10 @@ export default function MachineWorkboardCard({
     if (!woNum) return;
     await supabase.from('machine_work_orders').update({ wo_number: woNum }).eq('id', id);
     await supabase.from('asset_history_notes').insert([{
-      asset_id: asset.id, fitter_name: activeFitter || 'Planner',
-      note: `Assigned SAP Work Order #${woNum} to item.`, stage: 'IN_PROGRESS',
+      asset_id: asset.id,
+      fitter_name: activeFitter || 'Planner',
+      note: `Assigned SAP Work Order #${woNum} to item.`,
+      stage: 'IN_PROGRESS',
     }]);
     setActiveInlineWoTarget(null);
     setInlineWoInputs((prev) => ({ ...prev, [id]: '' }));
@@ -134,6 +106,7 @@ export default function MachineWorkboardCard({
         openQuickEdit={openQuickEdit}
         openHistory={openHistory}
       />
+
       {mainEvent && (
         <MainEventSection
           asset={asset}
@@ -146,11 +119,10 @@ export default function MachineWorkboardCard({
           isCopied={copiedId === mainEvent.id}
           onCopySapNotes={() => handleCopySapNotes(mainEvent.id, 'Main Event')}
           updateWorkOrderStage={updateWorkOrderStage}
-          signOffWorkOrder={signOffWorkOrder}
-          reopenWorkOrder={handleReopenWorkOrder}
           onRefresh={onRefresh}
         />
       )}
+
       <AdditionalWorkOrdersSection
         asset={asset}
         additionalOrders={additionalOrders}
@@ -168,11 +140,10 @@ export default function MachineWorkboardCard({
         setInlineWoInputs={setInlineWoInputs}
         onSaveInlineWo={handleSaveInlineWo}
         updateWorkOrderStage={updateWorkOrderStage}
-        signOffWorkOrder={signOffWorkOrder}
-        reopenWorkOrder={handleReopenWorkOrder}
         openAddWorkOrder={openAddWorkOrder}
         onRefresh={onRefresh}
       />
+
       <MachineReleaseFooter
         assetId={asset.id}
         openOrdersCount={openOrders.length}
