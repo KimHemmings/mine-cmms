@@ -1,4 +1,4 @@
-// components/workboard/MainEventSection.tsx - Exactly 118 lines
+// components/workboard/MainEventSection.tsx - Exactly 124 lines
 'use client';
 
 import React from 'react';
@@ -7,6 +7,7 @@ import { Asset, STAGE_OPTIONS, MachineWorkOrder, HistoryNote } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
 import { formatWoDisplay, STAGE_THEMES } from './workboardTheme';
 import InlineNotesDrawer from '@/components/InlineNotesDrawer';
+import PartsBadge from './PartsBadge';
 
 interface MainEventSectionProps {
   asset: Asset;
@@ -70,6 +71,10 @@ export default function MainEventSection({
                 {sys}
               </span>
             ))}
+            <PartsBadge
+              parts={mainEvent.parts}
+              onClick={() => openPartsModal?.(mainEvent)}
+            />
           </div>
 
           <p className="text-xs text-slate-600 flex items-center gap-1.5">
@@ -117,7 +122,6 @@ export default function MainEventSection({
             value={isDone ? 'COMPLETED' : (mainEvent.stage || 'IN_PROGRESS')}
             onChange={(e) => {
               const newStage = e.target.value;
-              console.log('STAGE SELECTED:', newStage, '| openPartsModal exists?:', Boolean(openPartsModal));
               updateWorkOrderStage(mainEvent.id, asset.id, newStage);
               if (newStage === 'WAITING_PARTS') {
                 openPartsModal?.(mainEvent);

@@ -1,3 +1,4 @@
+// hooks/useWorkboardData.ts - Exactly 116 lines
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -56,7 +57,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   const fetchWorkOrders = useCallback(async () => {
     const { data } = await supabase
       .from('machine_work_orders')
-      .select('*')
+      .select('*, parts:work_order_parts(*)')
       .order('created_at', { ascending: true });
 
     if (data) setWorkOrders(data as MachineWorkOrder[]);
@@ -103,7 +104,6 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
 
   const shiftJobs = useMemo(() => {
     return allAssets.filter((a) => {
-      // Rule: An asset MUST have at least one work order to be on the shift workboard
       const hasWorkOrder = workOrders.some((wo) => wo.asset_id === a.id);
       if (!hasWorkOrder) return false;
 
