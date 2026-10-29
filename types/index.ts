@@ -98,3 +98,29 @@ export interface HistoryNote {
   stage: string;
   created_at: string;
 }
+
+export interface AssetWatchItem {
+  id: string;
+  fleet_id: string;
+  date_logged: string;
+  issue_description: string;
+  inspection_action: string;
+}
+
+export type HandoverLogCategory =
+  | 'SAFETY'
+  | 'WEATHER'
+  | 'MANNING'
+  | 'WATCHLIST'
+  | 'BRAKE_TEST'
+  | 'TOOLING'
+  | 'PRIORITY';
+
+export interface HandoverLogEntry {
+  id: string;
+  category: HandoverLogCategory;
+  fleet_id?: string;
+  details: string;
+  action_required?: string;
+  logged_at: string;
+}

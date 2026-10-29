@@ -1,4 +1,3 @@
-// app/page.tsx - Exactly 132 lines
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -103,6 +102,7 @@ export default function Home() {
             completedJobs={completedJobs}
             workOrders={workOrders}
             defects={defects}
+            notes={notes}
             onRolloverShift={handleRolloverShift}
           />
         )}
