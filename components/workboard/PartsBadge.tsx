@@ -23,7 +23,7 @@ export default function PartsBadge({ parts, onClick }: PartsBadgeProps) {
         <button
           type="button"
           onClick={onClick}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-black uppercase tracking-wide bg-amber-500 text-slate-950 border border-amber-600 shadow-2xs hover:bg-amber-400 transition cursor-pointer animate-pulse"
+          className="inline-flex items-center gap-1.5 min-h-9 px-3 rounded-lg text-sm font-black uppercase tracking-wide bg-amber-500 text-slate-950 border border-amber-600 shadow-2xs hover:bg-amber-400 transition cursor-pointer"
           title={`Carrier: ${hotshotPart.carrier_details || 'Pending'} | ETA: ${hotshotPart.eta || 'TBD'}`}
         >
           <Zap className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
@@ -38,10 +38,10 @@ export default function PartsBadge({ parts, onClick }: PartsBadgeProps) {
         <button
           type="button"
           onClick={onClick}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition cursor-pointer"
+          className="inline-flex items-center gap-1.5 min-h-9 px-3 rounded-lg text-sm font-bold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition cursor-pointer"
         >
-          <Package className="w-3.5 h-3.5 text-amber-600" />
-          <span>{pendingPartsCount} Part{pendingPartsCount > 1 ? 's' : ''} Req</span>
+          <Package className="w-4 h-4 text-amber-600" />
+          <span>{pendingPartsCount} part{pendingPartsCount > 1 ? 's' : ''} on order</span>
         </button>
       )}
     </div>

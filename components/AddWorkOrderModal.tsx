@@ -6,6 +6,8 @@ import { Asset } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 import OrderMetaInputs from './add-work-order/OrderMetaInputs';
 import ComponentSystemsPicker from './add-work-order/ComponentSystemsPicker';
+import CrewPicker from './crew/CrewPicker';
+import { useCrewData, crewNames } from './crew/CrewDataContext';
 
 interface AddWorkOrderModalProps {
   asset: Asset | null;
@@ -25,10 +27,11 @@ export default function AddWorkOrderModal({
   const [orderType, setOrderType] = useState('UNPLANNED');
   const [taskDescription, setTaskDescription] = useState('');
   const [selectedSystems, setSelectedSystems] = useState<string[]>(['Hydraulics']);
-  const [fitterAssigned, setFitterAssigned] = useState('');
+  const [crewIds, setCrewIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const supabase = createClient();
+  const { crew, onShiftIds, openJobCounts } = useCrewData();
 
   useEffect(() => {
     if (asset) {
@@ -37,7 +40,7 @@ export default function AddWorkOrderModal({
       setOrderType('UNPLANNED');
       setTaskDescription('');
       setSelectedSystems(['Hydraulics']);
-      setFitterAssigned('');
+      setCrewIds([]);
     }
   }, [asset]);
 
@@ -59,9 +62,11 @@ export default function AddWorkOrderModal({
     setSubmitting(true);
 
     const cleanWo = woNumber.trim() || null;
+    const assignedNames = crewNames(crew, crewIds);
 
-    const { error: woError } = await supabase.from('machine_work_orders').insert([
-      {
+    const { data: newWo, error: woError } = await supabase
+      .from('machine_work_orders')
+      .insert({
         asset_id: asset.id,
         shift_id: activeShiftId,
         wo_number: cleanWo,
@@ -69,18 +74,27 @@ export default function AddWorkOrderModal({
         order_type: orderType,
         task_description: taskDescription.trim(),
         component_systems: selectedSystems,
-        fitter_assigned: fitterAssigned.trim() || asset.fitter_assigned || 'Unassigned',
+        fitter_assigned: assignedNames || 'Unassigned',
         stage: 'IN_PROGRESS',
         status: 'OPEN',
-      },
-    ]);
+      })
+      .select('id')
+      .single<{ id: string }>();
+
+    if (!woError && crewIds.length > 0) {
+      const { error: crewError } = await supabase.rpc('set_work_order_crew', {
+        p_work_order_id: newWo.id,
+        p_crew_ids: crewIds,
+      });
+      if (crewError) alert('Work order added, but assigning crew failed: ' + crewError.message);
+    }
 
     if (!woError) {
       await supabase.from('asset_history_notes').insert([
         {
           asset_id: asset.id,
-          fitter_name: fitterAssigned.trim() || 'Maintenance Planner',
-          note: `Added work order [${cleanWo ? `WO #\${cleanWo}` : 'No WO'} - ${orderType}]: ${taskDescription.trim()}`,
+          fitter_name: assignedNames || 'Maintenance Planner',
+          note: `Added work order [${cleanWo ? `WO #${cleanWo}` : 'No WO'} - ${orderType}]: ${taskDescription.trim()}`,
           stage: 'IN_PROGRESS',
         },
       ]);
@@ -94,8 +108,8 @@ export default function AddWorkOrderModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 shadow-2xl my-8">
         <div className="flex items-center justify-between pb-3 border-b border-slate-200">
           <div>
             <h3 className="text-lg font-bold text-slate-900">
@@ -144,15 +158,15 @@ export default function AddWorkOrderModal({
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              FITTER ASSIGNED
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. D. Kelly / Apprentice"
-              value={fitterAssigned}
-              onChange={(e) => setFitterAssigned(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
+            <p className="block text-xs font-bold text-slate-700 mb-1">
+              WHO&apos;S ON THIS JOB <span className="font-normal text-slate-400">(tap to select, optional)</span>
+            </p>
+            <CrewPicker
+              crew={crew}
+              onShiftIds={onShiftIds}
+              openJobCounts={openJobCounts}
+              selectedIds={crewIds}
+              onChange={setCrewIds}
             />
           </div>
 

@@ -1,29 +1,60 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@/utils/supabase/server';
+import { getAzureOpenAiEnv } from '@/utils/env';
+
+const MAX_BODY_BYTES = 200_000;
+const UPSTREAM_TIMEOUT_MS = 30_000;
 
 export async function POST(req: Request) {
+  const supabase = await createClient();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const userId = claimsData?.claims?.sub;
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, active')
+    .eq('id', userId)
+    .maybeSingle();
+  if (!profile?.active || profile.role !== 'management') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  const rawBody = await req.text();
+  if (rawBody.length > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: 'Request too large' }, { status: 413 });
+  }
+
+  let body: Record<string, unknown>;
   try {
-    const {
-      shiftName,
-      supervisor,
-      weatherNotes,
-      safetyNotes,
-      manningNotes,
-      priorityNotes,
-      activeMachines,
-      releasedMachines,
-      watchItems,
-    } = await req.json();
+    body = JSON.parse(rawBody);
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
 
-    const apiKey = process.env.AZURE_OPENAI_API_KEY;
-    const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-    const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || 'gpt-4o';
-    const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-08-01-preview';
+  const {
+    shiftName,
+    supervisor,
+    weatherNotes,
+    safetyNotes,
+    manningNotes,
+    priorityNotes,
+    activeMachines,
+    releasedMachines,
+    watchItems,
+  } = body;
 
-    if (!apiKey || !endpoint) {
-      return NextResponse.json({ error: 'Endpoint not configured' }, { status: 500 });
-    }
+  let azure;
+  try {
+    azure = getAzureOpenAiEnv();
+  } catch (error) {
+    console.error('[ai-handover] configuration error:', error);
+    return NextResponse.json({ error: 'Summary service not configured' }, { status: 503 });
+  }
 
-    const systemPrompt = `You are an HME Maintenance Supervisor writing a concise, 8-to-10 line executive handover brief for the incoming shift supervisor.
+  const systemPrompt = `You are an HME Maintenance Supervisor writing a concise, 8-to-10 line executive handover brief for the incoming shift supervisor.
 
 CRITICAL INSTRUCTIONS:
 - NEVER use the word "AI", "digest", or mention automation.
@@ -40,15 +71,16 @@ OUTPUT FORMAT:
 - **Critical Path Hold Points:** [Only high-priority bottlenecks, courier parts ETAs, or pit access delays]
 - **Hot-Seat Directives:** [2 to 3 immediate physical actions for trades at shift changeover]`;
 
-    const cleanEndpoint = endpoint.replace(/\/$/, '');
-    const url = `${cleanEndpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
+  const url = `${azure.endpoint}/openai/deployments/${azure.deploymentName}/chat/completions?api-version=${azure.apiVersion}`;
 
+  try {
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': apiKey,
+        'api-key': azure.apiKey,
       },
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
       body: JSON.stringify({
         messages: [
           { role: 'system', content: systemPrompt },
@@ -68,19 +100,21 @@ OUTPUT FORMAT:
           },
         ],
         temperature: 0.2,
+        max_tokens: 600,
       }),
     });
 
     if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Summary generation error (${response.status}): ${errText}`);
+      console.error(`[ai-handover] upstream ${response.status}:`, await response.text());
+      return NextResponse.json({ error: 'Summary generation failed' }, { status: 502 });
     }
 
     const data = await response.json();
     const summary = data.choices?.[0]?.message?.content || 'Failed to generate summary.';
 
     return NextResponse.json({ summary });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    console.error('[ai-handover] request failed:', error);
+    return NextResponse.json({ error: 'Summary generation failed' }, { status: 502 });
   }
 }

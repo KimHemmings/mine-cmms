@@ -13,12 +13,12 @@ export const STAGE_THEMES: Record<string, { label: string; badge: string; select
     select: 'border-purple-300 bg-purple-50 text-purple-900',
   },
   WAITING_PARTS: {
-    label: 'Wait on Parts',
+    label: 'Waiting on Parts',
     badge: 'bg-amber-100 text-amber-900 border-amber-300',
     select: 'border-amber-300 bg-amber-50 text-amber-900',
   },
   WAITING_PRODUCTION: {
-    label: 'Wait on Production',
+    label: 'Waiting on Production',
     badge: 'bg-teal-100 text-teal-900 border-teal-300',
     select: 'border-teal-300 bg-teal-50 text-teal-900',
   },
@@ -106,7 +106,7 @@ export function getPriorityConfig(priority?: string | null) {
 }
 
 export function formatWoDisplay(woNum?: string | null): string {
-  if (!woNum || !woNum.trim()) return 'NO SAP WO';
+  if (!woNum || !woNum.trim()) return 'No SAP WO yet';
   const clean = woNum.replace(/^WO-?/i, '').trim();
   return `WO #${clean}`;
 }

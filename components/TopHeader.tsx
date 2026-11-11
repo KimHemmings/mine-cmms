@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Wrench,
@@ -10,18 +10,23 @@ import {
   RefreshCw,
   UserCheck,
   LogOut,
+  ClipboardList,
+  Users,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
+import { useFeedback } from '@/components/ui/FeedbackProvider';
 import { ShiftRecord } from '@/types';
+import type { SyncStatus } from '@/hooks/useRealtimeWorkboard';
+
+type Tab = 'board' | 'handover' | 'dossier' | 'crew';
 
 interface TopHeaderProps {
   activeShift: ShiftRecord | null;
-  syncStatus: any;
+  syncStatus: SyncStatus;
   activeFitter: string;
-  onUpdateFitter: (name: string) => void;
-  currentTab: 'board' | 'handover' | 'dossier';
-  onTabChange: (tab: 'board' | 'handover' | 'dossier') => void;
+  currentTab: Tab;
+  onTabChange: (tab: Tab) => void;
   shiftJobsCount: number;
   userRole: 'management' | 'fitter';
   onOpenAssign: () => void;
@@ -32,7 +37,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   activeShift,
   syncStatus,
   activeFitter,
-  onUpdateFitter,
   currentTab,
   onTabChange,
   shiftJobsCount,
@@ -42,106 +46,105 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 }) => {
   const router = useRouter();
   const supabase = createClient();
+  const { confirm } = useFeedback();
+  const [signingOut, setSigningOut] = useState(false);
 
   async function handleSignOut() {
-    await supabase.auth.signOut();
+    const ok = await confirm({
+      title: 'Sign out?',
+      message: `${activeFitter || 'You'} will be signed out of this computer.`,
+      confirmLabel: 'Yes, sign out',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    setSigningOut(true);
+    const { error } = await supabase.auth.signOut();
+    if (error) console.error('Sign out failed:', error.message);
     router.replace('/login');
     router.refresh();
   }
 
+  const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
+    { id: 'board', label: `Workboard (${shiftJobsCount})`, icon: <ClipboardList className="w-4 h-4" />, show: true },
+    { id: 'dossier', label: 'Fleet Directory', icon: <BookOpen className="w-4 h-4" />, show: true },
+    { id: 'handover', label: 'Shift Handover', icon: <FileSpreadsheet className="w-4 h-4" />, show: userRole === 'management' },
+    { id: 'crew', label: 'Crew', icon: <Users className="w-4 h-4" />, show: userRole === 'management' },
+  ];
+
   return (
-    <header className="flex flex-col md:flex-row md:items-center justify-between pb-5 border-b border-slate-300 gap-4 print:hidden">
-      <div className="flex items-center gap-3">
-        <div className="p-2.5 bg-amber-500 text-white rounded-xl shadow-sm">
-          <Wrench className="w-6 h-6" />
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900">
-              MINE SHIFT WORKBOARD
-            </h1>
-            <span className="text-xs font-black px-2 py-0.5 rounded bg-slate-300 text-slate-800 border border-slate-400 uppercase">
+    <header className="space-y-4 pb-5 border-b border-slate-300 print:hidden">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-amber-500 text-white rounded-xl shadow-sm">
+            <Wrench className="w-6 h-6" />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900">MINE SHIFT WORKBOARD</h1>
+            <span className="text-sm font-black px-2 py-0.5 rounded bg-slate-300 text-slate-800 border border-slate-400 uppercase">
               {activeShift?.shift_name || 'Active Shift'}
             </span>
             <SyncStatusBadge status={syncStatus} />
           </div>
-          <p className="text-xs text-slate-500 mt-0.5 font-medium">
-            High-contrast crib room & field workstation • SAP Work Orders & Defect Tracking
-          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="min-h-11 flex items-center gap-2 bg-white border border-slate-300 px-3 rounded-xl text-sm">
+            <UserCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+            <span className="text-slate-500">Signed in as</span>
+            <strong
+              className="text-slate-900"
+              title="Your name is stamped on every note and sign-off you make"
+            >
+              {activeFitter || '...'}
+            </strong>
+          </div>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="min-h-11 flex items-center gap-1.5 px-4 bg-white hover:bg-rose-50 border border-slate-300 hover:border-rose-300 text-slate-700 hover:text-rose-600 text-sm font-bold rounded-xl transition disabled:opacity-50"
+          >
+            <LogOut className="w-4 h-4" /> {signingOut ? 'Signing out...' : 'Sign Out'}
+          </button>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1.5 bg-white border border-slate-300 px-3 py-1.5 rounded-xl shadow-2xs text-xs">
-          <UserCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span className="font-bold text-slate-500 text-[11px] uppercase">Fitter on Duty:</span>
-          <input
-            type="text"
-            value={activeFitter}
-            onChange={(e) => onUpdateFitter(e.target.value)}
-            placeholder="e.g. D. Kelly (#4821)"
-            className="font-bold text-slate-900 focus:outline-none w-36 bg-transparent"
-            title="Your Name & ID will stamp on all progressive notes and sign-offs"
-          />
-        </div>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <nav className="bg-white border border-slate-300 p-1 rounded-xl flex flex-wrap items-center gap-1 shadow-2xs" aria-label="Sections">
+          {tabs
+            .filter((t) => t.show)
+            .map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onTabChange(tab.id)}
+                aria-current={currentTab === tab.id ? 'page' : undefined}
+                className={`min-h-11 px-4 text-sm font-bold rounded-lg transition flex items-center gap-2 ${
+                  currentTab === tab.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                {tab.icon} {tab.label}
+              </button>
+            ))}
+        </nav>
 
-        <div className="bg-white border border-slate-300 p-1 rounded-xl flex items-center shadow-2xs">
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => onTabChange('board')}
-            className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition ${
-              currentTab === 'board' ? 'bg-slate-200 text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={onRefresh}
+            className="min-h-12 flex items-center gap-1.5 px-4 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-sm font-bold rounded-xl transition shadow-2xs"
+            title="Reload the latest data"
           >
-            Active Shift Work ({shiftJobsCount})
+            <RefreshCw className="w-4 h-4" /> Refresh
           </button>
           <button
             type="button"
-            onClick={() => onTabChange('dossier')}
-            className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
-              currentTab === 'dossier' ? 'bg-slate-200 text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={onOpenAssign}
+            className="min-h-12 flex items-center gap-2 px-5 bg-emerald-600 hover:bg-emerald-500 text-white text-base font-black rounded-xl shadow-md transition"
           >
-            <BookOpen className="w-3.5 h-3.5" /> Fleet Directory
+            <Plus className="w-5 h-5" /> Assign Machine
           </button>
-          {userRole === 'management' && (
-            <button
-              type="button"
-              onClick={() => onTabChange('handover')}
-              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
-                currentTab === 'handover' ? 'bg-slate-200 text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" /> Shift Handover
-            </button>
-          )}
         </div>
-
-        <button
-          type="button"
-          onClick={onOpenAssign}
-          className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-sm transition"
-        >
-          <Plus className="w-4 h-4" /> Assign Machine
-        </button>
-
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="p-2.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-xl transition shadow-2xs"
-          title="Refresh All Data"
-        >
-          <RefreshCw className="w-4 h-4" />
-        </button>
-
-        <button
-          type="button"
-          onClick={handleSignOut}
-          className="p-2.5 bg-white hover:bg-rose-50 border border-slate-300 hover:border-rose-300 text-slate-700 hover:text-rose-600 rounded-xl transition shadow-2xs"
-          title="Sign Out"
-        >
-          <LogOut className="w-4 h-4" />
-        </button>
       </div>
     </header>
   );

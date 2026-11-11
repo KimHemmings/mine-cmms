@@ -41,8 +41,8 @@ export const STAGES = [
 export const STAGE_OPTIONS = [
   { value: 'IN_PROGRESS', label: 'In Progress' },
   { value: 'WAITING_LABOUR', label: 'Waiting on Labour' },
-  { value: 'WAITING_PARTS', label: 'Wait on Parts' },
-  { value: 'WAITING_PRODUCTION', label: 'Wait on Production' },
+  { value: 'WAITING_PARTS', label: 'Waiting on Parts' },
+  { value: 'WAITING_PRODUCTION', label: 'Waiting on Production' },
   { value: 'WEATHER_DELAY', label: 'Weather Delay' },
   { value: 'COMPLETED', label: 'Complete' },
 ] as const;

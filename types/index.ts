@@ -1,8 +1,19 @@
 // types/index.ts
 export * from './constants';
 export * from './parts';
+export * from './crew';
 
 import type { WorkOrderPart } from './parts';
+
+export type UserRole = 'management' | 'fitter';
+
+export interface UserProfile {
+  id: string;
+  display_name: string;
+  employee_id: string | null;
+  role: UserRole;
+  active: boolean;
+}
 
 export interface ShiftRecord {
   id: string;
@@ -43,6 +54,7 @@ export interface MachineWorkOrder {
   created_at: string;
   is_main_event?: boolean;
   parts?: WorkOrderPart[];           // Direct relation to parts tracker
+  crew?: { crew_member_id: string }[];
 }
 
 export interface DefectItem {

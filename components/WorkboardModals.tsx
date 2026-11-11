@@ -2,7 +2,7 @@
 'use client';
 
 import React from 'react';
-import { Asset, DefectItem, HistoryNote, CreatePartPayload, MachineWorkOrder } from '@/types';
+import { Asset, DefectItem, HistoryNote, CreatePartPayload, MachineWorkOrder, PartStatus } from '@/types';
 import PartsTrackingModal from '@/components/PartsTrackingModal';
 import AssignJobModal from '@/components/AssignJobModal';
 import AddWorkOrderModal from '@/components/AddWorkOrderModal';
@@ -17,6 +17,7 @@ interface WorkboardModalsProps {
   targetPartsWo?: MachineWorkOrder | null;
   onClosePartsModal?: () => void;
   onSubmitPart?: (payload: CreatePartPayload) => Promise<void>;
+  onUpdatePartStatus?: (partId: string, status: PartStatus) => Promise<void>;
 
   targetAddWoAsset: Asset | null;
   onCloseAddWoModal: () => void;
@@ -59,6 +60,7 @@ export default function WorkboardModals({
   targetPartsWo,
   onClosePartsModal,
   onSubmitPart,
+  onUpdatePartStatus,
   onSuccessRefresh,
 }: WorkboardModalsProps) {
   return (
@@ -109,6 +111,7 @@ export default function WorkboardModals({
           workOrder={targetPartsWo}
           onClose={onClosePartsModal}
           onSubmit={onSubmitPart}
+          onUpdatePartStatus={onUpdatePartStatus}
         />
       )}
     </>

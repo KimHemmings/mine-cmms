@@ -2,21 +2,31 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CreatePartPayload, MachineWorkOrder } from '@/types';
+import { CreatePartPayload, MachineWorkOrder, PartStatus } from '@/types';
+import { formatDateTime } from '@/utils/helpers';
 
 interface PartsTrackingModalProps {
   isOpen: boolean;
   workOrder: MachineWorkOrder | null;
   onClose: () => void;
   onSubmit: (payload: CreatePartPayload) => Promise<void>;
+  onUpdatePartStatus?: (partId: string, status: PartStatus) => Promise<void>;
 }
+
+const PART_STATUS_LABEL: Record<PartStatus, string> = {
+  ORDERED: 'Ordered',
+  IN_TRANSIT: 'On the way',
+  RECEIVED: 'Received',
+};
 
 export default function PartsTrackingModal({
   isOpen,
   workOrder,
   onClose,
   onSubmit,
+  onUpdatePartStatus,
 }: PartsTrackingModalProps) {
+  const [updatingPartId, setUpdatingPartId] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [partNumber, setPartNumber] = useState('');
   const [poOrReservation, setPoOrReservation] = useState('');
@@ -54,14 +64,64 @@ export default function PartsTrackingModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-xl p-5 text-slate-100 shadow-2xl">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-xl p-5 text-slate-100 shadow-2xl">
         <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
           <div>
-            <h3 className="text-base font-bold">Parts & Special Run Requisition</h3>
-            <p className="text-xs text-slate-400">Order: {workOrder.wo_number || 'Unplanned Breakdown'}</p>
+            <h3 className="text-lg font-bold">Parts for this job</h3>
+            <p className="text-sm text-slate-400">
+              {workOrder.task_description} · {workOrder.wo_number ? `WO #${workOrder.wo_number}` : 'No SAP WO yet'}
+            </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white">✕</button>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-white" aria-label="Close">✕</button>
         </div>
+
+        {!!workOrder.parts?.length && (
+          <div className="mb-4 space-y-2">
+            <h4 className="text-xs uppercase font-semibold text-slate-400">Already logged</h4>
+            {workOrder.parts.map((part) => {
+              const received = part.status === 'RECEIVED';
+              return (
+                <div
+                  key={part.id}
+                  className="flex items-center justify-between gap-3 p-3 rounded-lg bg-slate-800 border border-slate-700"
+                >
+                  <div className="min-w-0">
+                    <p className={`text-sm font-semibold ${received ? 'text-slate-400 line-through' : 'text-slate-100'}`}>
+                      {part.description}
+                      {part.part_number && <span className="ml-2 font-mono text-xs text-slate-400">#{part.part_number}</span>}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {PART_STATUS_LABEL[part.status]}
+                      {part.eta && !received && ` · ETA ${formatDateTime(part.eta)}`}
+                    </p>
+                  </div>
+                  {received ? (
+                    <span className="text-sm font-bold text-emerald-400 shrink-0">✓ Received</span>
+                  ) : (
+                    onUpdatePartStatus && (
+                      <button
+                        type="button"
+                        disabled={updatingPartId === part.id}
+                        onClick={async () => {
+                          setUpdatingPartId(part.id);
+                          try {
+                            await onUpdatePartStatus(part.id, 'RECEIVED');
+                          } finally {
+                            setUpdatingPartId(null);
+                          }
+                        }}
+                        className="min-h-11 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-bold text-white shrink-0 disabled:opacity-50"
+                      >
+                        {updatingPartId === part.id ? 'Saving...' : 'Mark received'}
+                      </button>
+                    )
+                  )}
+                </div>
+              );
+            })}
+            <h4 className="pt-2 text-xs uppercase font-semibold text-slate-400">Log another part</h4>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3 text-sm">
           <div>

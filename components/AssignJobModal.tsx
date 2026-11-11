@@ -9,6 +9,8 @@ import EtuPresetsPicker from './assign-job/EtuPresetsPicker';
 import ComponentSystemsPicker from './assign-job/ComponentSystemsPicker';
 import StatusImpactSelector from './assign-job/StatusImpactSelector';
 import SapDetailsInputs from './assign-job/SapDetailsInputs';
+import CrewPicker from './crew/CrewPicker';
+import { useCrewData, crewNames } from './crew/CrewDataContext';
 
 interface AssignJobModalProps {
   isOpen: boolean;
@@ -35,7 +37,7 @@ export default function AssignJobModal({
   const [workOrderNum, setWorkOrderNum] = useState('');
   const [sapNotification, setSapNotification] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
-  const [assignedFitter, setAssignedFitter] = useState('');
+  const [crewIds, setCrewIds] = useState<string[]>([]);
   const [downSinceInput, setDownSinceInput] = useState('');
   const [expectedUpInput, setExpectedUpInput] = useState('');
   const [activePreset, setActivePreset] = useState<string | null>('4h');
@@ -43,6 +45,7 @@ export default function AssignJobModal({
   const [formError, setFormError] = useState<string | null>(null);
 
   const supabase = createClient();
+  const { crew, onShiftIds, openJobCounts } = useCrewData();
 
   useEffect(() => {
     if (isOpen) {
@@ -54,6 +57,7 @@ export default function AssignJobModal({
       setActivePreset('4h');
       setSelectedAssetId(preselectedAssetId || '');
       setSelectedSystems([]);
+      setCrewIds([]);
       setFormError(null);
     }
   }, [isOpen, preselectedAssetId]);
@@ -90,29 +94,43 @@ export default function AssignJobModal({
     const cleanWo = workOrderNum.trim();
     const cleanNotif = sapNotification.trim();
 
-    const { error: woError } = await supabase.from('machine_work_orders').insert([{
-      asset_id: selectedAssetId,
-      shift_id: activeShiftId,
-      wo_number: cleanWo || null,
-      notification_num: cleanNotif || null,
-      order_type: orderType,
-      task_description: taskDesc.trim(),
-      component_systems: selectedSystems,
-      fitter_assigned: assignedFitter.trim() || 'Unassigned',
-      stage: 'IN_PROGRESS',
-      status: 'OPEN',
-      is_main_event: true,
-      takes_machine_down: isMachineDown,
-    }]);
+    const assignedNames = crewNames(crew, crewIds);
+
+    const { data: newWo, error: woError } = await supabase
+      .from('machine_work_orders')
+      .insert({
+        asset_id: selectedAssetId,
+        shift_id: activeShiftId,
+        wo_number: cleanWo || null,
+        notification_num: cleanNotif || null,
+        order_type: orderType,
+        task_description: taskDesc.trim(),
+        component_systems: selectedSystems,
+        fitter_assigned: assignedNames || 'Unassigned',
+        stage: 'IN_PROGRESS',
+        status: 'OPEN',
+        is_main_event: true,
+        takes_machine_down: isMachineDown,
+      })
+      .select('id')
+      .single<{ id: string }>();
 
     if (woError) {
       setIsSubmitting(false);
       return setFormError('Failed to create work order: ' + woError.message);
     }
 
+    if (crewIds.length > 0) {
+      const { error: crewError } = await supabase.rpc('set_work_order_crew', {
+        p_work_order_id: newWo.id,
+        p_crew_ids: crewIds,
+      });
+      if (crewError) alert('Machine assigned, but assigning crew failed: ' + crewError.message);
+    }
+
     await supabase.from('asset_history_notes').insert([{
       asset_id: selectedAssetId,
-      fitter_name: assignedFitter.trim() || 'Shift Fitter',
+      fitter_name: assignedNames || 'Shift Fitter',
       note: 'Main Event [' + orderType + ' | ' + (cleanWo || 'No WO') + ']: ' + taskDesc.trim(),
       stage: 'IN_PROGRESS',
     }]);
@@ -198,13 +216,15 @@ export default function AssignJobModal({
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">FITTER(S) ALLOCATED</label>
-            <input
-              type="text"
-              placeholder="e.g. D. Kelly / Apprentice"
-              value={assignedFitter}
-              onChange={(e) => setAssignedFitter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
+            <p className="block text-xs font-bold text-slate-700 mb-1">
+              WHO&apos;S ON THIS JOB <span className="font-normal text-slate-400">(tap to select, optional)</span>
+            </p>
+            <CrewPicker
+              crew={crew}
+              onShiftIds={onShiftIds}
+              openJobCounts={openJobCounts}
+              selectedIds={crewIds}
+              onChange={setCrewIds}
             />
           </div>
 

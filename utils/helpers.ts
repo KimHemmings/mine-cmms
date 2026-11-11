@@ -39,7 +39,7 @@ export function getEtuStatus(expectedUp: string | null) {
   const mins = Math.floor((absDiffMs % 3600000) / 60000);
 
   if (diffMs < 0) {
-    return { overdue: true, label: `OVERDUE ${hours}h ${mins}m` };
+    return { overdue: true, label: `Overdue by ${hours}h ${mins}m` };
   }
   return { overdue: false, label: `${hours}h ${mins}m to go` };
 }

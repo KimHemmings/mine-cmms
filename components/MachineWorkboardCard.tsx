@@ -1,8 +1,7 @@
-// components/MachineWorkboardCard.tsx - Exactly 139 lines
 'use client';
 
 import React, { useState } from 'react';
-import { Asset, MachineWorkOrder, HistoryNote, DefectItem } from '@/types';
+import { Asset, MachineWorkOrder, HistoryNote } from '@/types';
 import { generateSapNotesText, copyToClipboard } from '@/utils/sapFormatter';
 import { createClient } from '@/utils/supabase/client';
 import { getEventConfig, getPriorityConfig } from './workboard/workboardTheme';
@@ -14,20 +13,17 @@ import MachineReleaseFooter from './workboard/MachineReleaseFooter';
 interface MachineWorkboardCardProps {
   asset: Asset;
   workOrders: MachineWorkOrder[];
-  defects?: DefectItem[];
   notes: HistoryNote[];
   activeFitter: string;
-  userRole?: 'management' | 'fitter';
   isDetailsExpanded: boolean;
   toggleExpandDetails: () => void;
-  updateWorkOrderStage: (woId: string, assetId: string, newStage: string) => void;
-  signOffWorkOrder?: (woId: string, assetId: string) => void;
+  updateWorkOrderStage: (woId: string, assetId: string, newStage: string, jobLabel?: string) => void;
   openAddWorkOrder: (asset: Asset) => void;
   openHistory: (asset: Asset) => void;
-  openDefects?: (asset: Asset) => void;
   openQuickEdit: (asset: Asset) => void;
   openPartsModal?: (wo: MachineWorkOrder) => void;
-  releaseMachineToProduction: (assetId: string) => void;
+  openCrewPicker?: (wo: MachineWorkOrder) => void;
+  releaseMachineToProduction: (assetId: string, fleetId?: string) => void;
   onRefresh: () => void;
 }
 
@@ -36,16 +32,14 @@ export default function MachineWorkboardCard({
   workOrders,
   notes,
   activeFitter,
-  userRole,
   isDetailsExpanded,
   toggleExpandDetails,
   updateWorkOrderStage,
-  signOffWorkOrder,
   openAddWorkOrder,
   openHistory,
-  openDefects,
   openQuickEdit,
   openPartsModal,
+  openCrewPicker,
   releaseMachineToProduction,
   onRefresh,
 }: MachineWorkboardCardProps) {
@@ -56,7 +50,7 @@ export default function MachineWorkboardCard({
 
   const supabase = createClient();
   const isPlanned = asset.status === 'DOWN_PLANNED';
-  const isReleased = asset.status === 'OPERATIONAL';
+  const isReleased = asset.status === 'OPERATIONAL' && !asset.in_shift;
   const machineOrders = workOrders.filter((w) => w.asset_id === asset.id);
   const mainEvent = machineOrders.find((w) => w.is_main_event) || machineOrders[0];
   const additionalOrders = machineOrders.filter((w) => w.id !== mainEvent?.id);
@@ -69,7 +63,8 @@ export default function MachineWorkboardCard({
   const toggleItemNotes = (id: string) => {
     setExpandedNotesItemIds((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -85,7 +80,8 @@ export default function MachineWorkboardCard({
   const handleSaveInlineWo = async (id: string) => {
     const woNum = (inlineWoInputs[id] || '').trim();
     if (!woNum) return;
-    await supabase.from('machine_work_orders').update({ wo_number: woNum }).eq('id', id);
+    const { error } = await supabase.from('machine_work_orders').update({ wo_number: woNum }).eq('id', id);
+    if (error) return alert(`Error saving SAP WO number: ${error.message}`);
     await supabase.from('asset_history_notes').insert([{
       asset_id: asset.id,
       fitter_name: activeFitter || 'Planner',
@@ -101,7 +97,7 @@ export default function MachineWorkboardCard({
     <div
       className={`rounded-xl border transition-all duration-200 overflow-hidden ${
         isReleased
-          ? 'bg-slate-100/90 border-slate-300 border-l-8 border-l-slate-400 opacity-75 shadow-xs'
+          ? 'bg-slate-100/90 border-slate-300 border-l-8 border-l-slate-400 shadow-xs'
           : `bg-white border-slate-300 border-l-8 ${eventConfig.border} shadow-sm`
       }`}
     >
@@ -110,6 +106,7 @@ export default function MachineWorkboardCard({
         eventConfig={eventConfig}
         priorityBadge={isReleased ? 'bg-slate-200 text-slate-700 border-slate-300' : priorityConfig.badge}
         priorityLabel={isReleased ? 'RELEASED' : priorityConfig.label}
+        isReleased={isReleased}
         openQuickEdit={openQuickEdit}
         openHistory={openHistory}
       />
@@ -127,15 +124,16 @@ export default function MachineWorkboardCard({
           onCopySapNotes={() => handleCopySapNotes(mainEvent.id, 'Main Event')}
           updateWorkOrderStage={updateWorkOrderStage}
           openPartsModal={openPartsModal}
+          openCrewPicker={openCrewPicker}
           onRefresh={onRefresh}
         />
       ) : (
-        <div className="p-4 bg-amber-50/60 border-b border-amber-200 flex items-center justify-between">
-          <span className="text-xs font-semibold text-amber-800">No active work order logged for this machine.</span>
+        <div className="p-4 bg-amber-50/60 border-b border-amber-200 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-sm font-semibold text-amber-800">No job logged for this machine yet.</span>
           <button
             type="button"
             onClick={() => openAddWorkOrder(asset)}
-            className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-bold transition"
+            className="min-h-11 px-4 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-bold transition"
           >
             + Add Work Order
           </button>
@@ -160,16 +158,18 @@ export default function MachineWorkboardCard({
           setInlineWoInputs={setInlineWoInputs}
           onSaveInlineWo={handleSaveInlineWo}
           updateWorkOrderStage={updateWorkOrderStage}
-          openAddWorkOrder={openAddWorkOrder}
+          openPartsModal={openPartsModal}
+          openCrewPicker={openCrewPicker}
           onRefresh={onRefresh}
         />
       )}
 
       <MachineReleaseFooter
-        assetId={asset.id}
         openOrdersCount={openOrders.length}
         canRelease={canRelease}
-        onRelease={releaseMachineToProduction}
+        isReleased={isReleased}
+        onRelease={() => releaseMachineToProduction(asset.id, asset.fleet_id)}
+        onAddWorkOrder={mainEvent && !isReleased ? () => openAddWorkOrder(asset) : undefined}
       />
     </div>
   );

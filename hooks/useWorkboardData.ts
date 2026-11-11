@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { Asset, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord } from '@/types';
+import { Asset, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord, CrewMember } from '@/types';
 import { useRealtimeWorkboard } from '@/hooks/useRealtimeWorkboard';
 import { useWorkboardActions } from '@/hooks/useWorkboardActions';
 
@@ -17,6 +17,8 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   const [defects, setDefects] = useState<DefectItem[]>([]);
   const [notes, setNotes] = useState<HistoryNote[]>([]);
   const [activeShift, setActiveShift] = useState<ShiftRecord | null>(null);
+  const [crew, setCrew] = useState<CrewMember[]>([]);
+  const [onShiftCrewIds, setOnShiftCrewIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   const supabase = useMemo(() => createClient(), []);
@@ -57,7 +59,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   const fetchWorkOrders = useCallback(async () => {
     const { data } = await supabase
       .from('machine_work_orders')
-      .select('*, parts:work_order_parts(*)')
+      .select('*, parts:work_order_parts(*), crew:work_order_assignments(crew_member_id)')
       .order('created_at', { ascending: true });
 
     if (data) setWorkOrders(data as MachineWorkOrder[]);
@@ -81,10 +83,23 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     if (data) setNotes(data as HistoryNote[]);
   }, [supabase]);
 
+  const fetchCrew = useCallback(async () => {
+    const [{ data: members }, { data: onShift }] = await Promise.all([
+      supabase.from('crew_members').select('*').order('display_name', { ascending: true }),
+      supabase
+        .from('shift_crew')
+        .select('crew_member_id, shift_records!inner(status)')
+        .eq('shift_records.status', 'ACTIVE'),
+    ]);
+
+    if (members) setCrew(members as CrewMember[]);
+    if (onShift) setOnShiftCrewIds(new Set(onShift.map((r) => r.crew_member_id as string)));
+  }, [supabase]);
+
   const fetchAllData = useCallback(async () => {
-    await Promise.all([fetchShift(), fetchFleet(), fetchWorkOrders(), fetchDefects(), fetchNotes()]);
+    await Promise.all([fetchShift(), fetchFleet(), fetchWorkOrders(), fetchDefects(), fetchNotes(), fetchCrew()]);
     setLoading(false);
-  }, [fetchShift, fetchFleet, fetchWorkOrders, fetchDefects, fetchNotes]);
+  }, [fetchShift, fetchFleet, fetchWorkOrders, fetchDefects, fetchNotes, fetchCrew]);
 
   useEffect(() => {
     fetchAllData();
@@ -127,6 +142,8 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     defects,
     notes,
     activeShift,
+    crew,
+    onShiftCrewIds,
     loading,
     syncStatus,
     shiftJobs,
