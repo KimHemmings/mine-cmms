@@ -3,11 +3,9 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Wrench,
   Plus,
   BookOpen,
   FileSpreadsheet,
-  RefreshCw,
   UserCheck,
   LogOut,
   ClipboardList,
@@ -20,7 +18,7 @@ import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 import { HelpButton } from '@/components/help/HelpButton';
 import { ChangePasswordButton } from '@/components/auth/ChangePasswordButton';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
-import { ShiftRecord, UserRole } from '@/types';
+import { CrewMember, ShiftRecord, UserRole } from '@/types';
 import type { SyncStatus } from '@/hooks/useRealtimeWorkboard';
 
 type Tab = 'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status';
@@ -43,6 +41,24 @@ interface TopHeaderProps {
   userRole: UserRole;
   onOpenAssign: () => void;
   onRefresh: () => void;
+  crewAttention?: number;
+  fleetChoices?: string[];
+  myCrewMemberId?: string | null;
+  crew?: CrewMember[];
+  onLinkCrew?: (crewMemberId: string) => void;
+}
+
+function screenTitle(role: UserRole, tab: Tab) {
+  if (role === 'training') return 'Training';
+  if (role === 'production') return tab === 'handover' ? 'Shift handover' : 'Production whiteboard';
+  if (tab === 'dossier') return 'Fleet directory';
+  if (tab === 'handover') return 'Shift handover';
+  if (tab === 'crew') return 'Crew';
+  return 'Workshop whiteboard';
+}
+
+function workshopPeople(crew: CrewMember[]) {
+  return crew.filter((member) => member.active && member.department !== 'Production' && member.trade !== 'Operator');
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -56,11 +72,18 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   userRole,
   onOpenAssign,
   onRefresh,
+  crewAttention = 0,
+  fleetChoices = [],
+  myCrewMemberId = null,
+  crew = [],
+  onLinkCrew,
 }) => {
   const router = useRouter();
   const supabase = createClient();
   const { confirm } = useFeedback();
   const [signingOut, setSigningOut] = useState(false);
+  const people = workshopPeople(crew);
+  const linked = myCrewMemberId;
 
   async function handleSignOut() {
     const ok = await confirm({
@@ -78,62 +101,75 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   }
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
-    { id: 'board', label: `Workboard (${shiftJobsCount})`, icon: <ClipboardList className="w-4 h-4" />, show: userRole === 'fitter' || userRole === 'management' },
-    { id: 'dossier', label: 'Fleet Directory', icon: <BookOpen className="w-4 h-4" />, show: userRole === 'fitter' || userRole === 'management' },
-    { id: 'handover', label: 'Shift Handover', icon: <FileSpreadsheet className="w-4 h-4" />, show: userRole === 'management' || userRole === 'production' },
-    { id: 'crew', label: 'Crew', icon: <Users className="w-4 h-4" />, show: userRole === 'management' },
+    { id: 'status', label: 'Whiteboard', icon: <Factory className="w-4 h-4" />, show: userRole === 'production' },
+    { id: 'board', label: `Whiteboard (${shiftJobsCount})`, icon: <ClipboardList className="w-4 h-4" />, show: userRole === 'fitter' || userRole === 'management' },
+    { id: 'dossier', label: 'Fleet directory', icon: <BookOpen className="w-4 h-4" />, show: userRole === 'fitter' || userRole === 'management' },
+    { id: 'handover', label: 'Shift handover', icon: <FileSpreadsheet className="w-4 h-4" />, show: userRole === 'management' || userRole === 'production' },
+    { id: 'crew', label: crewAttention > 0 ? `Crew (${crewAttention})` : 'Crew', icon: <Users className="w-4 h-4" />, show: userRole === 'management' },
     { id: 'training', label: 'Training', icon: <GraduationCap className="w-4 h-4" />, show: userRole === 'training' },
-    { id: 'status', label: 'Prestart', icon: <Factory className="w-4 h-4" />, show: userRole === 'production' },
   ];
 
+  const showAssign = currentTab === 'board' && (userRole === 'fitter' || userRole === 'management');
+
   return (
-    <header className="space-y-4 pb-5 border-b border-slate-300 print:hidden">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-amber-500 text-white rounded-xl shadow-sm">
-            <Wrench className="w-6 h-6" />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900">MINE SHIFT WORKBOARD</h1>
-            <span className="text-sm font-black px-2 py-0.5 rounded bg-slate-300 text-slate-800 border border-slate-400 uppercase">
-              {activeShift?.shift_name || 'Active Shift'}
-              {activeShift?.crew && ` · ${activeShift.crew}`}
+    <header className="space-y-3 pb-4 border-b border-slate-300 print:hidden">
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-black tracking-tight text-slate-900">{screenTitle(userRole, currentTab)}</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+            <span className="font-black uppercase tracking-wide text-slate-800">{ROLE_LABEL[userRole]}</span>
+            <strong className="text-slate-900" title="Your name is stamped on every note and sign-off you make">
+              {activeFitter || '...'}
+            </strong>
+            {userRole === 'fitter' && onLinkCrew && linked && (
+              <label className="inline-flex items-center gap-1 text-xs font-bold text-slate-600">
+                <UserCheck className="w-3.5 h-3.5" />
+                <span className="sr-only">Change the person My jobs follows</span>
+                <select
+                  value={linked}
+                  onChange={(event) => {
+                    if (event.target.value) onLinkCrew(event.target.value);
+                  }}
+                  className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold text-slate-900"
+                  aria-label="Change the person My jobs follows"
+                >
+                  {people.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.display_name}{member.panel ? ` · ${member.panel}` : ''}
+                    </option>
+                  ))}
+                  {!people.some((member) => member.id === linked) && (
+                    <option value={linked}>{activeFitter}</option>
+                  )}
+                </select>
+              </label>
+            )}
+            <span className="text-slate-500">
+              {activeShift?.shift_name || 'No active shift'}
+              {activeShift?.crew ? ` · ${activeShift.crew}` : ''}
             </span>
-            <SyncStatusBadge status={syncStatus} pending={pendingStages} />
+            <SyncStatusBadge status={syncStatus} pending={pendingStages} onRefresh={onRefresh} />
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="min-h-11 flex items-center gap-2 bg-white border border-slate-300 px-3 rounded-xl text-sm">
-            <UserCheck className="w-5 h-5 text-emerald-600 shrink-0" />
-            <span className="text-slate-500">Signed in as</span>
-            <strong
-              className="text-slate-900"
-              title="Your name is stamped on every note and sign-off you make"
-            >
-              {activeFitter || '...'}
-            </strong>
-            <span className="text-xs font-black uppercase tracking-wide text-slate-600 bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5">
-              {ROLE_LABEL[userRole]}
-            </span>
-          </div>
           <ChangePasswordButton />
-          <HelpButton userRole={userRole} shiftId={activeShift?.id ?? null} />
+          <HelpButton userRole={userRole} shiftId={activeShift?.id ?? null} fleetChoices={fleetChoices} />
           <button
             type="button"
             onClick={handleSignOut}
             disabled={signingOut}
             className="min-h-11 flex items-center gap-1.5 px-4 bg-white hover:bg-rose-50 border border-slate-300 hover:border-rose-300 text-slate-700 hover:text-rose-600 text-sm font-bold rounded-xl transition disabled:opacity-50"
           >
-            <LogOut className="w-4 h-4" /> {signingOut ? 'Signing out...' : 'Sign Out'}
+            <LogOut className="w-4 h-4" /> {signingOut ? 'Signing out...' : 'Sign out'}
           </button>
         </div>
       </div>
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <nav className="bg-white border border-slate-300 p-1 rounded-xl flex flex-wrap items-center gap-1 shadow-2xs" aria-label="Sections">
+        <nav className="bg-white border border-slate-300 p-1 rounded-xl flex flex-wrap items-center gap-1" aria-label="Sections">
           {tabs
-            .filter((t) => t.show)
+            .filter((tab) => tab.show)
             .map((tab) => (
               <button
                 key={tab.id}
@@ -141,7 +177,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 onClick={() => onTabChange(tab.id)}
                 aria-current={currentTab === tab.id ? 'page' : undefined}
                 className={`min-h-11 px-4 text-sm font-bold rounded-lg transition flex items-center gap-2 ${
-                  currentTab === tab.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  currentTab === tab.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
               >
                 {tab.icon} {tab.label}
@@ -149,25 +185,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        {showAssign && (
           <button
             type="button"
-            onClick={onRefresh}
-            className="min-h-12 flex items-center gap-1.5 px-4 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-sm font-bold rounded-xl transition shadow-2xs"
-            title="Reload the latest data"
+            onClick={onOpenAssign}
+            className="min-h-11 flex items-center gap-2 px-4 bg-white hover:bg-slate-50 border-2 border-slate-300 text-slate-800 text-sm font-bold rounded-xl"
           >
-            <RefreshCw className="w-4 h-4" /> Refresh
+            <Plus className="w-4 h-4" /> Assign machine
           </button>
-          {(userRole === 'fitter' || userRole === 'management') && (
-            <button
-              type="button"
-              onClick={onOpenAssign}
-              className="min-h-12 flex items-center gap-2 px-5 bg-emerald-600 hover:bg-emerald-500 text-white text-base font-black rounded-xl shadow-md transition"
-            >
-              <Plus className="w-5 h-5" /> Assign Machine
-            </button>
-          )}
-        </div>
+        )}
       </div>
     </header>
   );

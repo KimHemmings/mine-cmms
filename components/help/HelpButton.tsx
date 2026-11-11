@@ -98,9 +98,11 @@ function formatWhen(iso: string) {
 export function HelpButton({
   userRole,
   shiftId,
+  fleetChoices = [],
 }: {
   userRole: 'management' | 'fitter' | 'training' | 'production';
   shiftId: string | null;
+  fleetChoices?: string[];
 }) {
   const supabase = useMemo(() => createClient(), []);
   const { showToast } = useFeedback();
@@ -114,6 +116,21 @@ export function HelpButton({
 
   const selected = KINDS.find((item) => item.id === kind) ?? KINDS[0];
   const isManagement = userRole === 'management';
+  const isTraining = userRole === 'training';
+  const isProduction = userRole === 'production';
+  const supervisorLabel = isTraining ? 'Tell the supervisor' : isProduction ? 'Tell the workshop' : 'Message the supervisor';
+  const intro = isManagement
+    ? 'Messages waiting on you.'
+    : isTraining
+      ? 'Tell the supervisor about a ticket or a person.'
+      : isProduction
+        ? 'Tell the workshop, and pick the machine from this shift.'
+        : 'Message the supervisor, or report a problem with this screen.';
+  const messagePlaceholder = isTraining
+    ? 'e.g. Crane ticket now applies to D Crew.'
+    : isProduction
+      ? 'e.g. No one passed out on this unit for the prestart.'
+      : selected.placeholder;
   const waiting = messages.filter((item) => item.status === 'OPEN');
   const handled = messages.filter((item) => item.status === 'DONE');
   const openCount = waiting.length;
@@ -157,8 +174,9 @@ export function HelpButton({
     const text = message.trim();
     if (!text || sending) return;
     setSending(true);
+    const sentKind = isManagement ? 'SYSTEM' : kind;
     const { error } = await supabase.from('help_messages').insert({
-      kind,
+      kind: sentKind,
       message: text,
       fleet_id: fleetId.trim() || null,
       shift_id: shiftId,
@@ -171,7 +189,7 @@ export function HelpButton({
     setMessage('');
     setFleetId('');
     showToast({
-      message: kind === 'SUPERVISOR' ? 'Sent to the supervisor' : 'Problem reported',
+      message: sentKind === 'SUPERVISOR' ? 'Sent to the supervisor' : 'Problem reported',
       tone: 'success',
     });
     void loadMessages();
@@ -217,44 +235,86 @@ export function HelpButton({
                 <h2 id="help-title" className="text-xl font-black text-slate-900 flex items-center gap-2">
                   <LifeBuoy className="w-5 h-5 text-amber-600" /> Help
                 </h2>
-                <p className="text-sm text-slate-600 mt-0.5">
-                  Message the supervisor, or report a problem with this screen.
-                </p>
+                <p className="text-sm text-slate-600 mt-0.5">{intro}</p>
               </div>
               <button type="button" onClick={() => setOpen(false)} className="p-2 text-slate-400 hover:text-slate-700 rounded-lg" aria-label="Close">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {KINDS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setKind(item.id)}
-                  aria-pressed={kind === item.id}
-                  className={`min-h-12 px-3 py-2 rounded-xl border-2 text-left text-sm font-bold transition ${
-                    kind === item.id
-                      ? 'border-slate-900 bg-slate-900 text-white'
-                      : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-            <p className="text-sm text-slate-600">{selected.hint}</p>
+            {isManagement && (
+              <div className="space-y-3">
+                <MessageList
+                  title="Waiting on you"
+                  items={waiting}
+                  empty="No messages waiting."
+                  showDone
+                  handlingId={handlingId}
+                  onDone={markDone}
+                />
+                {handled.length > 0 && (
+                  <MessageList title="Handled" items={handled.slice(0, 8)} empty="" showDone={false} handlingId={null} onDone={markDone} />
+                )}
+              </div>
+            )}
 
-            <label className="block space-y-1">
-              <span className="text-sm font-bold text-slate-700">Machine (optional)</span>
-              <input
-                value={fleetId}
-                onChange={(event) => setFleetId(event.target.value)}
-                maxLength={40}
-                placeholder="e.g. WT-020"
-                className="w-full min-h-12 px-3 rounded-xl border border-slate-300 text-base"
-              />
-            </label>
+            {!isManagement && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {KINDS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setKind(item.id)}
+                    aria-pressed={kind === item.id}
+                    className={`min-h-12 px-3 py-2 rounded-xl border-2 text-left text-sm font-bold transition ${
+                      kind === item.id
+                        ? 'border-slate-900 bg-slate-900 text-white'
+                        : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
+                    }`}
+                  >
+                    {item.id === 'SUPERVISOR' ? supervisorLabel : item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="text-sm text-slate-600">
+              {isManagement
+                ? 'Report a problem with this screen. It stays with the messages above.'
+                : isTraining && kind === 'SUPERVISOR'
+                  ? 'A supervisor sees this on Help. It does not send a text.'
+                  : isProduction && kind === 'SUPERVISOR'
+                    ? 'The workshop supervisor sees this on Help.'
+                    : selected.hint}
+            </p>
+
+            {!isTraining && (
+              isProduction ? (
+                <label className="block space-y-1">
+                  <span className="text-sm font-bold text-slate-700">Machine</span>
+                  <select
+                    value={fleetId}
+                    onChange={(event) => setFleetId(event.target.value)}
+                    className="w-full min-h-12 px-3 rounded-xl border border-slate-300 text-base font-bold bg-white"
+                  >
+                    <option value="">No particular machine</option>
+                    {fleetChoices.map((id) => (
+                      <option key={id} value={id}>{id}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label className="block space-y-1">
+                  <span className="text-sm font-bold text-slate-700">Machine (optional)</span>
+                  <input
+                    value={fleetId}
+                    onChange={(event) => setFleetId(event.target.value)}
+                    maxLength={40}
+                    placeholder="e.g. WT-020"
+                    className="w-full min-h-12 px-3 rounded-xl border border-slate-300 text-base"
+                  />
+                </label>
+              )
+            )}
 
             <label className="block space-y-1">
               <span className="text-sm font-bold text-slate-700">Message</span>
@@ -263,7 +323,7 @@ export function HelpButton({
                 onChange={(event) => setMessage(event.target.value)}
                 maxLength={1000}
                 rows={4}
-                placeholder={selected.placeholder}
+                placeholder={messagePlaceholder}
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 text-base"
               />
             </label>
@@ -273,25 +333,24 @@ export function HelpButton({
                 type="button"
                 onClick={handleSend}
                 disabled={sending || !message.trim()}
-                className="min-h-12 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-base font-black text-white shadow-sm disabled:opacity-50"
+                className="min-h-12 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-base font-bold text-white disabled:opacity-50"
               >
-                {sending ? 'Sending...' : kind === 'SUPERVISOR' ? 'Send to supervisor' : 'Report problem'}
+                {sending ? 'Sending...' : isManagement || kind === 'SYSTEM' ? 'Report problem' : supervisorLabel}
               </button>
             </div>
 
-            <div className="border-t border-slate-200 pt-4 space-y-3">
-              <MessageList
-                title={isManagement ? 'Waiting on you' : 'Your messages'}
-                items={isManagement ? waiting : messages}
-                empty={isManagement ? 'No messages waiting.' : 'Nothing sent yet.'}
-                showDone={isManagement}
-                handlingId={handlingId}
-                onDone={markDone}
-              />
-              {isManagement && handled.length > 0 && (
-                <MessageList title="Handled" items={handled.slice(0, 8)} empty="" showDone={false} handlingId={null} onDone={markDone} />
-              )}
-            </div>
+            {!isManagement && (
+              <div className="border-t border-slate-200 pt-4 space-y-3">
+                <MessageList
+                  title="Your messages"
+                  items={messages}
+                  empty="Nothing sent yet."
+                  showDone={false}
+                  handlingId={handlingId}
+                  onDone={markDone}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}

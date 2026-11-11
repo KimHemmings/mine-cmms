@@ -24,6 +24,8 @@ const CELL: Record<string, string> = {
 
 const selectClass =
   'min-h-12 rounded-lg border-2 border-slate-300 bg-white px-3 text-base font-bold text-slate-900 cursor-pointer';
+const filterClass =
+  'min-h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold text-slate-900 cursor-pointer';
 
 type Focus = 'all' | 'attention' | 'missing';
 
@@ -51,7 +53,7 @@ export default function TrainingMatrix({
   const [department, setDepartment] = useState('all');
   const [crewFilter, setCrewFilter] = useState('all');
   const [trade, setTrade] = useState('all');
-  const [focus, setFocus] = useState<Focus>('all');
+  const [focus, setFocus] = useState<Focus>('attention');
   const [itemName, setItemName] = useState('');
   const [itemKind, setItemKind] = useState<TrainingItemKind>('AUTHORISATION');
   const [appliesTo, setAppliesTo] = useState('none');
@@ -200,7 +202,7 @@ export default function TrainingMatrix({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search name or employee ID..."
-              className="w-full min-h-12 pl-11 pr-11 rounded-lg border-2 border-slate-300 bg-slate-50 text-base text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white"
+              className="w-full min-h-10 pl-11 pr-11 rounded-lg border border-slate-300 bg-slate-50 text-sm text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white"
             />
             {search && (
               <button
@@ -215,7 +217,7 @@ export default function TrainingMatrix({
           </label>
           <label className="flex items-center gap-2 text-sm font-bold text-slate-600">
             Department
-            <select value={department} onChange={(event) => setDepartment(event.target.value)} className={selectClass}>
+            <select value={department} onChange={(event) => setDepartment(event.target.value)} className={filterClass}>
               <option value="all">All departments</option>
               {CREW_DEPARTMENTS.map((item) => (
                 <option key={item} value={item}>{item}</option>
@@ -224,7 +226,7 @@ export default function TrainingMatrix({
           </label>
           <label className="flex items-center gap-2 text-sm font-bold text-slate-600">
             Crew
-            <select value={crewFilter} onChange={(event) => setCrewFilter(event.target.value)} className={selectClass}>
+            <select value={crewFilter} onChange={(event) => setCrewFilter(event.target.value)} className={filterClass}>
               <option value="all">All crews</option>
               {CREW_PANELS.map((item) => (
                 <option key={item} value={item}>{item}</option>
@@ -234,7 +236,7 @@ export default function TrainingMatrix({
           </label>
           <label className="flex items-center gap-2 text-sm font-bold text-slate-600">
             Trade
-            <select value={trade} onChange={(event) => setTrade(event.target.value)} className={selectClass}>
+            <select value={trade} onChange={(event) => setTrade(event.target.value)} className={filterClass}>
               <option value="all">All trades</option>
               {CREW_TRADES.map((item) => (
                 <option key={item} value={item}>{item}</option>
@@ -322,20 +324,20 @@ function MatrixTable({
       {people.length === 0 ? (
         <p className="text-sm text-slate-500">No one matches these filters.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="text-sm text-left min-w-full">
+        <div className="max-h-[70vh] overflow-auto">
+          <table className="text-sm text-left min-w-full border-separate border-spacing-0">
             <thead>
               <tr>
-                <th className="py-2 pr-3 font-black text-slate-700 sticky left-0 bg-white">Person</th>
+                <th className="py-2 pr-3 font-black text-slate-700 sticky top-0 left-0 z-20 bg-white">Person</th>
                 {columns.map((item) => (
-                  <th key={item.id} className="py-2 px-2 font-bold text-slate-700 whitespace-nowrap">{item.name}</th>
+                  <th key={item.id} className="py-2 px-2 font-bold text-slate-700 whitespace-nowrap sticky top-0 z-10 bg-white">{item.name}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {people.map((person) => (
                 <tr key={person.id} className="border-t border-slate-200">
-                  <th className="py-2 pr-3 text-left font-bold text-slate-900 sticky left-0 bg-white whitespace-nowrap">
+                  <th className="py-2 pr-3 text-left font-bold text-slate-900 sticky left-0 z-10 bg-white whitespace-nowrap">
                     {person.display_name}
                     <span className="block text-xs font-medium text-slate-500">
                       {person.department || 'Workshop'} · {person.trade}{person.panel ? ` · ${person.panel}` : ' · No crew'}

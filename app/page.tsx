@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { useWorkboardData } from '@/hooks/useWorkboardData';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { Asset, MachineWorkOrder, UserRole } from '@/types';
+import { Asset, MachineWorkOrder, UserRole, personLight } from '@/types';
+import { PRODUCTION_PLANT } from '@/types/production';
 import TrainingMatrix from '@/components/training/TrainingMatrix';
 import PassoutRegister from '@/components/training/PassoutRegister';
 import SupervisionRegister from '@/components/training/SupervisionRegister';
 import RecordTrail from '@/components/training/RecordTrail';
+import TrainingDesk from '@/components/training/TrainingDesk';
 import ProductionStatus from '@/components/production/ProductionStatus';
 import ProductionHandover from '@/components/production/ProductionHandover';
 
@@ -38,6 +40,8 @@ function Workboard() {
   const { profile, displayName: activeFitter, loading: profileLoading, reload } = useCurrentUser();
   const userRole: UserRole = profile?.role ?? 'fitter';
   const [currentTab, setCurrentTab] = useState<'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status'>('board');
+  const [trainingSection, setTrainingSection] = useState<'tickets' | 'passouts' | 'supervision'>('tickets');
+  const [trainingMode, setTrainingMode] = useState<'person' | 'lists'>('person');
   const [routedRole, setRoutedRole] = useState<UserRole | null>(null);
   if (profile && routedRole !== profile.role) {
     setRoutedRole(profile.role);
@@ -72,6 +76,7 @@ function Workboard() {
     supervision,
     loading,
     pendingStages,
+    queuedWorkOrderIds,
     syncStatus,
     shiftJobs,
     completedJobs,
@@ -106,6 +111,24 @@ function Workboard() {
       canCheckAuthorisations: userRole !== 'fitter',
     };
   }, [crew, onShiftCrewIds, workOrders, allAssets, authorisations, holdings, supervision, userRole]);
+
+  const crewAttention = useMemo(() => {
+    let count = 0;
+    for (const person of crew) {
+      if (!onShiftCrewIds.has(person.id)) continue;
+      const dates = holdings.filter((row) => row.crew_member_id === person.id).map((row) => row.expires_on);
+      if (personLight(dates)) count += 1;
+    }
+    return count;
+  }, [crew, onShiftCrewIds, holdings]);
+
+  const fleetChoices = useMemo(
+    () => allAssets
+      .filter((asset) => (PRODUCTION_PLANT as readonly string[]).includes(asset.asset_type))
+      .map((asset) => asset.fleet_id)
+      .sort(),
+    [allAssets],
+  );
 
   const refreshAfterSave = () => {
     fetchAllData();
@@ -166,6 +189,11 @@ function Workboard() {
           setShowAssignModal(true);
         }}
         onRefresh={fetchAllData}
+        crewAttention={crewAttention}
+        fleetChoices={fleetChoices}
+        myCrewMemberId={profile?.crew_member_id ?? null}
+        crew={crew}
+        onLinkCrew={userRole === 'fitter' ? linkMyCrew : undefined}
       />
 
       <section className="mt-6">
@@ -185,6 +213,7 @@ function Workboard() {
             myCrewMemberId={profile?.crew_member_id ?? null}
             crew={crew}
             onLinkCrew={userRole === 'fitter' ? linkMyCrew : undefined}
+            queuedWorkOrderIds={queuedWorkOrderIds}
             openPartsModal={(wo: MachineWorkOrder) => setTargetPartsWoId(wo.id)}
             openCrewPicker={(wo: MachineWorkOrder) => setTargetCrewWoId(wo.id)}
             releaseMachineToProduction={releaseMachineToProduction}
@@ -221,29 +250,96 @@ function Workboard() {
 
         {currentTab === 'training' && userRole === 'training' && (
           <div className="space-y-4">
-            <TrainingMatrix
-              crew={crew}
-              authorisations={authorisations}
-              holdings={holdings}
-              onChanged={fetchAllData}
-            />
-            <PassoutRegister
-              machines={allAssets}
-              crew={crew}
-              passouts={passouts}
-              onChanged={fetchAllData}
-            />
-            <SupervisionRegister
-              crew={crew}
-              supervision={supervision}
-              authorisations={authorisations}
-              holdings={holdings}
-              onChanged={fetchAllData}
-            />
-            <RecordTrail
-              title="Record trail"
-              tables={['operator_passouts', 'crew_supervision', 'crew_authorisations', 'oce_reports']}
-            />
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Training navigation">
+              {([
+                ['person', 'One person'],
+                ['lists', 'Whole crew'],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setTrainingMode(id)}
+                  aria-pressed={trainingMode === id}
+                  className={`min-h-10 px-4 rounded-full border text-sm font-bold ${
+                    trainingMode === id ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {trainingMode === 'person' ? (
+              <>
+                <TrainingDesk
+                  crew={crew}
+                  authorisations={authorisations}
+                  holdings={holdings}
+                  passouts={passouts}
+                  machines={allAssets}
+                  supervision={supervision}
+                  onChanged={fetchAllData}
+                />
+                <RecordTrail title="Recent changes" tables={['crew_authorisations', 'operator_passouts', 'crew_supervision']} />
+              </>
+            ) : (
+            <div className="space-y-4">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Training sections">
+              {([
+                ['tickets', 'Tickets'],
+                ['passouts', 'Pass-outs'],
+                ['supervision', 'In training'],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setTrainingSection(id)}
+                  aria-pressed={trainingSection === id}
+                  className={`min-h-10 px-4 rounded-full border text-sm font-bold ${
+                    trainingSection === id
+                      ? 'bg-slate-900 border-slate-900 text-white'
+                      : 'bg-white border-slate-300 text-slate-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {trainingSection === 'tickets' && (
+              <>
+                <TrainingMatrix
+                  crew={crew}
+                  authorisations={authorisations}
+                  holdings={holdings}
+                  onChanged={fetchAllData}
+                />
+                <RecordTrail title="Ticket changes" tables={['crew_authorisations']} />
+              </>
+            )}
+            {trainingSection === 'passouts' && (
+              <>
+                <PassoutRegister
+                  machines={allAssets}
+                  crew={crew}
+                  passouts={passouts}
+                  onChanged={fetchAllData}
+                />
+                <RecordTrail title="Pass-out changes" tables={['operator_passouts']} />
+              </>
+            )}
+            {trainingSection === 'supervision' && (
+              <>
+                <SupervisionRegister
+                  crew={crew}
+                  supervision={supervision}
+                  authorisations={authorisations}
+                  holdings={holdings}
+                  onChanged={fetchAllData}
+                />
+                <RecordTrail title="Supervision changes" tables={['crew_supervision']} />
+              </>
+            )}
+            </div>
+            )}
           </div>
         )}
 

@@ -26,6 +26,7 @@ interface MachineWorkboardCardProps {
   openCrewPicker?: (wo: MachineWorkOrder) => void;
   releaseMachineToProduction: (assetId: string, fleetId?: string) => void;
   onRefresh: () => void;
+  heldOnTablet?: boolean;
 }
 
 export default function MachineWorkboardCard({
@@ -44,6 +45,7 @@ export default function MachineWorkboardCard({
   openCrewPicker,
   releaseMachineToProduction,
   onRefresh,
+  heldOnTablet = false,
 }: MachineWorkboardCardProps) {
   const [expandedNotesItemIds, setExpandedNotesItemIds] = useState<Set<string>>(new Set());
   const [inlineWoInputs, setInlineWoInputs] = useState<Record<string, string>>({});
@@ -103,6 +105,11 @@ export default function MachineWorkboardCard({
           : `bg-white border-slate-300 border-l-8 ${eventConfig.border} shadow-sm`
       }`}
     >
+      {heldOnTablet && (
+        <p className="px-4 py-2 text-sm font-bold bg-amber-50 text-amber-900 border-b border-amber-200">
+          On this tablet. It will send when the signal is back.
+        </p>
+      )}
       <MachineCardHeader
         asset={asset}
         eventConfig={eventConfig}

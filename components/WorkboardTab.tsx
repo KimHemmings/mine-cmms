@@ -24,6 +24,7 @@ interface WorkboardTabProps {
   openCrewPicker?: (wo: MachineWorkOrder) => void;
   releaseMachineToProduction: (assetId: string, fleetId?: string) => void;
   onRefresh: () => void;
+  queuedWorkOrderIds?: string[];
 }
 
 type QuickFilter = 'all' | 'mine' | 'overdue' | 'parts' | 'ready';
@@ -55,6 +56,7 @@ export default function WorkboardTab({
   openCrewPicker,
   releaseMachineToProduction,
   onRefresh,
+  queuedWorkOrderIds = [],
 }: WorkboardTabProps) {
   const [expandedAssetIds, setExpandedAssetIds] = useState<Set<string>>(() => {
     if (typeof window !== 'undefined') {
@@ -205,27 +207,30 @@ export default function WorkboardTab({
       openCrewPicker={openCrewPicker}
       releaseMachineToProduction={releaseMachineToProduction}
       onRefresh={onRefresh}
+      heldOnTablet={workOrders.some((order) => order.asset_id === asset.id && queuedWorkOrderIds.includes(order.id))}
     />
   );
 
   return (
     <div className="space-y-6 font-sans">
-      {onLinkCrew && (
+      {onLinkCrew && !myCrewMemberId && (
         <label className="bg-white border border-slate-300 rounded-xl p-3 shadow-2xs flex flex-col sm:flex-row sm:items-center gap-2 text-sm font-bold text-slate-700">
           I am
           <select
-            value={myCrewMemberId ?? ''}
+            value=""
             onChange={(event) => {
               if (event.target.value) void onLinkCrew(event.target.value);
             }}
             className="min-h-12 rounded-lg border-2 border-slate-300 bg-white px-3 text-base font-bold text-slate-900 cursor-pointer"
           >
             <option value="">Choose your name so My jobs is your work</option>
-            {crew.filter((member) => member.active).map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.display_name}{member.panel ? ` · ${member.panel}` : ''}
-              </option>
-            ))}
+            {crew
+              .filter((member) => member.active && member.department !== 'Production' && member.trade !== 'Operator')
+              .map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.display_name}{member.panel ? ` · ${member.panel}` : ''}
+                </option>
+              ))}
           </select>
         </label>
       )}

@@ -230,26 +230,30 @@ export default function ProductionHandover({
         </div>
 
         {view === 'current' && !opened && (
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => void save()} disabled={saving} className={`${actionClass} bg-slate-900 text-white`}>{saving ? 'Saving...' : 'Save handover'}</button>
+          <div className="sticky top-0 z-10 bg-white py-3 space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => void save()} disabled={saving} className={`${actionClass} bg-emerald-600 text-white`}>{saving ? 'Saving...' : 'Save handover'}</button>
+              <button
+                type="button"
+                disabled={exporting}
+                onClick={() => void download(liveDocument, {
+                  shiftName: activeShift?.shift_name || 'Shift',
+                  shiftDate: activeShift?.shift_date ?? null,
+                  crew: activeShift?.crew ?? null,
+                  supervisor: activeShift?.supervisor ?? null,
+                })}
+                className={`${actionClass} bg-amber-600 text-white`}
+              >
+                <Presentation className="w-4 h-4" /> {exporting ? 'Building...' : 'Crew briefing'}
+              </button>
+            </div>
             <button type="button" onClick={() => window.print()} className={`${actionClass} bg-white border border-slate-300`}><Printer className="w-4 h-4" /> Save as PDF</button>
-            <button
-              type="button"
-              disabled={exporting}
-              onClick={() => void download(liveDocument, {
-                shiftName: activeShift?.shift_name || 'Shift',
-                shiftDate: activeShift?.shift_date ?? null,
-                crew: activeShift?.crew ?? null,
-                supervisor: activeShift?.supervisor ?? null,
-              })}
-              className={`${actionClass} bg-amber-600 text-white`}
-            >
-              <Presentation className="w-4 h-4" /> {exporting ? 'Building...' : 'Crew briefing'}
-            </button>
           </div>
         )}
 
         {view === 'history' && !opened && (
+          <div className="space-y-4">
+          <RecordTrail title="Earlier saves of this handover" tables={['production_handovers']} />
           <ul className="divide-y divide-slate-200 border border-slate-200 rounded-xl">
             {saved.length === 0 && <li className="px-3 py-4 text-sm text-slate-500">No production handovers saved yet.</li>}
             {saved.map((row) => (
@@ -261,6 +265,7 @@ export default function ProductionHandover({
               </li>
             ))}
           </ul>
+          </div>
         )}
 
         {opened && (
@@ -288,7 +293,6 @@ export default function ProductionHandover({
 
         {view === 'current' && !opened && (
           <>
-            <RecordTrail title="Earlier saves of this handover" tables={['production_handovers']} />
             <SafetyBriefingFields incidents={incidents} focus={safetyFocus} onIncidents={setIncidents} onFocus={setSafetyFocus} />
             <OceReportPanel shiftId={activeShift?.id ?? null} onChange={setOceReport} />
             <label className="block space-y-1">
@@ -315,6 +319,7 @@ export default function ProductionHandover({
               )}
             </section>
             <ProductionHandoverView {...printModel} />
+            <p className="text-sm text-slate-600 border-t border-slate-200 pt-4">Workshop finishes the shift.</p>
           </>
         )}
       </div>

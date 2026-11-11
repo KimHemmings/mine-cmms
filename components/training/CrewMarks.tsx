@@ -31,14 +31,26 @@ export function CrewMarks({
   );
 }
 
+function PersonName({ name, onOpen }: { name: string; onOpen?: (name: string) => void }) {
+  if (!onOpen) return <strong>{name}</strong>;
+  if (name === 'No assessor named') return <>{name}</>;
+  return (
+    <button type="button" onClick={() => onOpen(name)} className="font-bold underline decoration-slate-300 hover:decoration-slate-900">
+      {name}
+    </button>
+  );
+}
+
 export function SiteCoverList({
   inTraining,
   ertOnSite,
   assessorsOnSite,
+  onOpen,
 }: {
   inTraining: { name: string; level: string; skill: string; assessor: string; assessorOnSite: boolean }[];
   ertOnSite: string[];
   assessorsOnSite: string[];
+  onOpen?: (name: string) => void;
 }) {
   return (
     <section className="bg-white border border-slate-300 rounded-2xl p-4 shadow-sm space-y-3">
@@ -51,15 +63,25 @@ export function SiteCoverList({
           <ul className="mt-1 text-sm space-y-1">
             {inTraining.map((row) => (
               <li key={row.name}>
-                <strong>{row.name}</strong> · {row.level} · {row.skill} · Assessor {row.assessor}
+                <PersonName name={row.name} onOpen={onOpen} /> · {row.level} · {row.skill} · Assessor <PersonName name={row.assessor} onOpen={onOpen} />
                 {!row.assessorOnSite && <span className="ml-1 font-bold text-rose-700">Assessor is not on this shift.</span>}
               </li>
             ))}
           </ul>
         )}
       </div>
-      <p className="text-sm"><strong>Trainer assessors. </strong>{assessorsOnSite.join(', ') || 'None on this crew.'}</p>
-      <p className="text-sm"><strong>ERT. </strong>{ertOnSite.join(', ') || 'No ERT member is on this crew.'}</p>
+      <p className="text-sm">
+        <strong>Trainer assessors. </strong>
+        {assessorsOnSite.length === 0 ? 'None on this crew.' : assessorsOnSite.map((name, index) => (
+          <span key={name}>{index > 0 ? ', ' : ''}<PersonName name={name} onOpen={onOpen} /></span>
+        ))}
+      </p>
+      <p className="text-sm">
+        <strong>ERT. </strong>
+        {ertOnSite.length === 0 ? 'No ERT member is on this crew.' : ertOnSite.map((name, index) => (
+          <span key={name}>{index > 0 ? ', ' : ''}<PersonName name={name} onOpen={onOpen} /></span>
+        ))}
+      </p>
     </section>
   );
 }

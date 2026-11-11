@@ -44,6 +44,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   const [supervision, setSupervision] = useState<CrewSupervision[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingStages, setPendingStages] = useState(0);
+  const [queuedWorkOrderIds, setQueuedWorkOrderIds] = useState<string[]>([]);
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -192,7 +193,9 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
 
   useEffect(() => {
     const refreshCount = () => {
-      setPendingStages(readStageQueue().length);
+      const pending = readStageQueue();
+      setPendingStages(pending.length);
+      setQueuedWorkOrderIds(pending.map((item) => item.woId));
       setWorkOrders((current) => withQueuedStages(current));
     };
     refreshCount();
@@ -289,6 +292,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     supervision,
     loading,
     pendingStages,
+    queuedWorkOrderIds,
     syncStatus,
     shiftJobs,
     completedJobs,

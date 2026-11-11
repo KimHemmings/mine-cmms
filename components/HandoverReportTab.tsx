@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  FileSpreadsheet, Printer, Presentation, Copy, Check, RotateCw,
+  FileSpreadsheet, Printer, Presentation, RotateCw,
 } from 'lucide-react';
 import { 
   Asset, 
@@ -22,9 +22,8 @@ import SafetyBriefingFields from './handover/SafetyBriefingFields';
 import OceReportPanel from './handover/OceReportPanel';
 import RecordTrail from './training/RecordTrail';
 import { formatDateTime } from '@/utils/helpers';
-import { copyToClipboard } from '@/utils/sapFormatter';
 import { generateHandoverPptx } from '@/utils/handoverPptx';
-import { buildHandoverSnapshot, normalizeHandoverDocument, partStatusLabel } from '@/utils/handoverDocument';
+import { buildHandoverSnapshot, normalizeHandoverDocument } from '@/utils/handoverDocument';
 import { HandoverMachineNote, HandoverSlide, OceReport, SafetyIncident, SavedHandover } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
@@ -94,7 +93,6 @@ export default function HandoverReportTab({
   onRefresh,
   onRolloverShift,
 }: HandoverReportTabProps) {
-  const [copiedAll, setCopiedAll] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showRollover, setShowRollover] = useState(false);
@@ -330,30 +328,6 @@ export default function HandoverReportTab({
     if (ok) setShowRollover(false);
   };
 
-  async function handleCopyAllForSap() {
-    let report = `================================================================================\n`;
-    report += `SHIFT: ${activeShift?.shift_name || 'Active Shift'} | DATE: ${new Date().toLocaleDateString()}\n`;
-    report += `SUPERVISOR: ${supervisorName}\n================================================================================\n\n`;
-    report += `PREPARED FOR: ${incomingPanel || 'Crew not chosen'}\n\n`;
-    report += `1. UNITS HANDED OVER TO INCOMING SHIFT:\n`;
-    handedOver.forEach((a) => {
-      const orders = workOrders.filter((w) => w.asset_id === a.id);
-      report += `\n[${a.priority || 'ROUTINE'}] ${a.fleet_id} (${a.make_model}) - Bay: ${a.location || 'Workshop'}\n`;
-      orders.forEach((w) => {
-        report += `  • [${w.status}] WO: ${w.wo_number || 'N/A'}: ${w.task_description} [${w.stage}] (Fitter: ${w.fitter_assigned})\n`;
-      });
-    });
-    report += `\n2. PARTS AND HOTSHOTS:\n`;
-    if (liveSnapshot.parts.length === 0) report += `None logged.\n`;
-    liveSnapshot.parts.forEach((part) => {
-      report += `  • ${part.hotshot ? 'HOTSHOT ' : ''}${part.fleetId}: ${part.description} [${partStatusLabel(part.status)}]${part.eta ? ` ETA ${formatDateTime(part.eta)}` : ''}\n`;
-    });
-    if (await copyToClipboard(report)) {
-      setCopiedAll(true);
-      setTimeout(() => setCopiedAll(false), 2500);
-    }
-  }
-
   const printModel = opened
     ? {
         shiftName: opened.shift_name,
@@ -408,14 +382,11 @@ export default function HandoverReportTab({
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        {view === 'current' && !opened && (
-          <>
-            <button type="button" onClick={saveHandover} disabled={saving} className={`${actionClass} bg-slate-900 text-white`}>
+      {view === 'current' && !opened && (
+        <div className="sticky top-0 z-10 bg-white py-3 space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={saveHandover} disabled={saving} className={`${actionClass} bg-emerald-600 text-white`}>
               {saving ? 'Saving...' : 'Save handover'}
-            </button>
-            <button type="button" onClick={() => window.print()} className={`${actionClass} bg-white border border-slate-300 text-slate-800`}>
-              <Printer className="w-4 h-4" /> Save as PDF
             </button>
             <button
               type="button"
@@ -431,17 +402,16 @@ export default function HandoverReportTab({
             >
               <Presentation className="w-4 h-4" /> {isExporting ? 'Building...' : incomingPanel ? `Briefing for ${incomingPanel}` : 'Crew briefing'}
             </button>
-            <button type="button" onClick={handleCopyAllForSap} className={`${actionClass} bg-white border border-slate-300 text-slate-700`}>
-              {copiedAll ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              {copiedAll ? 'Copied' : 'Copy for SAP'}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => window.print()} className={`${actionClass} bg-white border border-slate-300 text-slate-700`}>
+              <Printer className="w-4 h-4" /> Save as PDF
             </button>
-            <button type="button" onClick={() => setShowRollover(true)} className={`${actionClass} bg-emerald-600 text-white`}>
-              <RotateCw className="w-4 h-4" /> Finish shift
-            </button>
-          </>
-        )}
-        {opened && (
-          <>
+          </div>
+        </div>
+      )}
+      {opened && (
+      <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" onClick={() => setOpened(null)} className={`${actionClass} bg-white border border-slate-300 text-slate-800`}>
               Back to history
             </button>
@@ -462,12 +432,12 @@ export default function HandoverReportTab({
             >
               <Presentation className="w-4 h-4" /> {isExporting ? 'Building...' : 'Crew briefing'}
             </button>
-          </>
-        )}
       </div>
+      )}
 
       {view === 'history' && !opened && (
-        <div className="mt-4">
+        <div className="mt-4 space-y-4">
+          <RecordTrail title="Earlier saves of this handover" tables={['shift_handovers']} />
           <HandoverHistory handovers={handovers} activeShiftId={activeShift?.id} onOpen={(handover) => { setOpened(handover); }} />
         </div>
       )}
@@ -480,13 +450,6 @@ export default function HandoverReportTab({
 
       {view === 'current' && !opened && (
         <>
-          <div className="mt-6 space-y-4">
-            <SafetyBriefingFields incidents={incidents} focus={safetyFocus} onIncidents={setIncidents} onFocus={setSafetyFocus} />
-            <OceReportPanel shiftId={activeShift?.id ?? null} onChange={setOceReport} />
-          </div>
-
-          <RecordTrail title="Earlier saves of this handover" tables={['shift_handovers']} />
-
           <IncomingCrewPicker
             panel={incomingPanel}
             crew={crew}
@@ -495,6 +458,11 @@ export default function HandoverReportTab({
               setIncomingPanel(panel);
             }}
           />
+
+          <div className="mt-6 space-y-4">
+            <SafetyBriefingFields incidents={incidents} focus={safetyFocus} onIncidents={setIncidents} onFocus={setSafetyFocus} />
+            <OceReportPanel shiftId={activeShift?.id ?? null} onChange={setOceReport} />
+          </div>
 
           <div className="mt-6">
             <HandoverDocumentView
@@ -537,6 +505,13 @@ export default function HandoverReportTab({
               />
             </div>
           </details>
+
+          <div className="mt-8 pt-6 border-t border-slate-200">
+            <p className="text-sm text-slate-600 mb-3">Finish shift hands the board to the crew coming on.</p>
+            <button type="button" onClick={() => setShowRollover(true)} className={`${actionClass} border-2 border-slate-900 bg-white text-slate-900`}>
+              <RotateCw className="w-4 h-4" /> Finish shift
+            </button>
+          </div>
         </>
       )}
 
