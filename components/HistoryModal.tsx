@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { X, Copy, Check } from 'lucide-react';
-import { Asset, HistoryNote } from '@/types';
+import { Asset, HistoryNote, UserRole } from '@/types';
 import { generateSapNotesText, copyToClipboard } from '@/utils/sapFormatter';
 import { createClient } from '@/utils/supabase/client';
 import HistoryFilterBar, { TimeScope } from './history/HistoryFilterBar';
@@ -14,7 +14,7 @@ interface ShiftHistoryModalProps {
   asset: Asset | null;
   notes?: HistoryNote[];
   activeFitter: string;
-  userRole?: 'management' | 'fitter';
+  userRole?: UserRole;
   onClose: () => void;
   onRefresh?: () => void;
 }

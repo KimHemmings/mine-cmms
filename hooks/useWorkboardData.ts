@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { Asset, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord, CrewMember, HandoverLogEntry } from '@/types';
+import { Asset, Authorisation, CrewAuthorisation, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord, CrewMember, HandoverLogEntry } from '@/types';
 import { useRealtimeWorkboard } from '@/hooks/useRealtimeWorkboard';
 import { useWorkboardActions } from '@/hooks/useWorkboardActions';
 
@@ -20,6 +20,8 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [onShiftCrewIds, setOnShiftCrewIds] = useState<Set<string>>(new Set());
   const [handoverLog, setHandoverLog] = useState<HandoverLogEntry[]>([]);
+  const [authorisations, setAuthorisations] = useState<Authorisation[]>([]);
+  const [holdings, setHoldings] = useState<CrewAuthorisation[]>([]);
   const [loading, setLoading] = useState(true);
 
   const supabase = useMemo(() => createClient(), []);
@@ -121,6 +123,16 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     );
   }, [supabase]);
 
+  const fetchAuthorisations = useCallback(async () => {
+    const [{ data: auths, error: authError }, { data: held, error: heldError }] = await Promise.all([
+      supabase.from('authorisations').select('id, name, sort_order, kind').order('sort_order'),
+      supabase.from('crew_authorisations').select('id, crew_member_id, authorisation_id, expires_on'),
+    ]);
+    if (authError || heldError) return;
+    setAuthorisations((auths ?? []) as Authorisation[]);
+    setHoldings((held ?? []) as CrewAuthorisation[]);
+  }, [supabase]);
+
   const fetchAllData = useCallback(async () => {
     await Promise.all([
       fetchShift(),
@@ -130,9 +142,10 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
       fetchNotes(),
       fetchCrew(),
       fetchHandoverLog(),
+      fetchAuthorisations(),
     ]);
     setLoading(false);
-  }, [fetchShift, fetchFleet, fetchWorkOrders, fetchDefects, fetchNotes, fetchCrew, fetchHandoverLog]);
+  }, [fetchShift, fetchFleet, fetchWorkOrders, fetchDefects, fetchNotes, fetchCrew, fetchHandoverLog, fetchAuthorisations]);
 
   useEffect(() => {
     fetchAllData();
@@ -185,6 +198,8 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     crew,
     onShiftCrewIds,
     handoverLog,
+    authorisations,
+    holdings,
     loading,
     syncStatus,
     shiftJobs,

@@ -99,7 +99,7 @@ export function HelpButton({
   userRole,
   shiftId,
 }: {
-  userRole: 'management' | 'fitter';
+  userRole: 'management' | 'fitter' | 'training' | 'production';
   shiftId: string | null;
 }) {
   const supabase = useMemo(() => createClient(), []);

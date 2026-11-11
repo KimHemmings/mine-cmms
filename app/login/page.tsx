@@ -13,6 +13,21 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+
+  async function handleReset() {
+    setErrorMsg(null);
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setLoading(false);
+    if (error) {
+      setErrorMsg(error.message);
+      return;
+    }
+    setResetSent(true);
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -54,7 +69,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <form onSubmit={handleLogin} className="p-6 space-y-4">
+        <form onSubmit={resetSent ? (event) => event.preventDefault() : handleLogin} className="p-6 space-y-4">
           {errorMsg && (
             <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs font-semibold">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
@@ -79,10 +94,16 @@ export default function LoginPage() {
             </div>
           </div>
 
+          {!resetSent && (
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Password
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Password
+              </label>
+              <button type="button" onClick={() => void handleReset()} disabled={loading || !email.trim()} className="text-xs font-bold text-amber-700 hover:text-amber-800 disabled:opacity-50">
+                Forgot password?
+              </button>
+            </div>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -95,7 +116,15 @@ export default function LoginPage() {
               />
             </div>
           </div>
+          )}
 
+          {resetSent && (
+            <p className="text-sm text-slate-700">
+              If that email has an account, a reset link is on its way. Open it on this computer, then choose a new password.
+            </p>
+          )}
+
+          {!resetSent && (
           <button
             type="submit"
             disabled={loading}
@@ -110,6 +139,7 @@ export default function LoginPage() {
               <span>Sign In to Workboard</span>
             )}
           </button>
+          )}
         </form>
       </div>
     </div>

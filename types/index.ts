@@ -3,10 +3,11 @@ export * from './constants';
 export * from './parts';
 export * from './crew';
 export * from './handover';
+export * from './training';
 
 import type { WorkOrderPart } from './parts';
 
-export type UserRole = 'management' | 'fitter';
+export type UserRole = 'management' | 'fitter' | 'training' | 'production';
 
 export interface UserProfile {
   id: string;
@@ -14,6 +15,7 @@ export interface UserProfile {
   employee_id: string | null;
   role: UserRole;
   active: boolean;
+  crew_member_id: string | null;
 }
 
 export interface ShiftRecord {

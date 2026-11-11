@@ -219,6 +219,7 @@ export function useWorkboardActions({
     const row = {
       display_name: input.display_name.trim(),
       employee_id: input.employee_id?.trim() || null,
+      department: input.department || 'Workshop',
       trade: input.trade,
       panel: input.panel || null,
     };

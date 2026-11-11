@@ -1,9 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
 import { useWorkboardData } from '@/hooks/useWorkboardData';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { Asset, MachineWorkOrder } from '@/types';
+import { Asset, MachineWorkOrder, UserRole } from '@/types';
+import TrainingMatrix from '@/components/training/TrainingMatrix';
+import ProductionStatus from '@/components/production/ProductionStatus';
 
 import WorkboardTab from '@/components/WorkboardTab';
 import FleetDossierTab from '@/components/FleetDossierTab';
@@ -25,13 +29,22 @@ export default function Home() {
 }
 
 function Workboard() {
-  const { profile, displayName: activeFitter, loading: profileLoading } = useCurrentUser();
-  const userRole = profile?.role ?? 'fitter';
-  const [currentTab, setCurrentTab] = useState<'board' | 'handover' | 'dossier' | 'crew'>('board');
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+  const { profile, displayName: activeFitter, loading: profileLoading, reload } = useCurrentUser();
+  const userRole: UserRole = profile?.role ?? 'fitter';
+  const [currentTab, setCurrentTab] = useState<'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status'>('board');
+  const [routedRole, setRoutedRole] = useState<UserRole | null>(null);
+  if (profile && routedRole !== profile.role) {
+    setRoutedRole(profile.role);
+    if (profile.role === 'training') setCurrentTab('training');
+    if (profile.role === 'production') setCurrentTab('status');
+  }
   const { showToast } = useFeedback();
 
   // Modal Visibility State
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignAssetId, setAssignAssetId] = useState<string | null>(null);
   const [targetAddWoAsset, setTargetAddWoAsset] = useState<Asset | null>(null);
   const [activeHistoryAsset, setActiveHistoryAsset] = useState<Asset | null>(null);
   const [activeDefectAsset, setActiveDefectAsset] = useState<Asset | null>(null);
@@ -48,6 +61,8 @@ function Workboard() {
     activeShift,
     crew,
     onShiftCrewIds,
+    authorisations,
+    holdings,
     loading,
     syncStatus,
     shiftJobs,
@@ -72,23 +87,54 @@ function Workboard() {
   const crewData = useMemo<CrewData>(() => {
     const openJobsByCrew = getOpenJobsByCrew(workOrders, allAssets);
     const openJobCounts = new Map([...openJobsByCrew].map(([id, jobs]) => [id, jobs.length]));
-    return { crew, onShiftIds: onShiftCrewIds, openJobsByCrew, openJobCounts };
-  }, [crew, onShiftCrewIds, workOrders, allAssets]);
+    return {
+      crew,
+      onShiftIds: onShiftCrewIds,
+      openJobsByCrew,
+      openJobCounts,
+      authorisations,
+      holdings,
+      canCheckAuthorisations: userRole !== 'fitter',
+    };
+  }, [crew, onShiftCrewIds, workOrders, allAssets, authorisations, holdings, userRole]);
 
   const refreshAfterSave = () => {
     fetchAllData();
     showToast({ message: 'Saved' });
   };
 
+  async function signOutInactive() {
+    await supabase.auth.signOut();
+    router.replace('/login');
+    router.refresh();
+  }
+
+  async function linkMyCrew(crewMemberId: string) {
+    const { error } = await supabase.rpc('link_my_crew', { p_crew_member_id: crewMemberId });
+    if (error) {
+      showToast({ message: error.message, tone: 'error' });
+      return;
+    }
+    reload();
+    showToast({ message: 'My jobs now follow that person' });
+  }
+
   if (!profileLoading && !profile) {
     return (
       <main className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-        <div className="max-w-md bg-white rounded-2xl p-6 text-center space-y-2">
+        <div className="max-w-md bg-white rounded-2xl p-6 text-center space-y-3">
           <h1 className="text-lg font-black text-slate-900 uppercase">Account Not Activated</h1>
           <p className="text-sm text-slate-600">
             Your sign-in worked, but your account has no active workboard profile. Ask a
             maintenance superintendent to activate your access.
           </p>
+          <button
+            type="button"
+            onClick={() => void signOutInactive()}
+            className="min-h-11 px-4 rounded-xl border border-slate-300 text-sm font-bold text-slate-700"
+          >
+            Sign out
+          </button>
         </div>
       </main>
     );
@@ -105,12 +151,15 @@ function Workboard() {
         onTabChange={setCurrentTab}
         shiftJobsCount={shiftJobs.length}
         userRole={userRole}
-        onOpenAssign={() => setShowAssignModal(true)}
+        onOpenAssign={() => {
+          setAssignAssetId(null);
+          setShowAssignModal(true);
+        }}
         onRefresh={fetchAllData}
       />
 
       <section className="mt-6">
-        {currentTab === 'board' && (
+        {currentTab === 'board' && (userRole === 'fitter' || userRole === 'management') && (
           <WorkboardTab
             shiftJobs={shiftJobs}
             workOrders={workOrders}
@@ -121,7 +170,11 @@ function Workboard() {
             updateWorkOrderStage={updateWorkOrderStage}
             openAddWorkOrder={setTargetAddWoAsset}
             openHistory={setActiveHistoryAsset}
+            openDefects={setActiveDefectAsset}
             openQuickEdit={setQuickEditAsset}
+            myCrewMemberId={profile?.crew_member_id ?? null}
+            crew={crew}
+            onLinkCrew={userRole === 'fitter' ? linkMyCrew : undefined}
             openPartsModal={(wo: MachineWorkOrder) => setTargetPartsWoId(wo.id)}
             openCrewPicker={(wo: MachineWorkOrder) => setTargetCrewWoId(wo.id)}
             releaseMachineToProduction={releaseMachineToProduction}
@@ -133,7 +186,10 @@ function Workboard() {
           <FleetDossierTab
             assets={allAssets}
             openHistory={setActiveHistoryAsset}
-            onAssignJob={() => setShowAssignModal(true)}
+            onAssignJob={(asset) => {
+              setAssignAssetId(asset.id);
+              setShowAssignModal(true);
+            }}
           />
         )}
 
@@ -150,6 +206,27 @@ function Workboard() {
             loading={loading}
             onRefresh={fetchAllData}
             onRolloverShift={handleRolloverShift}
+          />
+        )}
+
+        {currentTab === 'training' && userRole === 'training' && (
+          <TrainingMatrix
+            crew={crew}
+            authorisations={authorisations}
+            holdings={holdings}
+            onChanged={fetchAllData}
+          />
+        )}
+
+        {currentTab === 'status' && userRole === 'production' && (
+          <ProductionStatus
+            activeShiftName={activeShift ? `${activeShift.shift_name}${activeShift.crew ? ` · ${activeShift.crew}` : ''}` : 'No active shift'}
+            machines={allAssets}
+            workOrders={workOrders}
+            crew={crew}
+            onShiftIds={onShiftCrewIds}
+            authorisations={authorisations}
+            holdings={holdings}
           />
         )}
 
@@ -176,7 +253,12 @@ function Workboard() {
 
       <WorkboardModals
         showAssignModal={showAssignModal}
-        onCloseAssignModal={() => setShowAssignModal(false)}
+        onCloseAssignModal={() => {
+          setShowAssignModal(false);
+          setAssignAssetId(null);
+        }}
+        preselectedAssetId={assignAssetId}
+        preselectedAsset={assignAssetId ? allAssets.find((asset) => asset.id === assignAssetId) ?? null : null}
         targetAddWoAsset={targetAddWoAsset}
         onCloseAddWoModal={() => setTargetAddWoAsset(null)}
         activeHistoryAsset={activeHistoryAsset}

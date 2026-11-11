@@ -5,10 +5,13 @@ import { useRouter, usePathname } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { Loader2 } from 'lucide-react';
 
+const OPEN_PATHS = ['/login', '/reset-password'];
+
 export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
   const pathname = usePathname();
   const supabase = createClient();
+  const isOpen = OPEN_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 
   const [checking, setChecking] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
@@ -17,14 +20,14 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
     async function verifyAuth() {
       const { data: { session } } = await supabase.auth.getSession();
 
-      if (!session && pathname !== '/login') {
+      if (!session && !isOpen) {
         setAuthenticated(false);
         router.replace('/login');
       } else if (session && pathname === '/login') {
         setAuthenticated(true);
         router.replace('/');
       } else {
-        setAuthenticated(!!session || pathname === '/login');
+        setAuthenticated(!!session || isOpen);
       }
       setChecking(false);
     }
@@ -32,21 +35,21 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
     verifyAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session && pathname !== '/login') {
+      if (!session && !isOpen) {
         setAuthenticated(false);
         router.replace('/login');
       } else if (session && pathname === '/login') {
         setAuthenticated(true);
         router.replace('/');
       } else {
-        setAuthenticated(!!session || pathname === '/login');
+        setAuthenticated(!!session || isOpen);
       }
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [pathname, router, supabase]);
+  }, [pathname, router, supabase, isOpen]);
 
   if (checking) {
     return (
@@ -59,7 +62,7 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
     );
   }
 
-  if (!authenticated && pathname !== '/login') {
+  if (!authenticated && !isOpen) {
     return null;
   }
 

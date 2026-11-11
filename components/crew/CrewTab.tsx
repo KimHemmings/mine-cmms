@@ -78,7 +78,7 @@ export default function CrewTab({ activeShift, saveCrewMember, setCrewMemberActi
                   <p className="text-base font-bold text-slate-900">
                     {c.display_name}
                     <span className="ml-2 text-sm font-medium text-slate-500">
-                      {c.trade}
+                      {c.department || 'Workshop'} · {c.trade}
                       {c.employee_id && <span className="font-mono"> · #{c.employee_id}</span>}
                       {onShiftIds.has(c.id) && <span className="ml-2 text-emerald-700 font-bold">On shift</span>}
                     </span>
@@ -123,7 +123,7 @@ export default function CrewTab({ activeShift, saveCrewMember, setCrewMemberActi
                 {removedCrew.map((c) => (
                   <li key={c.id} className="p-3 flex items-center justify-between gap-2 bg-slate-50">
                     <span className="text-sm font-semibold text-slate-500">
-                      {c.display_name} · {c.trade}
+                      {c.display_name} · {c.department || 'Workshop'} · {c.trade}
                     </span>
                     <button
                       type="button"

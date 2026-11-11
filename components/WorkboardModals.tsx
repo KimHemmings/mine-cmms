@@ -2,7 +2,7 @@
 'use client';
 
 import React from 'react';
-import { Asset, DefectItem, HistoryNote, CreatePartPayload, MachineWorkOrder, PartStatus } from '@/types';
+import { Asset, DefectItem, HistoryNote, CreatePartPayload, MachineWorkOrder, PartStatus, UserRole } from '@/types';
 import PartsTrackingModal from '@/components/PartsTrackingModal';
 import AssignJobModal from '@/components/AssignJobModal';
 import AddWorkOrderModal from '@/components/AddWorkOrderModal';
@@ -13,6 +13,8 @@ import QuickEditAssetModal from '@/components/QuickEditAssetModal';
 interface WorkboardModalsProps {
   showAssignModal: boolean;
   onCloseAssignModal: () => void;
+  preselectedAssetId?: string | null;
+  preselectedAsset?: Asset | null;
 
   targetPartsWo?: MachineWorkOrder | null;
   onClosePartsModal?: () => void;
@@ -35,7 +37,7 @@ interface WorkboardModalsProps {
   unassignedMachines: Asset[];
   defects: DefectItem[];
   notes: HistoryNote[];
-  userRole: 'management' | 'fitter';
+  userRole: UserRole;
   activeFitter: string;
   onSuccessRefresh: () => void;
 }
@@ -43,6 +45,8 @@ interface WorkboardModalsProps {
 export default function WorkboardModals({
   showAssignModal,
   onCloseAssignModal,
+  preselectedAssetId,
+  preselectedAsset,
   targetAddWoAsset,
   onCloseAddWoModal,
   activeHistoryAsset,
@@ -71,6 +75,8 @@ export default function WorkboardModals({
         onClose={onCloseAssignModal}
         onSuccess={onSuccessRefresh}
         unassignedMachines={unassignedMachines}
+        preselectedAssetId={preselectedAssetId ?? undefined}
+        preselectedAsset={preselectedAsset}
       />
 
       <AddWorkOrderModal

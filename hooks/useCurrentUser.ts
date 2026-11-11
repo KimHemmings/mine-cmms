@@ -8,6 +8,7 @@ export function useCurrentUser() {
   const supabase = useMemo(() => createClient(), []);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -17,7 +18,7 @@ export function useCurrentUser() {
       const { data } = user
         ? await supabase
             .from('profiles')
-            .select('id, display_name, employee_id, role, active')
+            .select('id, display_name, employee_id, role, active, crew_member_id')
             .eq('id', user.id)
             .maybeSingle()
         : { data: null };
@@ -32,7 +33,7 @@ export function useCurrentUser() {
     return () => {
       cancelled = true;
     };
-  }, [supabase]);
+  }, [supabase, reloadKey]);
 
   const displayName = profile
     ? profile.employee_id
@@ -40,5 +41,5 @@ export function useCurrentUser() {
       : profile.display_name
     : '';
 
-  return { profile, displayName, loading };
+  return { profile, displayName, loading, reload: () => setReloadKey((key) => key + 1) };
 }

@@ -2,9 +2,11 @@
 
 import React, { useState } from 'react';
 import { CalendarCheck, ChevronDown, ChevronUp, UserMinus, UserPlus } from 'lucide-react';
-import { CREW_PANELS, CrewMember, ShiftRecord } from '@/types';
+import { CREW_PANELS, CrewMember, ShiftRecord, personLight } from '@/types';
 import type { CrewJob } from '@/utils/crew';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
+import { useCrewData } from './CrewDataContext';
+import { AuthLight, PersonAuthorisationsDialog } from '@/components/training/PersonAuthorisations';
 
 interface OnShiftSectionProps {
   activeShift: ShiftRecord | null;
@@ -24,7 +26,9 @@ export default function OnShiftSection({
   setShiftPanel,
 }: OnShiftSectionProps) {
   const { confirm } = useFeedback();
+  const { authorisations, holdings, canCheckAuthorisations } = useCrewData();
   const [showAddList, setShowAddList] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
   const activeCrew = crew.filter((c) => c.active);
   const onShift = activeCrew.filter((c) => onShiftIds.has(c.id));
   const notOnShift = activeCrew.filter((c) => !onShiftIds.has(c.id));
@@ -126,12 +130,21 @@ export default function OnShiftSection({
             return (
               <li key={c.id} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-base font-bold text-slate-900">
-                    {c.display_name}
-                    <span className="ml-2 text-sm font-medium text-slate-500">
+                  <p className="text-base font-bold text-slate-900 flex flex-wrap items-center gap-2">
+                    {canCheckAuthorisations ? (
+                      <button type="button" onClick={() => setOpenId(c.id)} className="hover:underline">
+                        {c.display_name}
+                      </button>
+                    ) : (
+                      c.display_name
+                    )}
+                    <span className="text-sm font-medium text-slate-500">
                       {c.trade}
                       {c.panel && ` · ${c.panel}`}
                     </span>
+                    {canCheckAuthorisations && (
+                      <AuthLight light={personLight(holdings.filter((row) => row.crew_member_id === c.id).map((row) => row.expires_on))} />
+                    )}
                   </p>
                   {jobs.length === 0 ? (
                     <span className="inline-block mt-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-black uppercase">Free</span>
@@ -185,6 +198,14 @@ export default function OnShiftSection({
             </div>
           )}
         </div>
+      )}
+      {sortedOnShift.find((member) => member.id === openId) && (
+        <PersonAuthorisationsDialog
+          person={sortedOnShift.find((member) => member.id === openId)!}
+          authorisations={authorisations}
+          holdings={holdings}
+          onClose={() => setOpenId(null)}
+        />
       )}
     </section>
   );

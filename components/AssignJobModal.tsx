@@ -19,6 +19,7 @@ interface AssignJobModalProps {
   onSuccess: () => void;
   unassignedMachines: Asset[];
   preselectedAssetId?: string;
+  preselectedAsset?: Asset | null;
 }
 
 export default function AssignJobModal({
@@ -28,6 +29,7 @@ export default function AssignJobModal({
   onSuccess,
   unassignedMachines,
   preselectedAssetId,
+  preselectedAsset,
 }: AssignJobModalProps) {
   const [selectedAssetId, setSelectedAssetId] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('');
@@ -172,7 +174,10 @@ export default function AssignJobModal({
                 required
               >
                 <option value="">-- Choose Unit --</option>
-                {unassignedMachines.map((a) => (
+                {(preselectedAsset && !unassignedMachines.some((machine) => machine.id === preselectedAsset.id)
+                  ? [preselectedAsset, ...unassignedMachines]
+                  : unassignedMachines
+                ).map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.fleet_id} ({a.make_model}) [{a.machine_owner || 'Central'}]
                   </option>

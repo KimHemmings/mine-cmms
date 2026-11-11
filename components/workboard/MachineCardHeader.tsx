@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Pencil, History, MapPin } from 'lucide-react';
+import { Pencil, History, MapPin, AlertTriangle } from 'lucide-react';
 import { Asset } from '@/types';
 import { formatDateTime, getElapsedDown, getEtuStatus } from '@/utils/helpers';
 
@@ -13,6 +13,7 @@ interface MachineCardHeaderProps {
   isReleased: boolean;
   openQuickEdit: (asset: Asset) => void;
   openHistory: (asset: Asset) => void;
+  openDefects: (asset: Asset) => void;
 }
 
 export default function MachineCardHeader({
@@ -22,6 +23,7 @@ export default function MachineCardHeader({
   isReleased,
   openQuickEdit,
   openHistory,
+  openDefects,
 }: MachineCardHeaderProps) {
   const etu = isReleased ? null : getEtuStatus(asset.expected_up);
 
@@ -79,6 +81,13 @@ export default function MachineCardHeader({
             <Pencil className="w-4 h-4 text-amber-600" /> Edit details
           </button>
 
+          <button
+            type="button"
+            onClick={() => openDefects(asset)}
+            className="min-h-11 flex items-center gap-1.5 px-3.5 bg-white hover:bg-rose-50 border-2 border-slate-300 hover:border-rose-300 rounded-lg text-slate-800 text-sm font-bold transition cursor-pointer"
+          >
+            <AlertTriangle className="w-4 h-4 text-rose-600" /> Defects
+          </button>
           <button
             type="button"
             onClick={() => openHistory(asset)}

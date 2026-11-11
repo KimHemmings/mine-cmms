@@ -20,6 +20,7 @@ interface MachineWorkboardCardProps {
   updateWorkOrderStage: (woId: string, assetId: string, newStage: string, jobLabel?: string) => void;
   openAddWorkOrder: (asset: Asset) => void;
   openHistory: (asset: Asset) => void;
+  openDefects: (asset: Asset) => void;
   openQuickEdit: (asset: Asset) => void;
   openPartsModal?: (wo: MachineWorkOrder) => void;
   openCrewPicker?: (wo: MachineWorkOrder) => void;
@@ -37,6 +38,7 @@ export default function MachineWorkboardCard({
   updateWorkOrderStage,
   openAddWorkOrder,
   openHistory,
+  openDefects,
   openQuickEdit,
   openPartsModal,
   openCrewPicker,
@@ -109,6 +111,7 @@ export default function MachineWorkboardCard({
         isReleased={isReleased}
         openQuickEdit={openQuickEdit}
         openHistory={openHistory}
+        openDefects={openDefects}
       />
 
       {mainEvent ? (

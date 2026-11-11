@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { CheckCircle2, CheckCircle, Search, X } from 'lucide-react';
-import { Asset, MachineWorkOrder, HistoryNote } from '@/types';
+import { Asset, CrewMember, MachineWorkOrder, HistoryNote } from '@/types';
 import MachineWorkboardCard from '@/components/MachineWorkboardCard';
 
 interface WorkboardTabProps {
@@ -15,7 +15,11 @@ interface WorkboardTabProps {
   updateWorkOrderStage: (woId: string, assetId: string, newStage: string, jobLabel?: string) => void;
   openAddWorkOrder: (asset: Asset) => void;
   openHistory: (asset: Asset) => void;
+  openDefects: (asset: Asset) => void;
   openQuickEdit: (asset: Asset) => void;
+  myCrewMemberId?: string | null;
+  crew?: CrewMember[];
+  onLinkCrew?: (crewMemberId: string) => Promise<void>;
   openPartsModal?: (wo: MachineWorkOrder) => void;
   openCrewPicker?: (wo: MachineWorkOrder) => void;
   releaseMachineToProduction: (assetId: string, fleetId?: string) => void;
@@ -42,7 +46,11 @@ export default function WorkboardTab({
   updateWorkOrderStage,
   openAddWorkOrder,
   openHistory,
+  openDefects,
   openQuickEdit,
+  myCrewMemberId,
+  crew = [],
+  onLinkCrew,
   openPartsModal,
   openCrewPicker,
   releaseMachineToProduction,
@@ -98,8 +106,14 @@ export default function WorkboardTab({
 
     const openOrdersOf = (a: Asset) => (ordersByAsset.get(a.id) ?? []).filter((w) => w.status === 'OPEN');
     const matchers: Record<Exclude<QuickFilter, 'all'>, (a: Asset) => boolean> = {
-      mine: (a) =>
-        !!me && (ordersByAsset.get(a.id) ?? []).some((w) => (w.fitter_assigned || '').toLowerCase().includes(me)),
+      mine: (a) => {
+        const person = crew.find((member) => member.id === myCrewMemberId);
+        const name = (person?.display_name || me).toLowerCase();
+        return (ordersByAsset.get(a.id) ?? []).some((order) => {
+          if (myCrewMemberId && order.crew?.some((row) => row.crew_member_id === myCrewMemberId)) return true;
+          return !!name && (order.fitter_assigned || '').toLowerCase().includes(name);
+        });
+      },
       overdue: (a) => isOverdue(a, now),
       parts: (a) => openOrdersOf(a).some((w) => w.stage === 'WAITING_PARTS'),
       ready: (a) => openOrdersOf(a).length === 0,
@@ -142,7 +156,7 @@ export default function WorkboardTab({
         ready: active.filter(matchers.ready).length,
       } satisfies Record<QuickFilter, number>,
     };
-  }, [shiftJobs, ordersByAsset, search, quickFilter, sortMode, myName, now]);
+  }, [shiftJobs, ordersByAsset, search, quickFilter, sortMode, myName, now, crew, myCrewMemberId]);
 
   if (loading && shiftJobs.length === 0) {
     return (
@@ -185,6 +199,7 @@ export default function WorkboardTab({
       updateWorkOrderStage={updateWorkOrderStage}
       openAddWorkOrder={openAddWorkOrder}
       openHistory={openHistory}
+      openDefects={openDefects}
       openQuickEdit={openQuickEdit}
       openPartsModal={openPartsModal}
       openCrewPicker={openCrewPicker}
@@ -195,6 +210,25 @@ export default function WorkboardTab({
 
   return (
     <div className="space-y-6 font-sans">
+      {onLinkCrew && (
+        <label className="bg-white border border-slate-300 rounded-xl p-3 shadow-2xs flex flex-col sm:flex-row sm:items-center gap-2 text-sm font-bold text-slate-700">
+          I am
+          <select
+            value={myCrewMemberId ?? ''}
+            onChange={(event) => {
+              if (event.target.value) void onLinkCrew(event.target.value);
+            }}
+            className="min-h-12 rounded-lg border-2 border-slate-300 bg-white px-3 text-base font-bold text-slate-900 cursor-pointer"
+          >
+            <option value="">Choose your name so My jobs is your work</option>
+            {crew.filter((member) => member.active).map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.display_name}{member.panel ? ` · ${member.panel}` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="bg-white border border-slate-300 rounded-xl p-3 shadow-2xs space-y-3">
         <div className="flex flex-col md:flex-row gap-3">
           <label className="relative flex-1">

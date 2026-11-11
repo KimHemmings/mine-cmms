@@ -12,15 +12,25 @@ import {
   LogOut,
   ClipboardList,
   Users,
+  GraduationCap,
+  Factory,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 import { HelpButton } from '@/components/help/HelpButton';
+import { ChangePasswordButton } from '@/components/auth/ChangePasswordButton';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
-import { ShiftRecord } from '@/types';
+import { ShiftRecord, UserRole } from '@/types';
 import type { SyncStatus } from '@/hooks/useRealtimeWorkboard';
 
-type Tab = 'board' | 'handover' | 'dossier' | 'crew';
+type Tab = 'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status';
+
+const ROLE_LABEL: Record<UserRole, string> = {
+  fitter: 'Fitter',
+  management: 'Supervisor',
+  training: 'Training',
+  production: 'Production',
+};
 
 interface TopHeaderProps {
   activeShift: ShiftRecord | null;
@@ -29,7 +39,7 @@ interface TopHeaderProps {
   currentTab: Tab;
   onTabChange: (tab: Tab) => void;
   shiftJobsCount: number;
-  userRole: 'management' | 'fitter';
+  userRole: UserRole;
   onOpenAssign: () => void;
   onRefresh: () => void;
 }
@@ -66,10 +76,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   }
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
-    { id: 'board', label: `Workboard (${shiftJobsCount})`, icon: <ClipboardList className="w-4 h-4" />, show: true },
-    { id: 'dossier', label: 'Fleet Directory', icon: <BookOpen className="w-4 h-4" />, show: true },
+    { id: 'board', label: `Workboard (${shiftJobsCount})`, icon: <ClipboardList className="w-4 h-4" />, show: userRole === 'fitter' || userRole === 'management' },
+    { id: 'dossier', label: 'Fleet Directory', icon: <BookOpen className="w-4 h-4" />, show: userRole === 'fitter' || userRole === 'management' },
     { id: 'handover', label: 'Shift Handover', icon: <FileSpreadsheet className="w-4 h-4" />, show: userRole === 'management' },
     { id: 'crew', label: 'Crew', icon: <Users className="w-4 h-4" />, show: userRole === 'management' },
+    { id: 'training', label: 'Training', icon: <GraduationCap className="w-4 h-4" />, show: userRole === 'training' },
+    { id: 'status', label: 'Shift status', icon: <Factory className="w-4 h-4" />, show: userRole === 'production' },
   ];
 
   return (
@@ -99,7 +111,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             >
               {activeFitter || '...'}
             </strong>
+            <span className="text-xs font-black uppercase tracking-wide text-slate-600 bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5">
+              {ROLE_LABEL[userRole]}
+            </span>
           </div>
+          <ChangePasswordButton />
           <HelpButton userRole={userRole} shiftId={activeShift?.id ?? null} />
           <button
             type="button"
@@ -140,13 +156,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           >
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
-          <button
-            type="button"
-            onClick={onOpenAssign}
-            className="min-h-12 flex items-center gap-2 px-5 bg-emerald-600 hover:bg-emerald-500 text-white text-base font-black rounded-xl shadow-md transition"
-          >
-            <Plus className="w-5 h-5" /> Assign Machine
-          </button>
+          {(userRole === 'fitter' || userRole === 'management') && (
+            <button
+              type="button"
+              onClick={onOpenAssign}
+              className="min-h-12 flex items-center gap-2 px-5 bg-emerald-600 hover:bg-emerald-500 text-white text-base font-black rounded-xl shadow-md transition"
+            >
+              <Plus className="w-5 h-5" /> Assign Machine
+            </button>
+          )}
         </div>
       </div>
     </header>
