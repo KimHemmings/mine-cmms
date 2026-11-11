@@ -2,6 +2,7 @@
 export * from './constants';
 export * from './parts';
 export * from './crew';
+export * from './handover';
 
 import type { WorkOrderPart } from './parts';
 
@@ -24,6 +25,8 @@ export interface ShiftRecord {
   handover_notes: string | null;
   started_at: string;
   closed_at: string | null;
+  crew: string | null;
+  shift_type: 'DAY' | 'NIGHT';
 }
 
 export type OrderType = 'PLANNED' | 'UNPLANNED' | 'INSPECTION' | 'ACCIDENT_DAMAGE';

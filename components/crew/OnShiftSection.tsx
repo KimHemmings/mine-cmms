@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { CalendarCheck, ChevronDown, ChevronUp, UserMinus, UserPlus } from 'lucide-react';
 import { CREW_PANELS, CrewMember, ShiftRecord } from '@/types';
 import type { CrewJob } from '@/utils/crew';
+import { useFeedback } from '@/components/ui/FeedbackProvider';
 
 interface OnShiftSectionProps {
   activeShift: ShiftRecord | null;
@@ -11,9 +12,18 @@ interface OnShiftSectionProps {
   onShiftIds: Set<string>;
   openJobsByCrew: Map<string, CrewJob[]>;
   setCrewOnShift: (ids: string[], onShift: boolean) => Promise<void>;
+  setShiftPanel: (panel: string) => Promise<void>;
 }
 
-export default function OnShiftSection({ activeShift, crew, onShiftIds, openJobsByCrew, setCrewOnShift }: OnShiftSectionProps) {
+export default function OnShiftSection({
+  activeShift,
+  crew,
+  onShiftIds,
+  openJobsByCrew,
+  setCrewOnShift,
+  setShiftPanel,
+}: OnShiftSectionProps) {
+  const { confirm } = useFeedback();
   const [showAddList, setShowAddList] = useState(false);
   const activeCrew = crew.filter((c) => c.active);
   const onShift = activeCrew.filter((c) => onShiftIds.has(c.id));
@@ -22,7 +32,16 @@ export default function OnShiftSection({ activeShift, crew, onShiftIds, openJobs
   const panelsToAdd = CREW_PANELS.map((panel) => ({
     panel,
     ids: notOnShift.filter((c) => c.panel === panel).map((c) => c.id),
-  })).filter((p) => p.ids.length > 0);
+  })).filter((p) => p.ids.length > 0 && p.panel !== activeShift?.crew);
+
+  const handleSwitchPanel = async (panel: string) => {
+    const ok = await confirm({
+      title: `Switch this shift to ${panel}?`,
+      message: `The on-shift list will be replaced with everyone in ${panel}. Jobs already assigned keep their people.`,
+      confirmLabel: `Yes, switch to ${panel}`,
+    });
+    if (ok) await setShiftPanel(panel);
+  };
 
   const sortedOnShift = [...onShift].sort(
     (a, b) => (openJobsByCrew.get(a.id)?.length ?? 0) - (openJobsByCrew.get(b.id)?.length ?? 0) || a.display_name.localeCompare(b.display_name)
@@ -36,7 +55,7 @@ export default function OnShiftSection({ activeShift, crew, onShiftIds, openJobs
             <CalendarCheck className="w-5 h-5 text-emerald-600" /> On this shift ({onShift.length})
           </h3>
           <p className="text-sm text-slate-500">
-            {activeShift ? activeShift.shift_name : 'No active shift'} · People here show first when assigning jobs. Least busy at the top.
+            {activeShift ? `${activeShift.shift_name}${activeShift.crew ? ` · ${activeShift.crew}` : ''}` : 'No active shift'} · People here show first when assigning jobs. Least busy at the top.
           </p>
         </div>
         {onShift.length > 0 && (
@@ -50,18 +69,47 @@ export default function OnShiftSection({ activeShift, crew, onShiftIds, openJobs
         )}
       </div>
 
-      {panelsToAdd.length > 0 && activeShift && (
-        <div className="flex flex-wrap gap-2">
-          {panelsToAdd.map(({ panel, ids }) => (
-            <button
-              key={panel}
-              type="button"
-              onClick={() => setCrewOnShift(ids, true)}
-              className="min-h-12 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black flex items-center gap-2 shadow-sm"
-            >
-              <UserPlus className="w-4 h-4" /> Add {panel} ({ids.length})
-            </button>
-          ))}
+      {activeShift && (
+        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-bold text-slate-600">Crew rostered on:</span>
+            {CREW_PANELS.map((panel) => {
+              const current = activeShift.crew === panel;
+              return (
+                <button
+                  key={panel}
+                  type="button"
+                  disabled={current && onShift.length > 0}
+                  onClick={() => (current ? setShiftPanel(panel) : handleSwitchPanel(panel))}
+                  aria-pressed={current}
+                  className={`min-h-11 px-4 rounded-full border-2 text-sm font-black transition ${
+                    current
+                      ? 'bg-slate-900 border-slate-900 text-white cursor-default'
+                      : 'bg-white border-slate-300 text-slate-700 hover:border-slate-500'
+                  }`}
+                >
+                  {panel}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-slate-500">
+            The rostered crew is loaded automatically at each shift handover. Tap another crew to switch, or add extra people below for overtime and swaps.
+          </p>
+          {panelsToAdd.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {panelsToAdd.map(({ panel, ids }) => (
+                <button
+                  key={panel}
+                  type="button"
+                  onClick={() => setCrewOnShift(ids, true)}
+                  className="min-h-11 px-4 rounded-lg border-2 border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-800 text-sm font-bold flex items-center gap-2"
+                >
+                  <UserPlus className="w-4 h-4" /> Also add all of {panel} ({ids.length})
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -69,7 +117,7 @@ export default function OnShiftSection({ activeShift, crew, onShiftIds, openJobs
         <p className="p-4 rounded-lg bg-slate-50 border border-dashed border-slate-300 text-sm text-slate-600">
           {activeCrew.length === 0
             ? 'Add your crew in the list below first.'
-            : 'No one is marked on shift yet. Tap a panel button above, or add people one at a time below.'}
+            : 'No one is on shift. Tap the rostered crew above to load them, or add people one at a time below.'}
         </p>
       ) : (
         <ul className="divide-y divide-slate-200 border border-slate-200 rounded-lg">

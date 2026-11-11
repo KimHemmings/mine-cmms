@@ -1,149 +1,210 @@
-// utils/handoverPptx.ts
 import pptxgen from 'pptxgenjs';
-import { Asset, MachineWorkOrder } from '@/types';
+import { HandoverCarryJob, HandoverPartLine, HandoverSlide, HandoverSnapshot } from '@/types';
+import { handoverNotesFor } from '@/utils/handoverNotes';
+import { formatDateTime } from '@/utils/helpers';
+import { partStatusLabel, stageLabel } from '@/utils/handoverDocument';
 
-export interface CustomSlideData {
-  id: string;
-  title: string;
-  notes: string;
-}
+export type CustomSlideData = HandoverSlide;
 
-interface HandoverPptxPayload {
+const BG = '0F172A';
+const CARD = '1E293B';
+const LINE = '334155';
+const AMBER = 'F59E0B';
+const MUTED = '94A3B8';
+const TEXT = 'F8FAFC';
+const ROWS_PER_SLIDE = 7;
+
+export interface CrewBriefingInput {
   shiftName: string;
-  supervisor: string;
-  weather: string;
-  safetyFocus: string;
-  manning: string;
-  nextShiftPriorities: string;
-  activeAssets: Asset[];
-  workOrders: MachineWorkOrder[];
-  customSlides: CustomSlideData[];
+  shiftDate: string | null;
+  crew: string | null;
+  supervisor: string | null;
+  document: HandoverSnapshot;
 }
 
-export async function generateHandoverPptx(data: HandoverPptxPayload) {
-  const pptx = new pptxgen();
+function addTitle(slide: pptxgen.Slide, title: string, subtitle: string) {
+  slide.background = { color: BG };
+  slide.addText(title, { x: 0.6, y: 0.35, w: 12.1, h: 0.5, fontSize: 26, bold: true, color: AMBER });
+  slide.addText(subtitle, { x: 0.6, y: 0.9, w: 12.1, h: 0.32, fontSize: 14, color: MUTED });
+}
 
+function card(slide: pptxgen.Slide, pptx: pptxgen, x: number, y: number, w: number, h: number, title: string, body: string) {
+  slide.addShape(pptx.ShapeType.rect, { x, y, w, h, fill: { color: CARD }, line: { color: LINE, width: 1.25 } });
+  slide.addText(title, { x: x + 0.3, y: y + 0.2, w: w - 0.6, h: 0.4, fontSize: 16, bold: true, color: AMBER });
+  slide.addText(body, { x: x + 0.3, y: y + 0.7, w: w - 0.6, h: h - 1, fontSize: 15, color: TEXT, valign: 'top' });
+}
+
+function chunks<T>(items: T[], size: number) {
+  if (items.length === 0) return [[] as T[]];
+  const pages: T[][] = [];
+  for (let index = 0; index < items.length; index += size) pages.push(items.slice(index, index + size));
+  return pages;
+}
+
+function jobLine(job: HandoverCarryJob) {
+  return `${job.woNumber ? `WO ${job.woNumber}: ` : ''}${job.task}`;
+}
+
+function addTable(slide: pptxgen.Slide, headers: string[], rows: string[][], colW: number[]) {
+  const headerOpts = { bold: true, fill: { color: '1E293B' }, color: AMBER };
+  const header = headers.map((text) => ({ text, options: headerOpts }));
+  const body = rows.map((row, index) => {
+    const bg = index % 2 === 0 ? '162032' : '0F172A';
+    return row.map((text, cell) => ({ text, options: { fill: { color: bg }, color: TEXT, bold: cell === 0 } }));
+  });
+  slide.addTable([header, ...body], {
+    x: 0.5, y: 1.45, w: 12.3, colW,
+    fontSize: 13, border: { pt: 0.5, color: LINE }, valign: 'middle',
+  });
+}
+
+export async function generateHandoverPptx(input: CrewBriefingInput) {
+  const { document } = input;
+  const pptx = new pptxgen();
   pptx.defineLayout({ name: 'WIDESCREEN_16_9', width: 13.333, height: 7.5 });
   pptx.layout = 'WIDESCREEN_16_9';
+  pptx.author = 'Mine Shift Workboard';
 
-  const BG_COLOR = '0F172A';
-  const CARD_BG = '1E293B';
-  const BORDER_COLOR = '334155';
+  const allocation = document.allocation ?? { panel: null, people: [], withOutgoing: [], needsName: [] };
+  const parts = document.parts ?? [];
+  const panel = allocation.panel;
+  const when = input.shiftDate ? new Date(input.shiftDate).toLocaleDateString() : '';
+  const from = [input.shiftName, input.crew, when].filter(Boolean).join(' · ');
+  const subtitle = `From ${from || 'the outgoing shift'} · ${input.supervisor || 'Workshop management'}`;
+  pptx.title = panel ? `Briefing for ${panel}` : `Crew briefing ${input.shiftName}`;
 
-  // --- SLIDE 1: Title, Weather & Safety ---
-  const slide1 = pptx.addSlide();
-  slide1.background = { color: BG_COLOR };
+  const weather = handoverNotesFor(document.log, ['WEATHER']);
+  const safety = handoverNotesFor(document.log, ['SAFETY']);
+  const manning = handoverNotesFor(document.log, ['MANNING']);
+  const priorities = handoverNotesFor(document.log, ['PRIORITY']);
+  const watches = handoverNotesFor(document.log, ['WATCHLIST']);
+  const compliance = handoverNotesFor(document.log, ['BRAKE_TEST', 'TOOLING']);
 
-  slide1.addText(`SHIFT HANDOVER: ${data.shiftName.toUpperCase()}`, {
-    x: 0.8, y: 0.5, w: 11.7, h: 0.6, fontSize: 26, bold: true, color: 'F59E0B'
+  const cover = pptx.addSlide();
+  addTitle(cover, panel ? `Briefing for ${panel}` : 'Crew briefing', subtitle);
+  const jobCount = new Set(
+    allocation.people.flatMap((person) => person.jobs.map((job) => `${job.fleetId}|${job.woNumber ?? ''}|${job.task}`))
+  ).size;
+  const coverLine = panel
+    ? `${jobCount} job${jobCount === 1 ? '' : 's'} already with ${panel}` +
+      (allocation.needsName.length ? ` · ${allocation.needsName.length} need a name` : '') +
+      (parts.length ? ` · ${parts.length} part${parts.length === 1 ? '' : 's'} outstanding` : '')
+    : `${document.handedOver.length} machine${document.handedOver.length === 1 ? '' : 's'} still down`;
+  cover.addText(coverLine, { x: 0.6, y: 1.45, w: 12, h: 0.4, fontSize: 18, color: TEXT });
+  if (document.released.length) {
+    cover.addText(`Released this shift: ${document.released.map((machine) => machine.fleetId).join(', ')}`, {
+      x: 0.6, y: 1.95, w: 12, h: 0.35, fontSize: 14, color: MUTED,
+    });
+  }
+  const coverNotes = [
+    safety && { title: 'Safety', body: safety },
+    weather && { title: 'Weather and roads', body: weather },
+  ].filter((item): item is { title: string; body: string } => Boolean(item));
+  coverNotes.forEach((note, index) => {
+    const x = index === 0 ? 0.6 : 6.95;
+    card(cover, pptx, coverNotes.length === 1 ? 0.6 : x, 2.55, coverNotes.length === 1 ? 12.1 : 5.8, 4.3, note.title, note.body);
   });
-  slide1.addText(`Supervisor: ${data.supervisor || 'Workshop Management'}  |  Date: ${new Date().toLocaleDateString()}  |  Time: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, {
-    x: 0.8, y: 1.1, w: 11.7, h: 0.4, fontSize: 13, color: '94A3B8'
-  });
 
-  slide1.addShape(pptx.ShapeType.rect, { x: 0.8, y: 1.8, w: 5.65, h: 4.9, fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.5 } });
-  slide1.addText('🌦️ Weather & Pit Conditions', { x: 1.1, y: 2.05, w: 5.0, h: 0.4, fontSize: 17, bold: true, color: '38BDF8' });
-  slide1.addText(data.weather?.trim() || 'Normal operating conditions. Haul roads clear and operational.', {
-    x: 1.1, y: 2.6, w: 5.0, h: 3.8, fontSize: 15, color: 'F1F5F9', valign: 'top', lineSpacing: 22
-  });
-
-  slide1.addShape(pptx.ShapeType.rect, { x: 6.85, y: 1.8, w: 5.65, h: 4.9, fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.5 } });
-  slide1.addText('⚠️ Safety & Statutory Focus', { x: 7.15, y: 2.05, w: 5.0, h: 0.4, fontSize: 17, bold: true, color: 'EF4444' });
-  slide1.addText(data.safetyFocus?.trim() || 'Positive isolation audits, verify zero energy state, maintain 3-point contact on mobile plant.', {
-    x: 7.15, y: 2.6, w: 5.0, h: 3.8, fontSize: 15, color: 'F1F5F9', valign: 'top', lineSpacing: 22
-  });
-
-  // --- SLIDE 2: Active Workshop Fleet (Table with Hotshots) ---
-  const slide2 = pptx.addSlide();
-  slide2.background = { color: BG_COLOR };
-
-  slide2.addText(`Active Workshop Fleet & In-Pit Work (${data.activeAssets.length} Units Down)`, {
-    x: 0.8, y: 0.5, w: 11.7, h: 0.6, fontSize: 24, bold: true, color: 'F59E0B'
-  });
-  slide2.addText('Current status of open maintenance jobs & in-transit hotshots handed over', {
-    x: 0.8, y: 1.1, w: 11.7, h: 0.35, fontSize: 13, color: '94A3B8'
-  });
-
-  const tableHeaders = [
-    { text: 'Unit', options: { bold: true, fill: { color: '1E293B' }, color: 'F59E0B' } },
-    { text: 'Location', options: { bold: true, fill: { color: '1E293B' }, color: 'F59E0B' } },
-    { text: 'Task / Event Description', options: { bold: true, fill: { color: '1E293B' }, color: 'F59E0B' } },
-    { text: 'Stage', options: { bold: true, fill: { color: '1E293B' }, color: 'F59E0B' } },
-    { text: 'Allocated', options: { bold: true, fill: { color: '1E293B' }, color: 'F59E0B' } },
-  ];
-
-  const tableRows = data.activeAssets.slice(0, 7).map((asset, idx) => {
-    const orders = data.workOrders.filter((w) => w.asset_id === asset.id);
-    const mainWo = orders.find((w) => w.is_main_event) || orders[0];
-    const hotshots = orders.flatMap((w) => w.parts || []).filter((p) => p.is_special_run);
-
-    let taskText = mainWo?.task_description || asset.shift_task || 'Unscheduled Breakdown';
-    if (hotshots.length > 0) {
-      const hs = hotshots[0];
-      const etaStr = hs.eta ? new Date(hs.eta).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD';
-      taskText += `\n[🔥 HOTSHOT: ${(hs as any).description || hs.part_number} | ETA ${etaStr}]`;
-    }
-
-    const rowBg = idx % 2 === 0 ? '162032' : '0F172A';
-    return [
-      { text: `${asset.fleet_id}\n(${asset.make_model})`, options: { fill: { color: rowBg }, color: 'FFFFFF', bold: true } },
-      { text: asset.location || 'In Pit', options: { fill: { color: rowBg }, color: 'CBD5E1' } },
-      { text: taskText, options: { fill: { color: rowBg }, color: hotshots.length > 0 ? 'FCD34D' : 'F8FAFC' } },
-      { text: (mainWo?.stage || asset.shift_stage || 'IN_PROGRESS').replace('_', ' '), options: { fill: { color: rowBg }, color: 'FCD34D', bold: true } },
-      { text: mainWo?.fitter_assigned || 'Unassigned', options: { fill: { color: rowBg }, color: 'CBD5E1' } },
+  if (panel) {
+    const allocated = [
+      ...allocation.people.flatMap((person) =>
+        person.jobs.map((job) => [person.name, job.fleetId, jobLine(job), stageLabel(job.stage)])
+      ),
+      ...allocation.people
+        .filter((person) => person.jobs.length === 0)
+        .map((person) => [person.name, '—', 'No job allocated', '—']),
     ];
-  });
+    chunks(allocated, ROWS_PER_SLIDE).forEach((slice, page, pages) => {
+      const slide = pptx.addSlide();
+      addTitle(slide, `Jobs for ${panel}${pages.length > 1 ? ` (${page + 1}/${pages.length})` : ''}`, subtitle);
+      if (slice.length === 0) {
+        slide.addText(`No one is rostered on ${panel}.`, { x: 0.6, y: 1.7, w: 12, h: 0.4, fontSize: 18, color: TEXT });
+      } else {
+        addTable(slide, ['Who', 'Unit', 'Job', 'Status'], slice, [2.4, 1.6, 6.1, 2.2]);
+      }
+    });
 
-  slide2.addTable([tableHeaders, ...tableRows], {
-    x: 0.8,
-    y: 1.6,
-    w: 11.7,
-    colW: [1.5, 1.9, 4.8, 1.8, 1.7],
-    fontSize: 11,
-    border: { pt: 0.75, color: BORDER_COLOR },
-    align: 'left',
-    valign: 'middle',
-  });
+    const notTheirs = [
+      ...allocation.needsName.map((job) => ['Needs a name', job.fleetId, jobLine(job), stageLabel(job.stage)]),
+      ...allocation.withOutgoing.map((job) => [job.names.join(', ') || 'Outgoing crew', job.fleetId, jobLine(job), stageLabel(job.stage)]),
+    ];
+    if (notTheirs.length > 0) {
+      chunks(notTheirs, ROWS_PER_SLIDE).forEach((slice, page, pages) => {
+        const slide = pptx.addSlide();
+        addTitle(slide, `Not with ${panel} yet${pages.length > 1 ? ` (${page + 1}/${pages.length})` : ''}`, subtitle);
+        addTable(slide, ['Who', 'Unit', 'Job', 'Status'], slice, [2.4, 1.6, 6.1, 2.2]);
+      });
+    }
+  }
 
-  // --- SLIDE 3: Manning & Next Shift Line-Up ---
-  const slide3 = pptx.addSlide();
-  slide3.background = { color: BG_COLOR };
+  if (parts.length > 0) {
+    chunks(parts, ROWS_PER_SLIDE).forEach((slice, page, pages) => {
+      const slide = pptx.addSlide();
+      addTitle(slide, `Parts and hotshots${pages.length > 1 ? ` (${page + 1}/${pages.length})` : ''}`, subtitle);
+      addTable(
+        slide,
+        ['Unit', 'Part', 'Status', 'ETA'],
+        slice.map((part) => partRow(part)),
+        [1.6, 6.3, 2.2, 2.2]
+      );
+    });
+  }
 
-  slide3.addText('Manning, Support Equipment & Line-Up', {
-    x: 0.8, y: 0.5, w: 11.7, h: 0.6, fontSize: 26, bold: true, color: 'F59E0B'
-  });
-  slide3.addText('Crew distribution and priorities for the incoming shift', {
-    x: 0.8, y: 1.1, w: 11.7, h: 0.4, fontSize: 13, color: '94A3B8'
-  });
-
-  slide3.addShape(pptx.ShapeType.rect, { x: 0.8, y: 1.8, w: 5.65, h: 4.9, fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.5 } });
-  slide3.addText('👷 Trade Manning & Crew Notes', { x: 1.1, y: 2.05, w: 5.0, h: 0.4, fontSize: 17, bold: true, color: '38BDF8' });
-  slide3.addText(data.manning?.trim() || 'Full crew available. All service trucks operational. Zero unscheduled absenteeism.', {
-    x: 1.1, y: 2.6, w: 5.0, h: 3.8, fontSize: 15, color: 'F1F5F9', valign: 'top', lineSpacing: 22
-  });
-
-  slide3.addShape(pptx.ShapeType.rect, { x: 6.85, y: 1.8, w: 5.65, h: 4.9, fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.5 } });
-  slide3.addText('🎯 Incoming Shift Priorities', { x: 7.15, y: 2.05, w: 5.0, h: 0.4, fontSize: 17, bold: true, color: '10B981' });
-  slide3.addText(data.nextShiftPriorities?.trim() || 'Receive and fit hotshot components upon delivery. Complete outstanding PM inspections.', {
-    x: 7.15, y: 2.6, w: 5.0, h: 3.8, fontSize: 15, color: 'F1F5F9', valign: 'top', lineSpacing: 22
-  });
-
-  // --- SLIDE 4+: Dynamic Custom Slides ---
-  data.customSlides.forEach((custom, idx) => {
+  const machines = document.handedOver;
+  chunks(machines, ROWS_PER_SLIDE).forEach((slice, page, pages) => {
     const slide = pptx.addSlide();
-    slide.background = { color: BG_COLOR };
-
-    slide.addText(custom.title?.trim() || `Special Operations Topic #${idx + 1}`, {
-      x: 0.8, y: 0.5, w: 11.7, h: 0.6, fontSize: 24, bold: true, color: 'F59E0B'
-    });
-
-    slide.addShape(pptx.ShapeType.rect, { x: 0.8, y: 1.5, w: 11.7, h: 5.2, fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.5 } });
-    slide.addText(custom.notes?.trim() || 'No additional notes provided.', {
-      x: 1.2, y: 1.9, w: 10.9, h: 4.4, fontSize: 16, color: 'F8FAFC', valign: 'top', lineSpacing: 24
-    });
+    addTitle(slide, `Still down${pages.length > 1 ? ` (${page + 1}/${pages.length})` : ''}`, subtitle);
+    if (slice.length === 0) {
+      slide.addText('No machines are being handed over.', { x: 0.6, y: 1.8, w: 12, h: 0.4, fontSize: 18, color: TEXT });
+      return;
+    }
+    addTable(
+      slide,
+      ['Unit', 'Where', 'Job', 'Expected back'],
+      slice.map((machine) => [
+        machine.fleetId,
+        machine.location,
+        machine.orders.map((order) => `${order.woNumber ? `WO ${order.woNumber}: ` : ''}${order.task}`).join('\n') || 'No open job',
+        formatDateTime(machine.expectedUp),
+      ]),
+      [1.8, 2.2, 6.1, 2.2]
+    );
   });
 
-  await pptx.writeFile({
-    fileName: `Handover_${data.shiftName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pptx`
+  const machineNotes = document.machineNotes ?? [];
+  if (machineNotes.length > 0) {
+    chunks(machineNotes, ROWS_PER_SLIDE).forEach((slice, page, pages) => {
+      const slide = pptx.addSlide();
+      addTitle(slide, `What was noted${pages.length > 1 ? ` (${page + 1}/${pages.length})` : ''}`, subtitle);
+      addTable(
+        slide,
+        ['Unit', 'This shift'],
+        slice.map((note) => [note.fleetId, note.summary]),
+        [2.2, 10.1]
+      );
+    });
+  }
+
+  const followUp = [priorities && `Priorities: ${priorities}`, watches && `Watch: ${watches}`, manning && `Manning: ${manning}`, compliance && `Checks: ${compliance}`]
+    .filter(Boolean)
+    .join('\n\n');
+  if (followUp) {
+    const slide = pptx.addSlide();
+    addTitle(slide, 'Also for this crew', subtitle);
+    card(slide, pptx, 0.6, 1.5, 12.1, 5.4, 'From the shift log', followUp);
+  }
+
+  document.customSlides.forEach((custom, index) => {
+    const slide = pptx.addSlide();
+    addTitle(slide, custom.title.trim() || `Extra slide ${index + 1}`, subtitle);
+    card(slide, pptx, 0.6, 1.5, 12.1, 5.4, 'Notes', custom.notes.trim() || 'No notes added.');
   });
+
+  const fileBits = ['Crew_Briefing', panel, input.shiftName, input.shiftDate].filter(Boolean);
+  await pptx.writeFile({ fileName: `${fileBits.join('_').replace(/\s+/g, '_')}.pptx` });
+}
+
+function partRow(part: HandoverPartLine) {
+  const name = `${part.hotshot ? 'Hotshot: ' : ''}${part.description}${part.po ? ` (${part.po})` : ''}`;
+  return [part.fleetId, name, partStatusLabel(part.status), part.eta ? formatDateTime(part.eta) : '—'];
 }

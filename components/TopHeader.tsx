@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
+import { HelpButton } from '@/components/help/HelpButton';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import { ShiftRecord } from '@/types';
 import type { SyncStatus } from '@/hooks/useRealtimeWorkboard';
@@ -82,6 +83,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900">MINE SHIFT WORKBOARD</h1>
             <span className="text-sm font-black px-2 py-0.5 rounded bg-slate-300 text-slate-800 border border-slate-400 uppercase">
               {activeShift?.shift_name || 'Active Shift'}
+              {activeShift?.crew && ` · ${activeShift.crew}`}
             </span>
             <SyncStatusBadge status={syncStatus} />
           </div>
@@ -98,6 +100,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               {activeFitter || '...'}
             </strong>
           </div>
+          <HelpButton userRole={userRole} shiftId={activeShift?.id ?? null} />
           <button
             type="button"
             onClick={handleSignOut}

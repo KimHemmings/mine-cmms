@@ -154,19 +154,31 @@ export function useWorkboardActions({
     });
   }
 
-  async function handleRolloverShift() {
-    if (!activeShift) return;
+  async function handleRolloverShift(nextCrew?: string) {
+    if (!activeShift) return false;
 
     const { data: newShift, error } = await supabase
-      .rpc('rollover_shift', { p_current_shift_id: activeShift.id })
+      .rpc('rollover_shift', { p_current_shift_id: activeShift.id, p_next_crew: nextCrew ?? null })
       .single<ShiftRecord>();
 
+    await fetchAllData();
     if (error) {
       alert(`Shift rollover failed: ${error.message}`);
-    } else {
-      alert(`Shift successfully rolled over to ${newShift.shift_name}. All active breakdowns carried forward.`);
+      return false;
     }
+    showToast({
+      message: `${newShift.shift_name} started with ${newShift.crew ?? 'no crew'}. Open jobs carried over.`,
+      durationMs: 6000,
+    });
+    return true;
+  }
+
+  async function setShiftPanel(panel: string) {
+    if (!activeShift) return;
+    const { error } = await supabase.rpc('set_shift_panel', { p_shift_id: activeShift.id, p_crew: panel });
+    if (error) return alert(`Error changing the crew on shift: ${error.message}`);
     await fetchAllData();
+    showToast({ message: `${panel} is now on this shift` });
   }
 
   async function addWorkOrderPart(payload: CreatePartPayload) {
@@ -264,6 +276,7 @@ export function useWorkboardActions({
     setCrewMemberActive,
     setCrewOnShift,
     setWorkOrderCrew,
+    setShiftPanel,
     updateWorkOrderStage,
     signOffWorkOrder: (woId: string, assetId: string) => updateWorkOrderStage(woId, assetId, 'COMPLETED'),
     releaseMachineToProduction,

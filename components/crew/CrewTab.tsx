@@ -13,11 +13,12 @@ interface CrewTabProps {
   saveCrewMember: (input: CrewMemberInput, id?: string) => Promise<boolean>;
   setCrewMemberActive: (member: CrewMember, active: boolean) => Promise<void>;
   setCrewOnShift: (ids: string[], onShift: boolean) => Promise<void>;
+  setShiftPanel: (panel: string) => Promise<void>;
 }
 
 const NO_PANEL = 'No panel';
 
-export default function CrewTab({ activeShift, saveCrewMember, setCrewMemberActive, setCrewOnShift }: CrewTabProps) {
+export default function CrewTab({ activeShift, saveCrewMember, setCrewMemberActive, setCrewOnShift, setShiftPanel }: CrewTabProps) {
   const { crew, onShiftIds, openJobsByCrew } = useCrewData();
   const { confirm } = useFeedback();
   const [editing, setEditing] = useState<CrewMember | null>(null);
@@ -48,6 +49,7 @@ export default function CrewTab({ activeShift, saveCrewMember, setCrewMemberActi
         onShiftIds={onShiftIds}
         openJobsByCrew={openJobsByCrew}
         setCrewOnShift={setCrewOnShift}
+        setShiftPanel={setShiftPanel}
       />
 
       <section className="bg-white border border-slate-300 rounded-xl p-4 shadow-2xs space-y-4">

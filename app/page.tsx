@@ -44,6 +44,7 @@ function Workboard() {
     workOrders,
     defects,
     notes,
+    handoverLog,
     activeShift,
     crew,
     onShiftCrewIds,
@@ -62,6 +63,7 @@ function Workboard() {
     setCrewMemberActive,
     setCrewOnShift,
     setWorkOrderCrew,
+    setShiftPanel,
   } = useWorkboardData({ activeFitter });
 
   const targetPartsWo = targetPartsWoId ? workOrders.find((w) => w.id === targetPartsWoId) ?? null : null;
@@ -143,6 +145,10 @@ function Workboard() {
             workOrders={workOrders}
             defects={defects}
             notes={notes}
+            assets={allAssets}
+            handoverLog={handoverLog}
+            loading={loading}
+            onRefresh={fetchAllData}
             onRolloverShift={handleRolloverShift}
           />
         )}
@@ -153,6 +159,7 @@ function Workboard() {
             saveCrewMember={saveCrewMember}
             setCrewMemberActive={setCrewMemberActive}
             setCrewOnShift={setCrewOnShift}
+            setShiftPanel={setShiftPanel}
           />
         )}
       </section>

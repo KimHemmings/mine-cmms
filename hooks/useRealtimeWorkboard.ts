@@ -10,6 +10,12 @@ interface UseRealtimeWorkboardOptions {
   debounceMs?: number;
 }
 
+function isTransientSocketClose(err: unknown) {
+  const message = err instanceof Error ? err.message : '';
+  // 1001 = going away (navigation or hot reload). 1006 = closed without a goodbye.
+  return message.startsWith('socket closed: 1001') || message.startsWith('socket closed: 1006');
+}
+
 export function useRealtimeWorkboard({
   onDataChange,
   debounceMs = 300,
@@ -68,14 +74,24 @@ export function useRealtimeWorkboard({
         { event: '*', schema: 'public', table: 'shift_crew' },
         () => triggerChange()
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'handover_log_entries' },
+        () => triggerChange()
+      )
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
           setSyncStatus('CONNECTED');
-        } else if (status === 'CLOSED') {
-          setSyncStatus('DISCONNECTED');
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          return;
+        }
+        if (status === 'CLOSED' || isTransientSocketClose(err)) {
+          // The client reconnects on its own. A dropped socket is not a failed save.
+          setSyncStatus('CONNECTING');
+          return;
+        }
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           setSyncStatus('ERROR');
-          console.error('[Supabase Realtime] Sync subscription error:', err);
+          console.warn('[Supabase Realtime] Live updates unavailable:', err);
         }
       });
 

@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { CloudRain, ShieldAlert, Users, Target, Printer, Presentation, CheckCircle, Clock, Plus, Trash2 } from 'lucide-react';
 import { Asset, MachineWorkOrder } from '@/types';
 import { generateHandoverPptx, CustomSlideData } from '@/utils/handoverPptx';
+import { buildHandoverSnapshot } from '@/utils/handoverDocument';
 
 interface ShiftHandoverViewProps {
   shiftName: string;
@@ -44,16 +45,23 @@ export default function ShiftHandoverView({
   const handlePptxExport = async () => {
     try {
       setIsExporting(true);
+      const note = (category: 'WEATHER' | 'SAFETY' | 'MANNING' | 'PRIORITY', details: string) =>
+        details.trim() ? [{ id: category, category, details, logged_at: new Date().toISOString() }] : [];
       await generateHandoverPptx({
         shiftName,
+        shiftDate: null,
+        crew: null,
         supervisor: activeFitter,
-        weather,
-        safetyFocus,
-        manning,
-        nextShiftPriorities: nextPriorities,
-        activeAssets: activeFleet,
-        workOrders,
-        customSlides,
+        document: buildHandoverSnapshot({
+          assets: shiftJobs,
+          handedOver: activeFleet,
+          released: releasedFleet,
+          workOrders,
+          defects: [],
+          log: [...note('WEATHER', weather), ...note('SAFETY', safetyFocus), ...note('MANNING', manning), ...note('PRIORITY', nextPriorities)],
+          summary: null,
+          customSlides,
+        }),
       });
     } finally {
       setIsExporting(false);

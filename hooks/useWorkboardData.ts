@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { Asset, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord, CrewMember } from '@/types';
+import { Asset, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord, CrewMember, HandoverLogEntry } from '@/types';
 import { useRealtimeWorkboard } from '@/hooks/useRealtimeWorkboard';
 import { useWorkboardActions } from '@/hooks/useWorkboardActions';
 
@@ -19,6 +19,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   const [activeShift, setActiveShift] = useState<ShiftRecord | null>(null);
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [onShiftCrewIds, setOnShiftCrewIds] = useState<Set<string>>(new Set());
+  const [handoverLog, setHandoverLog] = useState<HandoverLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   const supabase = useMemo(() => createClient(), []);
@@ -96,10 +97,42 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     if (onShift) setOnShiftCrewIds(new Set(onShift.map((r) => r.crew_member_id as string)));
   }, [supabase]);
 
+  const fetchHandoverLog = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('handover_log_entries')
+      .select('id, category, fleet_id, details, action_required, logged_at, shift_records!inner(status)')
+      .eq('shift_records.status', 'ACTIVE')
+      .order('logged_at', { ascending: true });
+
+    if (error) {
+      console.error('Handover log load failed:', error.message);
+      return;
+    }
+
+    setHandoverLog(
+      (data ?? []).map((row) => ({
+        id: row.id,
+        category: row.category as HandoverLogEntry['category'],
+        fleet_id: row.fleet_id ?? undefined,
+        details: row.details,
+        action_required: row.action_required ?? undefined,
+        logged_at: row.logged_at,
+      }))
+    );
+  }, [supabase]);
+
   const fetchAllData = useCallback(async () => {
-    await Promise.all([fetchShift(), fetchFleet(), fetchWorkOrders(), fetchDefects(), fetchNotes(), fetchCrew()]);
+    await Promise.all([
+      fetchShift(),
+      fetchFleet(),
+      fetchWorkOrders(),
+      fetchDefects(),
+      fetchNotes(),
+      fetchCrew(),
+      fetchHandoverLog(),
+    ]);
     setLoading(false);
-  }, [fetchShift, fetchFleet, fetchWorkOrders, fetchDefects, fetchNotes, fetchCrew]);
+  }, [fetchShift, fetchFleet, fetchWorkOrders, fetchDefects, fetchNotes, fetchCrew, fetchHandoverLog]);
 
   useEffect(() => {
     fetchAllData();
@@ -133,7 +166,14 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     });
   }, [allAssets, activeShift, workOrders]);
 
-  const completedJobs = allAssets.filter((a) => !a.in_shift && a.actual_up);
+  const completedJobs = useMemo(() => {
+    const shiftStarted = activeShift?.started_at ? new Date(activeShift.started_at).getTime() : null;
+    if (shiftStarted === null) return [];
+    return allAssets.filter((asset) => {
+      if (asset.in_shift || asset.status !== 'OPERATIONAL' || !asset.actual_up) return false;
+      return new Date(asset.actual_up).getTime() >= shiftStarted;
+    });
+  }, [allAssets, activeShift]);
   const unassignedMachines = allAssets.filter((a) => !a.in_shift);
 
   return {
@@ -144,6 +184,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     activeShift,
     crew,
     onShiftCrewIds,
+    handoverLog,
     loading,
     syncStatus,
     shiftJobs,
