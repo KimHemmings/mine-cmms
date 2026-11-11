@@ -1,7 +1,40 @@
+import type { TraineeLine } from './crew';
+
 export interface HandoverSlide {
   id: string;
   title: string;
   notes: string;
+}
+
+export interface SafetyIncident {
+  id: string;
+  what: string;
+  where: string;
+  action: string;
+}
+
+export interface OceBriefing {
+  summary: string;
+  hazards: string[];
+  incidents: string[];
+  restrictions: string[];
+  conditions: string[];
+}
+
+export interface OceAttachment {
+  fileName: string | null;
+  briefing: OceBriefing;
+}
+
+export interface OceReport {
+  id: string;
+  shift_id: string;
+  file_name: string;
+  storage_path: string | null;
+  source_text: string | null;
+  briefing: OceBriefing;
+  uploaded_at: string;
+  uploaded_by: string | null;
 }
 
 export interface HandoverOrderLine {
@@ -76,6 +109,12 @@ export interface HandoverSnapshot {
   released: { fleetId: string; makeModel: string }[];
   defectsFixed: HandoverDefectLine[];
   defectsOpen: HandoverDefectLine[];
+  safetyIncidents: SafetyIncident[];
+  safetyFocus: string | null;
+  oce: OceAttachment | null;
+  inTraining: TraineeLine[];
+  ertOnSite: string[];
+  assessorsOnSite: string[];
   customSlides: HandoverSlide[];
 }
 

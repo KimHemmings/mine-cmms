@@ -18,15 +18,19 @@ import ShiftHandoverLog from './handover/ShiftHandoverLog';
 import HandoverDocumentView from './handover/HandoverDocumentView';
 import HandoverHistory from './handover/HandoverHistory';
 import BriefingSlides from './handover/BriefingSlides';
+import SafetyBriefingFields from './handover/SafetyBriefingFields';
+import OceReportPanel from './handover/OceReportPanel';
+import RecordTrail from './training/RecordTrail';
 import { formatDateTime } from '@/utils/helpers';
 import { copyToClipboard } from '@/utils/sapFormatter';
 import { generateHandoverPptx } from '@/utils/handoverPptx';
 import { buildHandoverSnapshot, normalizeHandoverDocument, partStatusLabel } from '@/utils/handoverDocument';
-import { HandoverMachineNote, HandoverSlide, SavedHandover } from '@/types';
+import { HandoverMachineNote, HandoverSlide, OceReport, SafetyIncident, SavedHandover } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import IncomingCrewDialog from './crew/IncomingCrewDialog';
 import { useCrewData } from './crew/CrewDataContext';
+import { siteCover } from '@/utils/crewStanding';
 import { IncomingCrewPicker } from './handover/IncomingCrewPicker';
 
 const LOG_CATEGORIES: HandoverLogCategory[] = [
@@ -100,12 +104,22 @@ export default function HandoverReportTab({
   const [slides, setSlides] = useState<HandoverSlide[]>([]);
   const [summary, setSummary] = useState('');
   const [machineNotes, setMachineNotes] = useState<HandoverMachineNote[]>([]);
+  const [incidents, setIncidents] = useState<SafetyIncident[]>([]);
+  const [safetyFocus, setSafetyFocus] = useState('');
+  const [oceReport, setOceReport] = useState<OceReport | null>(null);
   const importedShift = React.useRef<string | null>(null);
   const slidesLoadedFor = React.useRef<string | null>(null);
 
   const supabase = React.useMemo(() => createClient(), []);
   const { showToast } = useFeedback();
-  const { crew } = useCrewData();
+  const { crew, onShiftIds, authorisations, holdings, supervision } = useCrewData();
+  const cover = siteCover(
+    crew.filter((member) => onShiftIds.has(member.id)),
+    supervision,
+    authorisations,
+    holdings,
+    crew,
+  );
   const [incomingPanel, setIncomingPanel] = useState<string | null>(null);
   const [choiceShiftId, setChoiceShiftId] = useState<string | null>(null);
   const supervisorName = activeShift?.supervisor || 'Workshop Management';
@@ -125,6 +139,12 @@ export default function HandoverReportTab({
     customSlides: slides,
     crew,
     incomingPanel,
+    safetyIncidents: incidents,
+    safetyFocus,
+    oce: oceReport ? { fileName: oceReport.file_name, briefing: oceReport.briefing } : null,
+    inTraining: cover.inTraining,
+    ertOnSite: cover.ertOnSite,
+    assessorsOnSite: cover.assessorsOnSite,
   });
 
   const loadHandovers = React.useCallback(async () => {
@@ -147,6 +167,8 @@ export default function HandoverReportTab({
       setSlides(savedForShift.document.customSlides ?? []);
       setSummary(savedForShift.document.summary ?? '');
       setMachineNotes(savedForShift.document.machineNotes ?? []);
+      setIncidents(savedForShift.document.safetyIncidents ?? []);
+      setSafetyFocus(savedForShift.document.safetyFocus ?? '');
     }
   }, [supabase, activeShift?.id]);
 
@@ -458,6 +480,13 @@ export default function HandoverReportTab({
 
       {view === 'current' && !opened && (
         <>
+          <div className="mt-6 space-y-4">
+            <SafetyBriefingFields incidents={incidents} focus={safetyFocus} onIncidents={setIncidents} onFocus={setSafetyFocus} />
+            <OceReportPanel shiftId={activeShift?.id ?? null} onChange={setOceReport} />
+          </div>
+
+          <RecordTrail title="Earlier saves of this handover" tables={['shift_handovers']} />
+
           <IncomingCrewPicker
             panel={incomingPanel}
             crew={crew}

@@ -96,6 +96,56 @@ export async function generateHandoverPptx(input: CrewBriefingInput) {
       x: 0.6, y: 1.95, w: 12, h: 0.35, fontSize: 14, color: MUTED,
     });
   }
+
+  const safetyRows = [
+    ...(document.safetyIncidents ?? []).map((incident) => [incident.what || 'Incident', incident.where || '—', incident.action || '—']),
+    ...document.log
+      .filter((entry) => entry.category === 'SAFETY')
+      .map((entry) => [entry.details, entry.fleet_id || '—', entry.action_required || '—']),
+  ];
+  const safetySlide = pptx.addSlide();
+  addTitle(safetySlide, 'Safety and incidents', subtitle);
+  if (safetyRows.length === 0) {
+    safetySlide.addText('Nothing reported this shift.', { x: 0.6, y: 1.7, w: 12, h: 0.4, fontSize: 18, color: TEXT });
+  } else {
+    chunks(safetyRows, ROWS_PER_SLIDE).forEach((slice, page, pages) => {
+      const slide = page === 0 ? safetySlide : pptx.addSlide();
+      if (page > 0) addTitle(slide, `Safety and incidents (${page + 1}/${pages.length})`, subtitle);
+      addTable(slide, ['What happened', 'Where', 'For the next crew'], slice, [4.2, 3.2, 4.9]);
+    });
+  }
+
+  const focusSlide = pptx.addSlide();
+  addTitle(focusSlide, 'Safety focus / share', subtitle);
+  card(focusSlide, pptx, 0.6, 1.5, 12.1, 5.4, 'Watch this shift', document.safetyFocus?.trim() || 'No safety share recorded.');
+
+  const trainingSlide = pptx.addSlide();
+  addTitle(trainingSlide, 'Training and ERT', subtitle);
+  const trainingLines = [
+    ...(document.inTraining ?? []).map((row) => `${row.name}: ${row.level} for ${row.skill}. Assessor ${row.assessor}${row.assessorOnSite ? '' : ' is not on this shift'}.`),
+    `Trainer assessors: ${(document.assessorsOnSite ?? []).join(', ') || 'none on this crew'}`,
+    `ERT: ${(document.ertOnSite ?? []).join(', ') || 'none on this crew'}`,
+  ];
+  trainingSlide.addText(trainingLines.join('\n\n') || 'No one on this crew is under supervision.', {
+    x: 0.6, y: 1.5, w: 12, h: 5.2, fontSize: 16, color: TEXT, valign: 'top',
+  });
+
+  const oce = document.oce;
+  const oceSlide = pptx.addSlide();
+  addTitle(oceSlide, 'OCE report', subtitle);
+  if (!oce) {
+    oceSlide.addText('No OCE report uploaded for this shift.', { x: 0.6, y: 1.7, w: 12, h: 0.4, fontSize: 18, color: TEXT });
+  } else {
+    card(oceSlide, pptx, 0.6, 1.45, 12.1, 3.3, oce.fileName || 'Examiner report', oce.briefing.summary || 'The report is attached. No briefing was written.');
+    const points = [
+      ...oce.briefing.restrictions.map((item) => `Restriction: ${item}`),
+      ...oce.briefing.hazards.map((item) => `Hazard: ${item}`),
+      ...oce.briefing.conditions.map((item) => `Condition: ${item}`),
+    ];
+    oceSlide.addText(points.join('\n') || 'No extra restrictions were pulled from the report.', {
+      x: 0.9, y: 4.95, w: 11.5, h: 2, fontSize: 13, color: TEXT, valign: 'top',
+    });
+  }
   const coverNotes = [
     safety && { title: 'Safety', body: safety },
     weather && { title: 'Weather and roads', body: weather },

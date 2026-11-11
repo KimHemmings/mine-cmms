@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext } from 'react';
-import { Authorisation, CrewAuthorisation, CrewMember } from '@/types';
+import { Authorisation, CrewAuthorisation, CrewMember, CrewSupervision } from '@/types';
 import type { CrewJob } from '@/utils/crew';
 
 export interface CrewData {
@@ -11,6 +11,7 @@ export interface CrewData {
   openJobCounts: Map<string, number>;
   authorisations: Authorisation[];
   holdings: CrewAuthorisation[];
+  supervision: CrewSupervision[];
   canCheckAuthorisations: boolean;
 }
 
@@ -21,6 +22,7 @@ export const CrewDataContext = createContext<CrewData>({
   openJobCounts: new Map(),
   authorisations: [],
   holdings: [],
+  supervision: [],
   canCheckAuthorisations: false,
 });
 

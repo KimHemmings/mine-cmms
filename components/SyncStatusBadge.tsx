@@ -3,7 +3,15 @@
 import React from 'react';
 import { SyncStatus } from '@/hooks/useRealtimeWorkboard';
 
-export function SyncStatusBadge({ status }: { status: SyncStatus }) {
+export function SyncStatusBadge({ status, pending = 0 }: { status: SyncStatus; pending?: number }) {
+  if (pending > 0) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
+        <span className="h-2 w-2 rounded-full bg-amber-500" />
+        {pending} SAVED ON TABLET
+      </span>
+    );
+  }
   switch (status) {
     case 'CONNECTED':
       return (

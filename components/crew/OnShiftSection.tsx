@@ -7,6 +7,8 @@ import type { CrewJob } from '@/utils/crew';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import { useCrewData } from './CrewDataContext';
 import { AuthLight, PersonAuthorisationsDialog } from '@/components/training/PersonAuthorisations';
+import { CrewMarks, SiteCoverList } from '@/components/training/CrewMarks';
+import { siteCover } from '@/utils/crewStanding';
 
 interface OnShiftSectionProps {
   activeShift: ShiftRecord | null;
@@ -26,7 +28,7 @@ export default function OnShiftSection({
   setShiftPanel,
 }: OnShiftSectionProps) {
   const { confirm } = useFeedback();
-  const { authorisations, holdings, canCheckAuthorisations } = useCrewData();
+  const { authorisations, holdings, supervision, canCheckAuthorisations } = useCrewData();
   const [showAddList, setShowAddList] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const activeCrew = crew.filter((c) => c.active);
@@ -117,6 +119,10 @@ export default function OnShiftSection({
         </div>
       )}
 
+      {canCheckAuthorisations && onShift.length > 0 && (
+        <SiteCoverList {...siteCover(onShift, supervision, authorisations, holdings, crew)} />
+      )}
+
       {onShift.length === 0 ? (
         <p className="p-4 rounded-lg bg-slate-50 border border-dashed border-slate-300 text-sm text-slate-600">
           {activeCrew.length === 0
@@ -145,6 +151,7 @@ export default function OnShiftSection({
                     {canCheckAuthorisations && (
                       <AuthLight light={personLight(holdings.filter((row) => row.crew_member_id === c.id).map((row) => row.expires_on))} />
                     )}
+                    <CrewMarks person={c} supervision={supervision} authorisations={authorisations} holdings={holdings} />
                   </p>
                   {jobs.length === 0 ? (
                     <span className="inline-block mt-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-black uppercase">Free</span>
@@ -204,6 +211,8 @@ export default function OnShiftSection({
           person={sortedOnShift.find((member) => member.id === openId)!}
           authorisations={authorisations}
           holdings={holdings}
+          supervision={supervision}
+          crew={crew}
           onClose={() => setOpenId(null)}
         />
       )}

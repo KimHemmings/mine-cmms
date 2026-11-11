@@ -89,6 +89,21 @@ export function useRealtimeWorkboard({
         { event: '*', schema: 'public', table: 'crew_authorisations' },
         () => triggerChange()
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'operator_passouts' },
+        () => triggerChange()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'shift_machine_operators' },
+        () => triggerChange()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'crew_supervision' },
+        () => triggerChange()
+      )
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
           setSyncStatus('CONNECTED');

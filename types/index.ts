@@ -4,6 +4,7 @@ export * from './parts';
 export * from './crew';
 export * from './handover';
 export * from './training';
+export * from './production';
 
 import type { WorkOrderPart } from './parts';
 

@@ -17,7 +17,6 @@ interface HandoverDocumentViewProps {
 }
 
 const NOTE_ORDER: { category: HandoverLogCategory; title: string }[] = [
-  { category: 'SAFETY', title: 'Safety' },
   { category: 'WEATHER', title: 'Weather and roads' },
   { category: 'MANNING', title: 'Manning' },
   { category: 'PRIORITY', title: 'Priorities for the next shift' },
@@ -54,6 +53,9 @@ export default function HandoverDocumentView({
   const dateLabel = shiftDate ? new Date(shiftDate).toLocaleDateString() : '';
   const allocation = document.allocation ?? { panel: null, people: [], withOutgoing: [], needsName: [] };
   const parts = document.parts ?? [];
+  const safetyLog = document.log.filter((entry) => entry.category === 'SAFETY');
+  const incidents = document.safetyIncidents ?? [];
+  const oce = document.oce;
   const notes = NOTE_ORDER
     .map((group) => ({
       ...group,
@@ -79,6 +81,64 @@ export default function HandoverDocumentView({
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{document.summary}</p>
         </Section>
       )}
+
+      <Section title="Safety and incidents">
+        {incidents.length === 0 && safetyLog.length === 0 ? (
+          <p className="text-sm text-slate-500">Nothing reported this shift.</p>
+        ) : (
+          <ul className="text-sm space-y-1">
+            {incidents.map((incident) => (
+              <li key={incident.id}>
+                <strong>{incident.what || 'Incident'}</strong>
+                {incident.where ? ` · ${incident.where}` : ''}
+                {incident.action ? <span className="text-slate-600"> · {incident.action}</span> : null}
+              </li>
+            ))}
+            {safetyLog.map((entry) => (
+              <li key={entry.id}>
+                {entry.fleet_id ? <strong>{entry.fleet_id} · </strong> : null}
+                {entry.details}
+                {entry.action_required ? <span className="text-slate-600"> · {entry.action_required}</span> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      <Section title="Safety focus / share">
+        <p className="text-sm leading-relaxed whitespace-pre-wrap">{document.safetyFocus || 'No safety share recorded.'}</p>
+      </Section>
+
+      <Section title="Training and ERT">
+        {(document.inTraining ?? []).length === 0 ? (
+          <p className="text-sm text-slate-500">No one on this crew is under supervision.</p>
+        ) : (
+          <ul className="text-sm space-y-1">
+            {(document.inTraining ?? []).map((row) => (
+              <li key={row.name}>
+                <strong>{row.name}</strong> · {row.level} · {row.skill} · Assessor {row.assessor}
+                {!row.assessorOnSite && <span className="font-bold text-rose-700"> · Assessor is not on this shift</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="text-sm mt-2"><strong>Trainer assessors. </strong>{(document.assessorsOnSite ?? []).join(', ') || 'None on this crew.'}</p>
+        <p className="text-sm"><strong>ERT. </strong>{(document.ertOnSite ?? []).join(', ') || 'No ERT member is on this crew.'}</p>
+      </Section>
+
+      <Section title="OCE report">
+        {!oce ? (
+          <p className="text-sm text-slate-500">No OCE report uploaded for this shift.</p>
+        ) : (
+          <div className="text-sm space-y-2">
+            {oce.fileName && <p className="font-bold">{oce.fileName}</p>}
+            <p className="whitespace-pre-wrap">{oce.briefing.summary || 'The report is attached. No briefing was written.'}</p>
+            {oce.briefing.restrictions.length > 0 && <p><strong>Restrictions. </strong>{oce.briefing.restrictions.join(' ')}</p>}
+            {oce.briefing.hazards.length > 0 && <p><strong>Hazards. </strong>{oce.briefing.hazards.join(' ')}</p>}
+            {oce.briefing.conditions.length > 0 && <p><strong>Conditions. </strong>{oce.briefing.conditions.join(' ')}</p>}
+          </div>
+        )}
+      </Section>
 
       {(document.machineNotes ?? []).length > 0 && (
         <Section title="What was noted this shift">

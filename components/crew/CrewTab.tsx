@@ -5,6 +5,7 @@ import { Users, Pencil, UserX, RotateCcw, ChevronDown, ChevronUp } from 'lucide-
 import { CREW_PANELS, CrewMember, CrewMemberInput, ShiftRecord } from '@/types';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import { useCrewData } from './CrewDataContext';
+import { CrewMarks } from '@/components/training/CrewMarks';
 import CrewMemberForm from './CrewMemberForm';
 import OnShiftSection from './OnShiftSection';
 
@@ -19,7 +20,7 @@ interface CrewTabProps {
 const NO_PANEL = 'No panel';
 
 export default function CrewTab({ activeShift, saveCrewMember, setCrewMemberActive, setCrewOnShift, setShiftPanel }: CrewTabProps) {
-  const { crew, onShiftIds, openJobsByCrew } = useCrewData();
+  const { crew, onShiftIds, openJobsByCrew, authorisations, holdings, supervision } = useCrewData();
   const { confirm } = useFeedback();
   const [editing, setEditing] = useState<CrewMember | null>(null);
   const [showRemoved, setShowRemoved] = useState(false);
@@ -77,6 +78,7 @@ export default function CrewTab({ activeShift, saveCrewMember, setCrewMemberActi
                 <li key={c.id} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <p className="text-base font-bold text-slate-900">
                     {c.display_name}
+                    <span className="ml-2 inline-flex align-middle"><CrewMarks person={c} supervision={supervision} authorisations={authorisations} holdings={holdings} /></span>
                     <span className="ml-2 text-sm font-medium text-slate-500">
                       {c.department || 'Workshop'} · {c.trade}
                       {c.employee_id && <span className="font-mono"> · #{c.employee_id}</span>}

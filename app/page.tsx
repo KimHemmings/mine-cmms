@@ -7,7 +7,11 @@ import { useWorkboardData } from '@/hooks/useWorkboardData';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { Asset, MachineWorkOrder, UserRole } from '@/types';
 import TrainingMatrix from '@/components/training/TrainingMatrix';
+import PassoutRegister from '@/components/training/PassoutRegister';
+import SupervisionRegister from '@/components/training/SupervisionRegister';
+import RecordTrail from '@/components/training/RecordTrail';
 import ProductionStatus from '@/components/production/ProductionStatus';
+import ProductionHandover from '@/components/production/ProductionHandover';
 
 import WorkboardTab from '@/components/WorkboardTab';
 import FleetDossierTab from '@/components/FleetDossierTab';
@@ -63,7 +67,11 @@ function Workboard() {
     onShiftCrewIds,
     authorisations,
     holdings,
+    passouts,
+    machineOperators,
+    supervision,
     loading,
+    pendingStages,
     syncStatus,
     shiftJobs,
     completedJobs,
@@ -94,9 +102,10 @@ function Workboard() {
       openJobCounts,
       authorisations,
       holdings,
+      supervision,
       canCheckAuthorisations: userRole !== 'fitter',
     };
-  }, [crew, onShiftCrewIds, workOrders, allAssets, authorisations, holdings, userRole]);
+  }, [crew, onShiftCrewIds, workOrders, allAssets, authorisations, holdings, supervision, userRole]);
 
   const refreshAfterSave = () => {
     fetchAllData();
@@ -146,6 +155,7 @@ function Workboard() {
       <TopHeader
         activeShift={activeShift}
         syncStatus={syncStatus}
+        pendingStages={pendingStages}
         activeFitter={activeFitter}
         currentTab={currentTab}
         onTabChange={setCurrentTab}
@@ -210,23 +220,57 @@ function Workboard() {
         )}
 
         {currentTab === 'training' && userRole === 'training' && (
-          <TrainingMatrix
+          <div className="space-y-4">
+            <TrainingMatrix
+              crew={crew}
+              authorisations={authorisations}
+              holdings={holdings}
+              onChanged={fetchAllData}
+            />
+            <PassoutRegister
+              machines={allAssets}
+              crew={crew}
+              passouts={passouts}
+              onChanged={fetchAllData}
+            />
+            <SupervisionRegister
+              crew={crew}
+              supervision={supervision}
+              authorisations={authorisations}
+              holdings={holdings}
+              onChanged={fetchAllData}
+            />
+            <RecordTrail
+              title="Record trail"
+              tables={['operator_passouts', 'crew_supervision', 'crew_authorisations', 'oce_reports']}
+            />
+          </div>
+        )}
+
+        {currentTab === 'handover' && userRole === 'production' && (
+          <ProductionHandover
+            activeShift={activeShift}
+            machines={allAssets}
             crew={crew}
+            allocations={machineOperators}
+            supervision={supervision}
             authorisations={authorisations}
             holdings={holdings}
-            onChanged={fetchAllData}
           />
         )}
 
         {currentTab === 'status' && userRole === 'production' && (
           <ProductionStatus
-            activeShiftName={activeShift ? `${activeShift.shift_name}${activeShift.crew ? ` · ${activeShift.crew}` : ''}` : 'No active shift'}
+            activeShift={activeShift}
             machines={allAssets}
             workOrders={workOrders}
             crew={crew}
-            onShiftIds={onShiftCrewIds}
             authorisations={authorisations}
             holdings={holdings}
+            passouts={passouts}
+            allocations={machineOperators}
+            supervision={supervision}
+            onChanged={fetchAllData}
           />
         )}
 

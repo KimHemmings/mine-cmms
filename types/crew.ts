@@ -9,6 +9,7 @@ export const CREW_TRADES = [
   'Boilermaker',
   'Leading Hand',
   'Apprentice',
+  'Operator',
   'Other',
 ] as const;
 
@@ -21,6 +22,23 @@ export interface CrewMember {
   panel: string | null;
   active: boolean;
   created_at: string;
+}
+
+export type SupervisionLevel = 'close' | 'minimal';
+
+export interface CrewSupervision {
+  crew_member_id: string;
+  level: SupervisionLevel;
+  skill: string;
+  assessor_id: string | null;
+}
+
+export interface TraineeLine {
+  name: string;
+  level: string;
+  skill: string;
+  assessor: string;
+  assessorOnSite: boolean;
 }
 
 export interface CrewMemberInput {

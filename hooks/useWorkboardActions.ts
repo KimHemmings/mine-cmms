@@ -2,6 +2,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { ShiftRecord, CreatePartPayload, PartStatus, Asset, STAGE_OPTIONS, CrewMember, CrewMemberInput } from '@/types';
 import { logAssetHistory } from '@/utils/helpers';
+import { isNetworkError, queueStage } from '@/utils/stageQueue';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 
 interface UseWorkboardActionsOptions {
@@ -53,6 +54,10 @@ export function useWorkboardActions({
   }
 
   async function undoSignOff(woId: string, assetId: string, previousStage: string) {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      showToast({ message: 'Undo needs a signal. The sign-off is still saved on this tablet.', tone: 'info' });
+      return;
+    }
     const stage = previousStage && previousStage !== 'COMPLETED' ? previousStage : 'IN_PROGRESS';
     const { error } = await supabase
       .from('machine_work_orders')
@@ -78,17 +83,35 @@ export function useWorkboardActions({
       if (!ok) return;
     }
 
-    const { data: before } = await supabase
+    const holdLocally = () => {
+      queueStage({ woId, assetId, newStage, fitter });
+      showToast({ message: 'Saved on this tablet. It will send when the signal is back.' });
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      holdLocally();
+      return;
+    }
+
+    const { data: before, error: readError } = await supabase
       .from('machine_work_orders')
       .select('stage')
       .eq('id', woId)
       .single<{ stage: string }>();
+    if (readError && isNetworkError(readError)) {
+      holdLocally();
+      return;
+    }
 
     const woUpdate = isComplete
       ? { stage: 'COMPLETED', status: 'COMPLETED', completed_at: new Date().toISOString(), completed_by: fitter }
       : { stage: newStage, status: 'OPEN', completed_at: null, completed_by: null };
 
     const { error: woError } = await supabase.from('machine_work_orders').update(woUpdate).eq('id', woId);
+    if (woError && isNetworkError(woError)) {
+      holdLocally();
+      return;
+    }
     if (woError) return alert(`Error updating work order: ${woError.message}`);
 
     if (!isComplete) await returnReleasedMachineToBoard(assetId);

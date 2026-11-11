@@ -3,12 +3,29 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { Asset, Authorisation, CrewAuthorisation, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord, CrewMember, HandoverLogEntry } from '@/types';
+import { Asset, Authorisation, CrewAuthorisation, CrewSupervision, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord, CrewMember, HandoverLogEntry, OperatorPassout, ShiftMachineOperator } from '@/types';
 import { useRealtimeWorkboard } from '@/hooks/useRealtimeWorkboard';
+import { beginStageFlush, dropQueuedStage, endStageFlush, isNetworkError, readStageQueue } from '@/utils/stageQueue';
+import { logAssetHistory } from '@/utils/helpers';
 import { useWorkboardActions } from '@/hooks/useWorkboardActions';
 
 interface UseWorkboardDataOptions {
   activeFitter: string;
+}
+
+function withQueuedStages(orders: MachineWorkOrder[]): MachineWorkOrder[] {
+  const pending = readStageQueue();
+  if (pending.length === 0) return orders;
+  const byId = new Map(pending.map((item) => [item.woId, item.newStage]));
+  return orders.map((order) => {
+    const stage = byId.get(order.id);
+    if (!stage) return order;
+    return {
+      ...order,
+      stage: stage as MachineWorkOrder['stage'],
+      status: stage === 'COMPLETED' ? 'COMPLETED' : 'OPEN',
+    };
+  });
 }
 
 export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
@@ -22,7 +39,11 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   const [handoverLog, setHandoverLog] = useState<HandoverLogEntry[]>([]);
   const [authorisations, setAuthorisations] = useState<Authorisation[]>([]);
   const [holdings, setHoldings] = useState<CrewAuthorisation[]>([]);
+  const [passouts, setPassouts] = useState<OperatorPassout[]>([]);
+  const [machineOperators, setMachineOperators] = useState<ShiftMachineOperator[]>([]);
+  const [supervision, setSupervision] = useState<CrewSupervision[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingStages, setPendingStages] = useState(0);
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -65,7 +86,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
       .select('*, parts:work_order_parts(*), crew:work_order_assignments(crew_member_id)')
       .order('created_at', { ascending: true });
 
-    if (data) setWorkOrders(data as MachineWorkOrder[]);
+    if (data) setWorkOrders(withQueuedStages(data as MachineWorkOrder[]));
   }, [supabase]);
 
   const fetchDefects = useCallback(async () => {
@@ -133,6 +154,22 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     setHoldings((held ?? []) as CrewAuthorisation[]);
   }, [supabase]);
 
+  const fetchSupervision = useCallback(async () => {
+    const { data, error } = await supabase.from('crew_supervision').select('crew_member_id, level, skill, assessor_id');
+    if (error) return;
+    setSupervision((data ?? []) as CrewSupervision[]);
+  }, [supabase]);
+
+  const fetchProduction = useCallback(async () => {
+    const [{ data: passes, error: passError }, { data: assigned, error: assignedError }] = await Promise.all([
+      supabase.from('operator_passouts').select('id, crew_member_id, asset_id, expires_on'),
+      supabase.from('shift_machine_operators').select('id, shift_id, asset_id, crew_member_id'),
+    ]);
+    if (passError || assignedError) return;
+    setPassouts((passes ?? []) as OperatorPassout[]);
+    setMachineOperators((assigned ?? []) as ShiftMachineOperator[]);
+  }, [supabase]);
+
   const fetchAllData = useCallback(async () => {
     await Promise.all([
       fetchShift(),
@@ -143,13 +180,60 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
       fetchCrew(),
       fetchHandoverLog(),
       fetchAuthorisations(),
+      fetchProduction(),
+      fetchSupervision(),
     ]);
     setLoading(false);
-  }, [fetchShift, fetchFleet, fetchWorkOrders, fetchDefects, fetchNotes, fetchCrew, fetchHandoverLog, fetchAuthorisations]);
+  }, [fetchShift, fetchFleet, fetchWorkOrders, fetchDefects, fetchNotes, fetchCrew, fetchHandoverLog, fetchAuthorisations, fetchProduction, fetchSupervision]);
 
   useEffect(() => {
     fetchAllData();
   }, [fetchAllData]);
+
+  useEffect(() => {
+    const refreshCount = () => {
+      setPendingStages(readStageQueue().length);
+      setWorkOrders((current) => withQueuedStages(current));
+    };
+    refreshCount();
+    window.addEventListener('stage-queue-changed', refreshCount);
+    return () => window.removeEventListener('stage-queue-changed', refreshCount);
+  }, []);
+
+  useEffect(() => {
+    let stopped = false;
+    async function flush() {
+      if (!beginStageFlush()) return;
+      const pending = readStageQueue();
+      try {
+        for (const item of pending) {
+          if (stopped) return;
+          const woUpdate = item.newStage === 'COMPLETED'
+            ? { stage: 'COMPLETED', status: 'COMPLETED', completed_at: item.at, completed_by: item.fitter }
+            : { stage: item.newStage, status: 'OPEN', completed_at: null, completed_by: null };
+          const { error } = await supabase.from('machine_work_orders').update(woUpdate).eq('id', item.woId);
+          if (error && isNetworkError(error)) return;
+          dropQueuedStage(item.woId);
+          if (!error) {
+            const note = item.newStage === 'COMPLETED'
+              ? 'Work order completed and signed off.'
+              : `Work order updated to ${item.newStage.replace(/_/g, ' ')}.`;
+            await logAssetHistory(supabase, item.assetId, item.fitter, note, item.newStage);
+          }
+        }
+        if (!stopped && readStageQueue().length === 0 && pending.length > 0) await fetchWorkOrders();
+      } finally {
+        endStageFlush();
+      }
+    }
+    const first = setTimeout(() => { void flush(); }, 0);
+    window.addEventListener('online', flush);
+    return () => {
+      stopped = true;
+      clearTimeout(first);
+      window.removeEventListener('online', flush);
+    };
+  }, [supabase, fetchWorkOrders]);
 
   const { syncStatus } = useRealtimeWorkboard({
     onDataChange: fetchAllData,
@@ -200,7 +284,11 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     handoverLog,
     authorisations,
     holdings,
+    passouts,
+    machineOperators,
+    supervision,
     loading,
+    pendingStages,
     syncStatus,
     shiftJobs,
     completedJobs,

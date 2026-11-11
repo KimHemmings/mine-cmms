@@ -5,6 +5,7 @@ import { Check, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import { CrewMember, personLight } from '@/types';
 import { useCrewData } from './CrewDataContext';
 import { AuthLight, PersonAuthorisationsDialog } from '@/components/training/PersonAuthorisations';
+import { CrewMarks } from '@/components/training/CrewMarks';
 
 interface CrewPickerProps {
   crew: CrewMember[];
@@ -18,7 +19,7 @@ export default function CrewPicker({ crew, onShiftIds, openJobCounts, selectedId
   const [search, setSearch] = useState('');
   const [showEveryone, setShowEveryone] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
-  const { authorisations, holdings, canCheckAuthorisations } = useCrewData();
+  const { authorisations, holdings, supervision, canCheckAuthorisations } = useCrewData();
 
   const activeCrew = useMemo(
     () => crew.filter((c) => c.active || selectedIds.includes(c.id)),
@@ -73,6 +74,7 @@ export default function CrewPicker({ crew, onShiftIds, openJobCounts, selectedId
               {jobs > 0 && <span className="ml-1 font-bold text-amber-700">· {jobs} open job{jobs > 1 ? 's' : ''}</span>}
             </span>
             {canCheckAuthorisations && <AuthLight light={light} />}
+            <CrewMarks person={c} supervision={supervision} authorisations={authorisations} holdings={holdings} />
           </span>
         </button>
         {canCheckAuthorisations && (
@@ -139,6 +141,8 @@ export default function CrewPicker({ crew, onShiftIds, openJobCounts, selectedId
           person={activeCrew.find((member) => member.id === openId)!}
           authorisations={authorisations}
           holdings={holdings}
+          supervision={supervision}
+          crew={crew}
           onClose={() => setOpenId(null)}
         />
       )}

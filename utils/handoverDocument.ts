@@ -1,4 +1,5 @@
 import { Asset, CrewMember, DefectItem, HandoverLogEntry, HandoverSnapshot, MachineWorkOrder, STAGE_OPTIONS } from '@/types';
+import { normalizeOceBriefing } from '@/utils/oce';
 
 interface BuildHandoverInput {
   assets: Asset[];
@@ -13,6 +14,12 @@ interface BuildHandoverInput {
   customSlides: HandoverSnapshot['customSlides'];
   crew?: CrewMember[];
   incomingPanel?: string | null;
+  safetyIncidents?: HandoverSnapshot['safetyIncidents'];
+  safetyFocus?: string | null;
+  oce?: HandoverSnapshot['oce'];
+  inTraining?: HandoverSnapshot['inTraining'];
+  ertOnSite?: string[];
+  assessorsOnSite?: string[];
 }
 
 const PART_STATUS_LABEL: Record<string, string> = {
@@ -72,6 +79,12 @@ export function buildHandoverSnapshot({
   customSlides,
   crew = [],
   incomingPanel = null,
+  safetyIncidents = [],
+  safetyFocus = null,
+  oce = null,
+  inTraining = [],
+  ertOnSite = [],
+  assessorsOnSite = [],
 }: BuildHandoverInput): HandoverSnapshot {
   const fleetOf = new Map(assets.map((asset) => [asset.id, asset.fleet_id]));
   const defectLine = (defect: DefectItem) => ({
@@ -144,6 +157,12 @@ export function buildHandoverSnapshot({
       return new Date(defect.rectified_at) >= new Date(shiftStartedAt);
     }).map(defectLine),
     defectsOpen: defects.filter((defect) => defect.status === 'OPEN' || defect.status === 'DEFERRED').map(defectLine),
+    safetyIncidents: safetyIncidents.filter((incident) => incident.what.trim() || incident.where.trim() || incident.action.trim()),
+    safetyFocus: safetyFocus?.trim() || null,
+    oce,
+    inTraining,
+    ertOnSite,
+    assessorsOnSite,
     customSlides: customSlides.filter((slide) => slide.title.trim() || slide.notes.trim()),
   };
 }
@@ -159,6 +178,14 @@ export function normalizeHandoverDocument(document: Partial<HandoverSnapshot> | 
     released: document?.released ?? [],
     defectsFixed: document?.defectsFixed ?? [],
     defectsOpen: document?.defectsOpen ?? [],
+    safetyIncidents: document?.safetyIncidents ?? [],
+    safetyFocus: document?.safetyFocus ?? null,
+    oce: document?.oce
+      ? { fileName: document.oce.fileName ?? null, briefing: normalizeOceBriefing(document.oce.briefing) }
+      : null,
+    inTraining: document?.inTraining ?? [],
+    ertOnSite: document?.ertOnSite ?? [],
+    assessorsOnSite: document?.assessorsOnSite ?? [],
     customSlides: document?.customSlides ?? [],
   };
 }

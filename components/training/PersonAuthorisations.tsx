@@ -1,7 +1,9 @@
 'use client';
 
 import { X } from 'lucide-react';
-import { Authorisation, AuthorisationState, CrewAuthorisation, CrewMember, authorisationState } from '@/types';
+import { Authorisation, AuthorisationState, CrewAuthorisation, CrewMember, CrewSupervision, authorisationState } from '@/types';
+import { supervisionFor } from '@/utils/crewStanding';
+import { CrewMarks } from '@/components/training/CrewMarks';
 
 const STATE_LABEL: Record<AuthorisationState, { label: string; className: string }> = {
   expired: { label: 'Expired', className: 'bg-rose-100 text-rose-800' },
@@ -64,13 +66,19 @@ export function PersonAuthorisationsDialog({
   person,
   authorisations,
   holdings,
+  supervision,
+  crew,
   onClose,
 }: {
   person: CrewMember;
   authorisations: Authorisation[];
   holdings: CrewAuthorisation[];
+  supervision: CrewSupervision[];
+  crew: CrewMember[];
   onClose: () => void;
 }) {
+  const training = supervisionFor(person.id, supervision);
+  const assessor = crew.find((member) => member.id === training?.assessor_id);
   const byAuth = new Map(
     holdings.filter((row) => row.crew_member_id === person.id).map((row) => [row.authorisation_id, row.expires_on])
   );
@@ -93,6 +101,14 @@ export function PersonAuthorisationsDialog({
             <X className="w-5 h-5" />
           </button>
         </div>
+        <CrewMarks person={person} supervision={supervision} authorisations={authorisations} holdings={holdings} />
+        {training && (
+          <p className="text-sm">
+            <strong>{training.level === 'close' ? 'Close supervision' : 'Minimal supervision'}</strong>
+            {' for '}{training.skill}. Assessor: {assessor?.display_name ?? 'not named'}.
+            {training.level === 'close' ? ' The assessor stays with them.' : ' The assessor is on site, not on every task.'}
+          </p>
+        )}
         <ItemList title="Authorisations" items={tickets} byAuth={byAuth} empty="No authorisations are set up." />
         <ItemList title="SOPs due or expired" items={dueSops} byAuth={byAuth} empty="No SOPs are due or expired." />
         <p className="text-xs text-slate-500">Current SOPs stay with training. This list is read only.</p>

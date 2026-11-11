@@ -35,6 +35,7 @@ const ROLE_LABEL: Record<UserRole, string> = {
 interface TopHeaderProps {
   activeShift: ShiftRecord | null;
   syncStatus: SyncStatus;
+  pendingStages?: number;
   activeFitter: string;
   currentTab: Tab;
   onTabChange: (tab: Tab) => void;
@@ -47,6 +48,7 @@ interface TopHeaderProps {
 export const TopHeader: React.FC<TopHeaderProps> = ({
   activeShift,
   syncStatus,
+  pendingStages = 0,
   activeFitter,
   currentTab,
   onTabChange,
@@ -78,10 +80,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
     { id: 'board', label: `Workboard (${shiftJobsCount})`, icon: <ClipboardList className="w-4 h-4" />, show: userRole === 'fitter' || userRole === 'management' },
     { id: 'dossier', label: 'Fleet Directory', icon: <BookOpen className="w-4 h-4" />, show: userRole === 'fitter' || userRole === 'management' },
-    { id: 'handover', label: 'Shift Handover', icon: <FileSpreadsheet className="w-4 h-4" />, show: userRole === 'management' },
+    { id: 'handover', label: 'Shift Handover', icon: <FileSpreadsheet className="w-4 h-4" />, show: userRole === 'management' || userRole === 'production' },
     { id: 'crew', label: 'Crew', icon: <Users className="w-4 h-4" />, show: userRole === 'management' },
     { id: 'training', label: 'Training', icon: <GraduationCap className="w-4 h-4" />, show: userRole === 'training' },
-    { id: 'status', label: 'Shift status', icon: <Factory className="w-4 h-4" />, show: userRole === 'production' },
+    { id: 'status', label: 'Prestart', icon: <Factory className="w-4 h-4" />, show: userRole === 'production' },
   ];
 
   return (
@@ -97,7 +99,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               {activeShift?.shift_name || 'Active Shift'}
               {activeShift?.crew && ` · ${activeShift.crew}`}
             </span>
-            <SyncStatusBadge status={syncStatus} />
+            <SyncStatusBadge status={syncStatus} pending={pendingStages} />
           </div>
         </div>
 
