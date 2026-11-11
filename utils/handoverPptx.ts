@@ -3,6 +3,7 @@ import { HandoverCarryJob, HandoverPartLine, HandoverSlide, HandoverSnapshot } f
 import { handoverNotesFor } from '@/utils/handoverNotes';
 import { formatDateTime } from '@/utils/helpers';
 import { partStatusLabel, stageLabel } from '@/utils/handoverDocument';
+import { trainingSentence } from '@/utils/crewStanding';
 
 export type CustomSlideData = HandoverSlide;
 
@@ -122,7 +123,7 @@ export async function generateHandoverPptx(input: CrewBriefingInput) {
   const trainingSlide = pptx.addSlide();
   addTitle(trainingSlide, 'Training and ERT', subtitle);
   const trainingLines = [
-    ...(document.inTraining ?? []).map((row) => `${row.name}: ${row.level} for ${row.skill}. Assessor ${row.assessor}${row.assessorOnSite ? '' : ' is not on this shift'}.`),
+      ...(document.inTraining ?? []).map((row) => trainingSentence(row)),
     `Trainer assessors: ${(document.assessorsOnSite ?? []).join(', ') || 'none on this crew'}`,
     `ERT: ${(document.ertOnSite ?? []).join(', ') || 'none on this crew'}`,
   ];

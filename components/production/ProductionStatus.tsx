@@ -11,15 +11,17 @@ import {
   CrewSupervision,
   OperatorPassout,
   PRODUCTION_PLANT,
+  SeatChangeLine,
   STAGE_OPTIONS,
   ShiftMachineOperator,
+  ShiftSeatChange,
   ShiftRecord,
   authorisationState,
   personLight,
 } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
 import { generatePrestartPptx } from '@/utils/prestartPptx';
-import { siteCover, supervisionFor } from '@/utils/crewStanding';
+import { formatStartDay, seatChangeLines, siteCover, supervisionFor, supervisionIsLive } from '@/utils/crewStanding';
 import { CrewMarks, SiteCoverList } from '@/components/training/CrewMarks';
 import { AuthLight, PersonAuthorisationsDialog } from '@/components/training/PersonAuthorisations';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
@@ -36,6 +38,7 @@ export default function ProductionStatus({
   passouts,
   allocations,
   supervision,
+  seatChanges,
   onChanged,
 }: {
   activeShift: ShiftRecord | null;
@@ -47,13 +50,15 @@ export default function ProductionStatus({
   passouts: OperatorPassout[];
   allocations: ShiftMachineOperator[];
   supervision: CrewSupervision[];
+  seatChanges: ShiftSeatChange[];
   onChanged: () => void;
 }) {
   const supabase = createClient();
   const { showToast } = useFeedback();
   const [exporting, setExporting] = useState(false);
-  const [showCrewed, setShowCrewed] = useState(false);
+  const [showCrewed, setShowCrewed] = useState(true);
   const [openPerson, setOpenPerson] = useState<CrewMember | null>(null);
+  const [changingId, setChangingId] = useState<string | null>(null);
   const operators = crew.filter((member) => member.active && member.department === 'Production');
   const onCrew = operators.filter((member) => !activeShift?.crew || member.panel === activeShift.crew);
   const cover = siteCover(onCrew, supervision, authorisations, holdings, crew);
@@ -61,6 +66,15 @@ export default function ProductionStatus({
   const available = plant.filter((asset) => asset.status === 'OPERATIONAL' && !asset.in_shift);
   const unavailable = plant.filter((asset) => asset.in_shift && asset.status !== 'OPERATIONAL');
   const shiftAllocations = allocations.filter((row) => row.shift_id === activeShift?.id);
+  const changeLines = useMemo(() => {
+    const fleetByAsset = new Map(machines.map((asset) => [asset.id, asset.fleet_id]));
+    return seatChangeLines(
+      seatChanges.filter((row) => row.shift_id === activeShift?.id),
+      crew,
+      fleetByAsset,
+      supervision,
+    );
+  }, [seatChanges, activeShift?.id, crew, machines, supervision]);
 
   const passoutFor = (memberId: string, assetId: string) =>
     passouts.find((row) => row.crew_member_id === memberId && row.asset_id === assetId) ?? null;
@@ -112,6 +126,35 @@ export default function ProductionStatus({
       showToast({ message: 'Could not save that operator.', tone: 'error' });
       return;
     }
+    onChanged();
+  }
+
+  async function changeOperator(assetId: string, nextId: string) {
+    if (!activeShift || !nextId) return;
+    const current = shiftAllocations.find((row) => row.asset_id === assetId);
+    if (!current || current.crew_member_id === nextId) return;
+    if (!suitableFor(assetId).some((member) => member.id === nextId)) {
+      showToast({ message: 'Training has not passed that operator out on this machine.', tone: 'error' });
+      return;
+    }
+    const { error: updateError } = await supabase
+      .from('shift_machine_operators')
+      .update({ crew_member_id: nextId })
+      .eq('id', current.id);
+    if (updateError) {
+      showToast({ message: updateError.message || 'Could not change the operator.', tone: 'error' });
+      return;
+    }
+    const { error: logError } = await supabase.from('shift_seat_changes').insert({
+      shift_id: activeShift.id,
+      asset_id: assetId,
+      off_crew_member_id: current.crew_member_id,
+      on_crew_member_id: nextId,
+    });
+    if (logError) {
+      showToast({ message: 'The operator changed, but the handover line did not save.', tone: 'error' });
+    }
+    setChangingId(null);
     onChanged();
   }
 
@@ -202,6 +245,7 @@ export default function ProductionStatus({
                 >
                   {member.display_name}
                   <AuthLight light={personLight(holdings.filter((row) => row.crew_member_id === member.id).map((row) => row.expires_on))} />
+                  <CrewMarks person={member} supervision={supervision} authorisations={authorisations} holdings={holdings} showUpcoming />
                 </button>
               </li>
             ))}
@@ -265,6 +309,10 @@ export default function ProductionStatus({
             crew={crew}
             activeShift={activeShift}
             allocate={allocate}
+            changeOperator={changeOperator}
+            changingId={changingId}
+            setChangingId={setChangingId}
+            changeLines={changeLines}
             onOpen={setOpenPerson}
           />
         )}
@@ -326,6 +374,10 @@ export default function ProductionStatus({
             crew={crew}
             activeShift={activeShift}
             allocate={allocate}
+            changeOperator={changeOperator}
+            changingId={changingId}
+            setChangingId={setChangingId}
+            changeLines={changeLines}
             onOpen={setOpenPerson}
           />
         )}
@@ -354,6 +406,10 @@ function AllocationTable({
   crew,
   activeShift,
   allocate,
+  changeOperator,
+  changingId,
+  setChangingId,
+  changeLines,
   onOpen,
 }: {
   assets: Asset[];
@@ -365,6 +421,10 @@ function AllocationTable({
   crew: CrewMember[];
   activeShift: ShiftRecord | null;
   allocate: (assetId: string, crewMemberId: string) => void;
+  changeOperator: (assetId: string, crewMemberId: string) => void;
+  changingId: string | null;
+  setChangingId: (assetId: string | null) => void;
+  changeLines: SeatChangeLine[];
   onOpen: (person: CrewMember) => void;
 }) {
   return (
@@ -393,7 +453,7 @@ function AllocationTable({
                       {trainees.map((member) => (
                         <span key={member.id} className="flex flex-wrap items-center gap-1 text-xs font-medium text-slate-600">
                           <button type="button" onClick={() => onOpen(member)} className="font-bold underline decoration-slate-300 hover:decoration-slate-900">{member.display_name}</button>
-                          <CrewMarks person={member} supervision={supervision} authorisations={[]} holdings={[]} />
+                          <CrewMarks person={member} supervision={supervision} authorisations={[]} holdings={[]} showUpcoming />
                         </span>
                       ))}
                     </span>
@@ -410,7 +470,13 @@ function AllocationTable({
                     {suitable.map((member) => {
                       const state = authorisationState(passoutFor(member.id, asset.id)?.expires_on ?? null);
                       const training = supervisionFor(member.id, supervision);
-                      const level = training?.level === 'close' ? ' · close supervision' : training?.level === 'minimal' ? ' · minimal supervision' : '';
+                      const level = !training
+                        ? ''
+                        : !supervisionIsLive(training) && training.starts_on
+                          ? ` · starts ${formatStartDay(training.starts_on)}`
+                          : training.level === 'close'
+                            ? ' · close supervision'
+                            : ' · minimal supervision';
                       return (
                         <option key={member.id} value={member.id}>
                           {member.display_name}{state === 'due' ? ' · due soon' : ''}{level}
@@ -421,21 +487,59 @@ function AllocationTable({
                   {chosen && (
                     <p className="mt-1 text-xs font-bold text-slate-700">
                       <button type="button" onClick={() => onOpen(chosen)} className="underline decoration-slate-300 hover:decoration-slate-900">{chosen.display_name}</button>
-                      {supervisionFor(chosen.id, supervision) && (
-                        <>
-                          {' · '}{supervisionFor(chosen.id, supervision)?.level === 'close' ? 'Close supervision' : 'Minimal supervision'}
-                          {' for '}{supervisionFor(chosen.id, supervision)?.skill}
-                          {'. Assessor '}
-                          {(() => {
-                            const assessor = crew.find((member) => member.id === supervisionFor(chosen.id, supervision)?.assessor_id);
-                            return assessor
-                              ? <button type="button" onClick={() => onOpen(assessor)} className="underline decoration-slate-300 hover:decoration-slate-900">{assessor.display_name}</button>
-                              : 'not named';
-                          })()}
-                        </>
-                      )}
+                      {(() => {
+                        const training = supervisionFor(chosen.id, supervision);
+                        if (!training) return null;
+                        const assessor = crew.find((member) => member.id === training.assessor_id);
+                        const assessorName = assessor
+                          ? <button type="button" onClick={() => onOpen(assessor)} className="underline decoration-slate-300 hover:decoration-slate-900">{assessor.display_name}</button>
+                          : 'not named';
+                        if (!supervisionIsLive(training) && training.starts_on) {
+                          return <> · Starts {formatStartDay(training.starts_on)} · Assessor {assessorName}</>;
+                        }
+                        return (
+                          <>
+                            {' · '}{training.level === 'close' ? 'Close supervision' : 'Minimal supervision'}
+                            {' for '}{training.skill}
+                            {'. Assessor '}{assessorName}
+                          </>
+                        );
+                      })()}
                     </p>
                   )}
+                  {chosenIsSuitable && chosen && changingId === asset.id && (
+                    <label className="mt-2 block text-xs font-bold text-slate-700">
+                      Who is getting on
+                      <select
+                        defaultValue=""
+                        onChange={(event) => { if (event.target.value) changeOperator(asset.id, event.target.value); }}
+                        className="mt-1 min-h-11 w-full max-w-md rounded-lg border-2 border-slate-300 bg-white px-3 text-sm font-bold"
+                      >
+                        <option value="">Choose an operator</option>
+                        {suitable.filter((member) => member.id !== chosen.id).map((member) => {
+                          const training = supervisionFor(member.id, supervision);
+                          const liveClose = !!training && supervisionIsLive(training) && training.level === 'close';
+                          const assessor = crew.find((person) => person.id === training?.assessor_id);
+                          return (
+                            <option key={member.id} value={member.id}>
+                              {member.display_name}{liveClose ? ` · assessor ${assessor?.display_name ?? 'not named'} in the cab` : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <button type="button" onClick={() => setChangingId(null)} className="mt-1 block underline">Leave them on</button>
+                    </label>
+                  )}
+                  {chosenIsSuitable && chosen && changingId !== asset.id && (
+                    <button type="button" onClick={() => setChangingId(asset.id)} className="mt-2 min-h-10 px-3 rounded-lg border border-slate-300 text-sm font-bold text-slate-800">
+                      Change operator
+                    </button>
+                  )}
+                  {changeLines.filter((line) => line.assetId === asset.id).map((line) => (
+                    <p key={line.id} className="mt-1 text-xs font-bold text-slate-700">
+                      {line.text}{line.cab ? ` ${line.cab}` : ''}
+                    </p>
+                  ))}
                   {chosen && !chosenIsSuitable && (
                     <p className="mt-1 text-xs font-bold text-rose-700">
                       {chosen.display_name} is on this machine, but their pass-out is not current.

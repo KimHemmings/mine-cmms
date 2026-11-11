@@ -16,10 +16,11 @@ import {
   SafetyIncident,
   ShiftMachineOperator,
   ShiftRecord,
+  ShiftSeatChange,
 } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
 import { normalizeOceBriefing } from '@/utils/oce';
-import { siteCover } from '@/utils/crewStanding';
+import { seatChangeLines, siteCover } from '@/utils/crewStanding';
 import { generateProductionHandoverPptx } from '@/utils/productionHandoverPptx';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import SafetyBriefingFields from '@/components/handover/SafetyBriefingFields';
@@ -52,6 +53,7 @@ function normalizeDocument(document: Partial<ProductionHandoverDocument> | null 
     ertOnSite: document?.ertOnSite ?? [],
     assessorsOnSite: document?.assessorsOnSite ?? [],
     allocations: document?.allocations ?? [],
+    seatChanges: document?.seatChanges ?? [],
     notCrewed: document?.notCrewed ?? [],
     inWorkshop: document?.inWorkshop ?? [],
   };
@@ -62,6 +64,7 @@ export default function ProductionHandover({
   machines,
   crew,
   allocations,
+  seatChanges,
   supervision,
   authorisations,
   holdings,
@@ -70,6 +73,7 @@ export default function ProductionHandover({
   machines: Asset[];
   crew: CrewMember[];
   allocations: ShiftMachineOperator[];
+  seatChanges: ShiftSeatChange[];
   supervision: CrewSupervision[];
   authorisations: Authorisation[];
   holdings: CrewAuthorisation[];
@@ -115,6 +119,12 @@ export default function ProductionHandover({
     ertOnSite: cover.ertOnSite,
     assessorsOnSite: cover.assessorsOnSite,
     allocations: crewed,
+    seatChanges: seatChangeLines(
+      seatChanges.filter((row) => row.shift_id === activeShift?.id),
+      crew,
+      new Map(machines.map((asset) => [asset.id, asset.fleet_id])),
+      supervision,
+    ),
     notCrewed,
     inWorkshop,
   };

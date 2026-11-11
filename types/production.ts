@@ -40,6 +40,23 @@ export interface ProductionCrewLine {
   location: string;
 }
 
+export interface ShiftSeatChange {
+  id: string;
+  shift_id: string;
+  asset_id: string;
+  off_crew_member_id: string;
+  on_crew_member_id: string;
+  changed_at: string;
+}
+
+export interface SeatChangeLine {
+  id: string;
+  assetId: string;
+  fleetId: string;
+  text: string;
+  cab: string;
+}
+
 export interface ProductionHandoverDocument {
   summary: string | null;
   delays: ProductionDelay[];
@@ -50,6 +67,7 @@ export interface ProductionHandoverDocument {
   ertOnSite: string[];
   assessorsOnSite: string[];
   allocations: ProductionCrewLine[];
+  seatChanges: SeatChangeLine[];
   notCrewed: { fleetId: string; machine: string; location: string }[];
   inWorkshop: { fleetId: string; location: string; expected: string }[];
 }

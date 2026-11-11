@@ -151,7 +151,7 @@ export default function OnShiftSection({
                     {canCheckAuthorisations && (
                       <AuthLight light={personLight(holdings.filter((row) => row.crew_member_id === c.id).map((row) => row.expires_on))} />
                     )}
-                    <CrewMarks person={c} supervision={supervision} authorisations={authorisations} holdings={holdings} />
+                    <CrewMarks person={c} supervision={supervision} authorisations={authorisations} holdings={holdings} showUpcoming={canCheckAuthorisations} />
                   </p>
                   {jobs.length === 0 ? (
                     <span className="inline-block mt-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-black uppercase">Free</span>

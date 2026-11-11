@@ -1,5 +1,5 @@
 import { Authorisation, CrewAuthorisation, CrewMember, CrewSupervision } from '@/types';
-import { ERT_TICKET, TRAINER_ASSESSOR, holdsTicket, supervisionFor } from '@/utils/crewStanding';
+import { ERT_TICKET, TRAINER_ASSESSOR, formatStartDay, holdsTicket, supervisionFor, supervisionIsLive } from '@/utils/crewStanding';
 
 const LEVEL = { close: 'Close supervision', minimal: 'Minimal supervision' };
 
@@ -8,21 +8,26 @@ export function CrewMarks({
   supervision,
   authorisations,
   holdings,
+  showUpcoming = false,
 }: {
   person: CrewMember;
   supervision: CrewSupervision[];
   authorisations: Authorisation[];
   holdings: CrewAuthorisation[];
+  showUpcoming?: boolean;
 }) {
-  const training = supervisionFor(person.id, supervision);
+  const row = supervisionFor(person.id, supervision);
+  const live = !!row && supervisionIsLive(row);
+  const training = row && (live || showUpcoming) ? row : null;
   const trainer = holdsTicket(person.id, TRAINER_ASSESSOR, authorisations, holdings);
   const ert = holdsTicket(person.id, ERT_TICKET, authorisations, holdings);
   if (!training && !trainer && !ert) return null;
+  const upcoming = !!training && !supervisionIsLive(training);
   return (
     <span className="flex flex-wrap gap-1">
       {training && (
-        <span className={`px-1.5 py-0.5 rounded text-[11px] font-black uppercase ${training.level === 'close' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-900'}`}>
-          {LEVEL[training.level]}
+        <span className={`px-1.5 py-0.5 rounded text-[11px] font-black uppercase ${upcoming ? 'bg-slate-100 text-slate-800' : training.level === 'close' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-900'}`}>
+          {upcoming && training.starts_on ? `Starts ${formatStartDay(training.starts_on)}` : LEVEL[training.level]}
         </span>
       )}
       {trainer && <span className="px-1.5 py-0.5 rounded text-[11px] font-black uppercase bg-sky-100 text-sky-900">Trainer assessor</span>}
@@ -47,7 +52,7 @@ export function SiteCoverList({
   assessorsOnSite,
   onOpen,
 }: {
-  inTraining: { name: string; level: string; skill: string; assessor: string; assessorOnSite: boolean }[];
+  inTraining: { name: string; level: string; skill: string; assessor: string; assessorOnSite: boolean; startsLabel?: string }[];
   ertOnSite: string[];
   assessorsOnSite: string[];
   onOpen?: (name: string) => void;
@@ -63,7 +68,7 @@ export function SiteCoverList({
           <ul className="mt-1 text-sm space-y-1">
             {inTraining.map((row) => (
               <li key={row.name}>
-                <PersonName name={row.name} onOpen={onOpen} /> · {row.level} · {row.skill} · Assessor <PersonName name={row.assessor} onOpen={onOpen} />
+                <PersonName name={row.name} onOpen={onOpen} /> · {row.startsLabel ? `${row.startsLabel} · ` : ''}{row.level} · {row.skill} · Assessor <PersonName name={row.assessor} onOpen={onOpen} />
                 {!row.assessorOnSite && <span className="ml-1 font-bold text-rose-700">Assessor is not on this shift.</span>}
               </li>
             ))}

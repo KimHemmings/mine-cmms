@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { Asset, Authorisation, CrewAuthorisation, CrewSupervision, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord, CrewMember, HandoverLogEntry, OperatorPassout, ShiftMachineOperator } from '@/types';
+import { Asset, Authorisation, CrewAuthorisation, CrewSupervision, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord, CrewMember, HandoverLogEntry, OperatorPassout, ShiftMachineOperator, ShiftSeatChange } from '@/types';
 import { useRealtimeWorkboard } from '@/hooks/useRealtimeWorkboard';
 import { beginStageFlush, dropQueuedStage, endStageFlush, isNetworkError, readStageQueue } from '@/utils/stageQueue';
 import { logAssetHistory } from '@/utils/helpers';
@@ -42,6 +42,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   const [passouts, setPassouts] = useState<OperatorPassout[]>([]);
   const [machineOperators, setMachineOperators] = useState<ShiftMachineOperator[]>([]);
   const [supervision, setSupervision] = useState<CrewSupervision[]>([]);
+  const [seatChanges, setSeatChanges] = useState<ShiftSeatChange[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingStages, setPendingStages] = useState(0);
   const [queuedWorkOrderIds, setQueuedWorkOrderIds] = useState<string[]>([]);
@@ -156,9 +157,18 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   }, [supabase]);
 
   const fetchSupervision = useCallback(async () => {
-    const { data, error } = await supabase.from('crew_supervision').select('crew_member_id, level, skill, assessor_id');
+    const { data, error } = await supabase.from('crew_supervision').select('crew_member_id, level, skill, assessor_id, starts_on');
     if (error) return;
     setSupervision((data ?? []) as CrewSupervision[]);
+  }, [supabase]);
+
+  const fetchSeatChanges = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('shift_seat_changes')
+      .select('id, shift_id, asset_id, off_crew_member_id, on_crew_member_id, changed_at')
+      .order('changed_at');
+    if (error) return;
+    setSeatChanges((data ?? []) as ShiftSeatChange[]);
   }, [supabase]);
 
   const fetchProduction = useCallback(async () => {
@@ -183,9 +193,10 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
       fetchAuthorisations(),
       fetchProduction(),
       fetchSupervision(),
+      fetchSeatChanges(),
     ]);
     setLoading(false);
-  }, [fetchShift, fetchFleet, fetchWorkOrders, fetchDefects, fetchNotes, fetchCrew, fetchHandoverLog, fetchAuthorisations, fetchProduction, fetchSupervision]);
+  }, [fetchShift, fetchFleet, fetchWorkOrders, fetchDefects, fetchNotes, fetchCrew, fetchHandoverLog, fetchAuthorisations, fetchProduction, fetchSupervision, fetchSeatChanges]);
 
   useEffect(() => {
     fetchAllData();
@@ -290,6 +301,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     passouts,
     machineOperators,
     supervision,
+    seatChanges,
     loading,
     pendingStages,
     queuedWorkOrderIds,

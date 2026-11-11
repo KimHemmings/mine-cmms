@@ -73,6 +73,7 @@ function Workboard() {
     holdings,
     passouts,
     machineOperators,
+    seatChanges,
     supervision,
     loading,
     pendingStages,
@@ -349,6 +350,7 @@ function Workboard() {
             machines={allAssets}
             crew={crew}
             allocations={machineOperators}
+            seatChanges={seatChanges}
             supervision={supervision}
             authorisations={authorisations}
             holdings={holdings}
@@ -365,6 +367,7 @@ function Workboard() {
             holdings={holdings}
             passouts={passouts}
             allocations={machineOperators}
+            seatChanges={seatChanges}
             supervision={supervision}
             onChanged={fetchAllData}
           />

@@ -31,6 +31,7 @@ export interface CrewSupervision {
   level: SupervisionLevel;
   skill: string;
   assessor_id: string | null;
+  starts_on?: string | null;
 }
 
 export interface TraineeLine {
@@ -39,6 +40,7 @@ export interface TraineeLine {
   skill: string;
   assessor: string;
   assessorOnSite: boolean;
+  startsLabel?: string;
 }
 
 export interface CrewMemberInput {

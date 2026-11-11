@@ -2,7 +2,7 @@
 
 import { X } from 'lucide-react';
 import { Authorisation, AuthorisationState, CrewAuthorisation, CrewMember, CrewSupervision, authorisationState } from '@/types';
-import { supervisionFor } from '@/utils/crewStanding';
+import { formatStartDay, supervisionFor, supervisionIsLive } from '@/utils/crewStanding';
 import { CrewMarks } from '@/components/training/CrewMarks';
 
 const STATE_LABEL: Record<AuthorisationState, { label: string; className: string }> = {
@@ -101,8 +101,15 @@ export function PersonAuthorisationsDialog({
             <X className="w-5 h-5" />
           </button>
         </div>
-        <CrewMarks person={person} supervision={supervision} authorisations={authorisations} holdings={holdings} />
-        {training && (
+        <CrewMarks person={person} supervision={supervision} authorisations={authorisations} holdings={holdings} showUpcoming />
+        {training && !supervisionIsLive(training) && (
+          <p className="text-sm">
+            <strong>Starts {formatStartDay(training.starts_on ?? '')}</strong>
+            {'. Then '}{training.level === 'close' ? 'close supervision' : 'minimal supervision'}
+            {' for '}{training.skill}. Assessor: {assessor?.display_name ?? 'not named'}.
+          </p>
+        )}
+        {training && supervisionIsLive(training) && (
           <p className="text-sm">
             <strong>{training.level === 'close' ? 'Close supervision' : 'Minimal supervision'}</strong>
             {' for '}{training.skill}. Assessor: {assessor?.display_name ?? 'not named'}.

@@ -74,7 +74,7 @@ export default function CrewPicker({ crew, onShiftIds, openJobCounts, selectedId
               {jobs > 0 && <span className="ml-1 font-bold text-amber-700">· {jobs} open job{jobs > 1 ? 's' : ''}</span>}
             </span>
             {canCheckAuthorisations && <AuthLight light={light} />}
-            <CrewMarks person={c} supervision={supervision} authorisations={authorisations} holdings={holdings} />
+            <CrewMarks person={c} supervision={supervision} authorisations={authorisations} holdings={holdings} showUpcoming={canCheckAuthorisations} />
           </span>
         </button>
         {canCheckAuthorisations && (

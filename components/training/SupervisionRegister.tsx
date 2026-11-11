@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { Authorisation, CrewAuthorisation, CrewMember, CrewSupervision, SupervisionLevel } from '@/types';
-import { TRAINER_ASSESSOR, holdsTicket } from '@/utils/crewStanding';
+import { TRAINER_ASSESSOR, formatStartDay, holdsTicket, supervisionIsLive, todayKey } from '@/utils/crewStanding';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 
 const LEVEL_WORD = { close: 'Close supervision', minimal: 'Minimal supervision' };
@@ -29,11 +29,12 @@ export default function SupervisionRegister({
   const [level, setLevel] = useState<SupervisionLevel>('close');
   const [skill, setSkill] = useState('');
   const [assessorId, setAssessorId] = useState('');
+  const [startsOn, setStartsOn] = useState(todayKey);
 
-  async function save(memberId: string, next: { level: SupervisionLevel; skill: string; assessor_id: string | null } | null) {
+  async function save(memberId: string, next: { level: SupervisionLevel; skill: string; assessor_id: string | null; starts_on: string } | null) {
     const query = next
       ? supabase.from('crew_supervision').upsert(
-          { crew_member_id: memberId, level: next.level, skill: next.skill.trim(), assessor_id: next.assessor_id },
+          { crew_member_id: memberId, level: next.level, skill: next.skill.trim(), assessor_id: next.assessor_id, starts_on: next.starts_on },
           { onConflict: 'crew_member_id' },
         )
       : supabase.from('crew_supervision').delete().eq('crew_member_id', memberId);
@@ -45,6 +46,7 @@ export default function SupervisionRegister({
     setPersonId('');
     setSkill('');
     setAssessorId('');
+    setStartsOn(todayKey());
     onChanged();
   }
 
@@ -67,7 +69,7 @@ export default function SupervisionRegister({
               <li key={row.crew_member_id} className="px-3 py-2 flex flex-wrap items-center justify-between gap-2">
                 <span className="text-sm">
                   <strong>{person?.display_name ?? 'Unknown'}</strong>
-                  {' · '}{LEVEL_WORD[row.level]}{' · '}{row.skill}
+                  {' · '}{!supervisionIsLive(row) && row.starts_on ? `Starts ${formatStartDay(row.starts_on)} · ` : ''}{LEVEL_WORD[row.level]}{' · '}{row.skill}
                   {' · Assessor '}{assessor?.display_name ?? 'not named'}
                 </span>
                 <button type="button" onClick={() => void save(row.crew_member_id, null)} className="min-h-10 px-3 rounded-lg border border-slate-300 text-sm font-bold">
@@ -98,6 +100,11 @@ export default function SupervisionRegister({
           <input value={skill} onChange={(event) => setSkill(event.target.value)} placeholder="Haul truck, fitting trade" className="mt-1 min-h-11 w-full rounded-lg border-2 border-slate-300 px-3" />
         </label>
         <label className="text-sm font-bold text-slate-700">
+          Starts
+          <input type="date" value={startsOn} onChange={(event) => setStartsOn(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border-2 border-slate-300 px-3" />
+          <span className="mt-1 block text-xs font-medium text-slate-500">Today means they are in training now. A later day shows Starts until that day.</span>
+        </label>
+        <label className="text-sm font-bold text-slate-700">
           Trainer assessor
           <select value={assessorId} onChange={(event) => setAssessorId(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border-2 border-slate-300 px-3">
             <option value="">{assessors.length === 0 ? 'No current trainer assessor' : 'Choose an assessor'}</option>
@@ -108,7 +115,7 @@ export default function SupervisionRegister({
       <button
         type="button"
         disabled={!personId || !skill.trim() || !assessorId}
-        onClick={() => void save(personId, { level, skill, assessor_id: assessorId })}
+        onClick={() => void save(personId, { level, skill, assessor_id: assessorId, starts_on: startsOn })}
         className="min-h-11 px-4 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:opacity-50"
       >
         Save supervision

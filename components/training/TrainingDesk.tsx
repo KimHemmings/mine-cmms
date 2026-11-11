@@ -14,7 +14,7 @@ import {
   authorisationState,
   personLight,
 } from '@/types';
-import { TRAINER_ASSESSOR, holdsTicket } from '@/utils/crewStanding';
+import { TRAINER_ASSESSOR, holdsTicket, todayKey } from '@/utils/crewStanding';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import { AuthLight } from '@/components/training/PersonAuthorisations';
 
@@ -46,6 +46,7 @@ export default function TrainingDesk({
   const [level, setLevel] = useState<SupervisionLevel>('close');
   const [skill, setSkill] = useState('');
   const [assessorId, setAssessorId] = useState('');
+  const [startsOn, setStartsOn] = useState(todayKey);
   const [addAssetId, setAddAssetId] = useState('');
 
   const people = useMemo(() => {
@@ -74,6 +75,7 @@ export default function TrainingDesk({
     setLevel(row?.level ?? 'close');
     setSkill(row?.skill ?? '');
     setAssessorId(row?.assessor_id ?? '');
+    setStartsOn(row?.starts_on?.slice(0, 10) || todayKey());
     setAddAssetId('');
   }
 
@@ -109,11 +111,11 @@ export default function TrainingDesk({
     onChanged();
   }
 
-  async function saveSupervision(next: { level: SupervisionLevel; skill: string; assessor_id: string } | null) {
+  async function saveSupervision(next: { level: SupervisionLevel; skill: string; assessor_id: string; starts_on: string } | null) {
     if (!selected) return;
     const queryBuilder = next
       ? supabase.from('crew_supervision').upsert(
-          { crew_member_id: selected.id, level: next.level, skill: next.skill.trim(), assessor_id: next.assessor_id },
+          { crew_member_id: selected.id, level: next.level, skill: next.skill.trim(), assessor_id: next.assessor_id, starts_on: next.starts_on },
           { onConflict: 'crew_member_id' },
         )
       : supabase.from('crew_supervision').delete().eq('crew_member_id', selected.id);
@@ -229,7 +231,7 @@ export default function TrainingDesk({
             <p className="text-sm text-slate-600">
               {supervisionRow ? 'They are still in training. Clear this when they are competent.' : 'No supervision row. They are treated as competent.'}
             </p>
-            <div className="grid gap-2 md:grid-cols-3">
+            <div className="grid gap-2 md:grid-cols-2">
               <label className="text-sm font-bold text-slate-700">Level
                 <select value={level} onChange={(event) => setLevel(event.target.value as SupervisionLevel)} className="mt-1 w-full min-h-10 rounded-lg border border-slate-300 px-2">
                   <option value="close">Close supervision</option>
@@ -239,6 +241,10 @@ export default function TrainingDesk({
               <label className="text-sm font-bold text-slate-700">Training in
                 <input value={skill} onChange={(event) => setSkill(event.target.value)} className="mt-1 w-full min-h-10 rounded-lg border border-slate-300 px-2" />
               </label>
+              <label className="text-sm font-bold text-slate-700">Starts
+                <input type="date" value={startsOn} onChange={(event) => setStartsOn(event.target.value)} className="mt-1 w-full min-h-10 rounded-lg border border-slate-300 px-2" />
+                <span className="mt-1 block text-xs font-medium text-slate-500">Today means they are in training now. A later day shows Starts until that day.</span>
+              </label>
               <label className="text-sm font-bold text-slate-700">Trainer assessor
                 <select value={assessorId} onChange={(event) => setAssessorId(event.target.value)} className="mt-1 w-full min-h-10 rounded-lg border border-slate-300 px-2">
                   <option value="">{assessors.length === 0 ? 'No current trainer assessor' : 'Choose an assessor'}</option>
@@ -247,7 +253,7 @@ export default function TrainingDesk({
               </label>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button type="button" disabled={!skill.trim() || !assessorId} onClick={() => void saveSupervision({ level, skill, assessor_id: assessorId })} className="min-h-10 px-4 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">
+              <button type="button" disabled={!skill.trim() || !assessorId || !startsOn} onClick={() => void saveSupervision({ level, skill, assessor_id: assessorId, starts_on: startsOn })} className="min-h-10 px-4 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">
                 Save supervision
               </button>
               {supervisionRow && (

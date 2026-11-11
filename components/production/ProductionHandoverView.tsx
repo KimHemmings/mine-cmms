@@ -75,7 +75,7 @@ export default function ProductionHandoverView({
           <ul className="text-sm space-y-1">
             {document.inTraining.map((row) => (
               <li key={row.name}>
-                <strong>{row.name}</strong> · {row.level} · {row.skill} · Assessor {row.assessor}
+                <strong>{row.name}</strong> · {row.startsLabel ? `${row.startsLabel} · ` : ''}{row.level} · {row.skill} · Assessor {row.assessor}
                 {!row.assessorOnSite && <span className="font-bold text-rose-700"> · Assessor is not on this shift</span>}
               </li>
             ))}
@@ -106,6 +106,18 @@ export default function ProductionHandoverView({
           <ul className="text-sm">
             {document.allocations.map((row) => (
               <li key={row.fleetId}><strong>{row.fleetId}</strong> · {row.operator} · {row.machine}{row.location ? ` · ${row.location}` : ''}</li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      <Section title="Operator changes">
+        {(document.seatChanges ?? []).length === 0 ? (
+          <p className="text-sm text-slate-500">No one changed seats this shift.</p>
+        ) : (
+          <ul className="text-sm">
+            {document.seatChanges.map((row) => (
+              <li key={row.id}><strong>{row.fleetId}</strong> · {row.text}{row.cab ? ` ${row.cab}` : ''}</li>
             ))}
           </ul>
         )}

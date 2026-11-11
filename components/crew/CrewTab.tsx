@@ -78,7 +78,7 @@ export default function CrewTab({ activeShift, saveCrewMember, setCrewMemberActi
                 <li key={c.id} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <p className="text-base font-bold text-slate-900">
                     {c.display_name}
-                    <span className="ml-2 inline-flex align-middle"><CrewMarks person={c} supervision={supervision} authorisations={authorisations} holdings={holdings} /></span>
+                    <span className="ml-2 inline-flex align-middle"><CrewMarks person={c} supervision={supervision} authorisations={authorisations} holdings={holdings} showUpcoming /></span>
                     <span className="ml-2 text-sm font-medium text-slate-500">
                       {c.department || 'Workshop'} · {c.trade}
                       {c.employee_id && <span className="font-mono"> · #{c.employee_id}</span>}

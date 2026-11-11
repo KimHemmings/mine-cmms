@@ -116,7 +116,7 @@ export default function HandoverDocumentView({
           <ul className="text-sm space-y-1">
             {(document.inTraining ?? []).map((row) => (
               <li key={row.name}>
-                <strong>{row.name}</strong> · {row.level} · {row.skill} · Assessor {row.assessor}
+                <strong>{row.name}</strong> · {row.startsLabel ? `${row.startsLabel} · ` : ''}{row.level} · {row.skill} · Assessor {row.assessor}
                 {!row.assessorOnSite && <span className="font-bold text-rose-700"> · Assessor is not on this shift</span>}
               </li>
             ))}

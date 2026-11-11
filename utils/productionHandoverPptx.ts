@@ -1,5 +1,6 @@
 import pptxgen from 'pptxgenjs';
 import { ProductionHandoverDocument } from '@/types';
+import { trainingSentence } from '@/utils/crewStanding';
 
 const BG = '0F172A';
 const CARD = '1E293B';
@@ -92,7 +93,7 @@ export async function generateProductionHandoverPptx(input: {
   addTitle(training, 'Training and ERT', subtitle);
   training.addText(
     [
-      ...(document.inTraining ?? []).map((row) => `${row.name}: ${row.level} for ${row.skill}. Assessor ${row.assessor}${row.assessorOnSite ? '' : ' is not on this shift'}.`),
+      ...(document.inTraining ?? []).map((row) => trainingSentence(row)),
       `Trainer assessors: ${(document.assessorsOnSite ?? []).join(', ') || 'none on this crew'}`,
       `ERT: ${(document.ertOnSite ?? []).join(', ') || 'none on this crew'}`,
     ].join('\n\n'),
@@ -121,6 +122,15 @@ export async function generateProductionHandoverPptx(input: {
     }
     addTable(slide, ['Unit', 'Machine', 'Operator', 'Where'], page.map((row) => [row.fleetId, row.machine, row.operator, row.location || '—']), [1.8, 4.2, 3.2, 3.1]);
   });
+
+  if ((document.seatChanges ?? []).length > 0) {
+    const slide = pptx.addSlide();
+    addTitle(slide, 'Operator changes', subtitle);
+    slide.addText(
+      document.seatChanges.map((row) => `${row.fleetId}: ${row.text}${row.cab ? ` ${row.cab}` : ''}`).join('\n'),
+      { x: 0.6, y: 1.5, w: 12, h: 5.2, fontSize: 16, color: TEXT, valign: 'top' },
+    );
+  }
 
   if (document.delays.length > 0) {
     const slide = pptx.addSlide();
