@@ -134,7 +134,7 @@ export default function HandoverReportTab({
   const inReport = (iso?: string | null) => inWindow(iso, bounds.start, bounds.end);
   const windowedOrders = workOrders.filter((order) => inReport(order.created_at) || inReport(order.completed_at));
   const windowedNotes = notes.filter((note) => inReport(note.created_at));
-  const windowedLog = handoverLog.filter((entry) => inReport(entry.logged_at));
+  const windowedLog = handoverLog.filter((entry) => inReport(entry.logged_at) && entry.department !== 'production');
   const windowedReleased = completedJobs.filter((asset) => inReport(asset.actual_up));
   const shiftAllocations = useMemo(() => {
     const panel = activeShift?.crew;

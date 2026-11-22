@@ -10,6 +10,7 @@ import { createClient } from '@/utils/supabase/client';
 import { EventClassBadge, getEventConfig, getPriorityConfig } from './workboard/workboardTheme';
 import { HoldPill } from './workboard/JobStatusSelect';
 import { holdBadge } from '@/utils/jobHold';
+import { jobStatusLabel } from '@/utils/crewAllocation';
 import MachineCardHeader from './workboard/MachineCardHeader';
 import MainEventSection from './workboard/MainEventSection';
 import AdditionalWorkOrdersSection from './workboard/AdditionalWorkOrdersSection';
@@ -141,6 +142,7 @@ export default function MachineWorkboardCard({
   const holdLabel = openOrders.map((order) => holdBadge(order.stage, order.hold_eta)).find((label) => label) ?? null;
   const jobCount = openOrders.length;
   const solidBadge = isReleased ? 'bg-slate-200 text-slate-700' : fill.badge;
+  const productionView = permissions.isReadOnlyWorkshop;
 
   const summaryRow = compact ? (
     <button
@@ -156,7 +158,7 @@ export default function MachineWorkboardCard({
           {isReleased ? 'RELEASED' : priorityConfig.label}
         </span>
         {mainEvent && <EventClassBadge config={eventConfig} />}
-        {yours && (
+        {yours && !productionView && (
           <span className="text-[11px] font-black uppercase px-2 py-0.5 rounded bg-slate-900 text-white">Your job</span>
         )}
       </span>
@@ -166,7 +168,9 @@ export default function MachineWorkboardCard({
         <span className="font-bold text-slate-600">{asset.make_model}</span>
       </span>
       <span className="shrink-0 text-xs font-bold text-slate-500">
-        {asset.machine_owner || 'Central'} • {asset.location || 'No location set'}
+        {productionView
+          ? (asset.location || 'No pit location')
+          : `${asset.machine_owner || 'Central'} • ${asset.location || 'No location set'}`}
       </span>
       {!isReleased && (
         <span className="shrink-0 text-xs text-slate-600">
@@ -182,14 +186,45 @@ export default function MachineWorkboardCard({
       {etu && !etu.overdue && (
         <span className="shrink-0 px-1.5 py-0.5 rounded text-[11px] font-black uppercase bg-emerald-100 text-emerald-800">{etu.label}</span>
       )}
-      {canRelease ? (
+      {!productionView && (canRelease ? (
         <span className="shrink-0 ml-auto px-2 py-0.5 rounded bg-emerald-600 text-[11px] font-black uppercase text-white">Ready to release</span>
       ) : (
         <span className="shrink-0 ml-auto px-2 py-0.5 rounded bg-slate-200 text-xs font-black text-slate-800">{jobCount} {jobCount === 1 ? 'Job' : 'Jobs'}</span>
-      )}
-      {isDetailsExpanded ? <ChevronUp className="w-4 h-4 shrink-0 text-slate-500" /> : <ChevronDown className="w-4 h-4 shrink-0 text-slate-500" />}
+      ))}
+      {isDetailsExpanded ? <ChevronUp className={`w-4 h-4 shrink-0 text-slate-500 ${productionView ? 'ml-auto' : ''}`} /> : <ChevronDown className={`w-4 h-4 shrink-0 text-slate-500 ${productionView ? 'ml-auto' : ''}`} />}
     </button>
   ) : null;
+
+  if (productionView) {
+    const downFor = mainEvent?.task_description?.trim() || 'No fault logged.';
+    const statusLabel = mainEvent ? jobStatusLabel(mainEvent.stage, mainEvent.hold_eta) : null;
+    return (
+      <div className={`rounded-xl border bg-white border-slate-300 border-l-8 ${fill.edge} shadow-sm overflow-hidden`}>
+        {summaryRow}
+        {isDetailsExpanded && (
+          <div className="border-t border-slate-200 p-4 space-y-4">
+            <section>
+              <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">What it is down for</h3>
+              <p className="mt-1 text-base font-bold text-slate-900">{downFor}</p>
+              {statusLabel && (
+                <p className="mt-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-sm font-black text-slate-800">{statusLabel}</p>
+              )}
+            </section>
+            <section>
+              <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Expected back up</h3>
+              <p className="mt-1 text-base font-black text-slate-900">{formatDateTime(asset.expected_up)}</p>
+              {showOverdue && (
+                <span className="mt-2 inline-flex rounded bg-red-600 px-2 py-0.5 text-[11px] font-black uppercase text-white">OVERDUE</span>
+              )}
+              {etu && !etu.overdue && (
+                <span className="mt-2 ml-2 inline-flex rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-black uppercase text-emerald-800">{etu.label}</span>
+              )}
+            </section>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const toggleItemNotes = (id: string) => {
     setExpandedNotesItemIds((prev) => {

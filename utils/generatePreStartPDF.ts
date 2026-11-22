@@ -1,6 +1,5 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { departmentLabel } from '@/utils/permissions';
 
 export interface PreStartPerson {
   display_name: string;
@@ -8,6 +7,7 @@ export interface PreStartPerson {
   department?: string | null;
   away?: boolean | null;
   allocated?: string | null;
+  location?: string | null;
   roleNote?: string | null;
 }
 
@@ -53,11 +53,11 @@ export function generatePreStartSheet(crewList: PreStartPerson[], shiftDetails: 
   doc.text('Supervisor: ______________', pageWidth / 2, 31, { align: 'center' });
 
   const people = crewList.filter((person) => !person.away).sort((a, b) => a.display_name.localeCompare(b.display_name));
-  const body = (people.length > 0 ? people : [{ display_name: '', trade: '', department: '', allocated: '' }]).map((person) => [
+  const body = (people.length > 0 ? people : [{ display_name: '', trade: '', allocated: '', location: '' }]).map((person) => [
     person.display_name,
     person.trade + (person.roleNote ? ` (${person.roleNote})` : ''),
-    person.department ? departmentLabel(person.department) : '',
     person.allocated?.trim() || '',
+    person.location?.trim() || '',
     '',
     '',
     '',
@@ -65,7 +65,7 @@ export function generatePreStartSheet(crewList: PreStartPerson[], shiftDetails: 
 
   autoTable(doc, {
     startY: 36,
-    head: [['Name', 'Trade / Role', 'Department', 'Allocated Unit', 'Time In', 'Signature', 'Fit for Work?']],
+    head: [['Name', 'Trade / Role', 'Allocated Unit', 'Location', 'Time In', 'Signature', 'Fit for Work?']],
     body,
     theme: 'grid',
     styles: {
@@ -84,13 +84,13 @@ export function generatePreStartSheet(crewList: PreStartPerson[], shiftDetails: 
       minCellHeight: 10,
     },
     columnStyles: {
-      0: { cellWidth: 44 },
+      0: { cellWidth: 42 },
       1: { cellWidth: 46 },
-      2: { cellWidth: 28 },
-      3: { cellWidth: 42 },
-      4: { cellWidth: 22 },
-      5: { minCellWidth: 60 },
-      6: { cellWidth: 28 },
+      2: { cellWidth: 48 },
+      3: { cellWidth: 48 },
+      4: { cellWidth: 20 },
+      5: { minCellWidth: 40 },
+      6: { cellWidth: 24 },
     },
     margin: { left: 12, right: 12 },
   });

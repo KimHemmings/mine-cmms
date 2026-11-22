@@ -12,6 +12,7 @@ export interface Permissions {
   department: Department;
   accessLevel: AccessLevel;
   isReadOnly: boolean;
+  isReadOnlyWorkshop: boolean;
   canViewWhiteboard: boolean;
   canViewFleetDirectory: boolean;
   canUseShiftChat: boolean;
@@ -23,6 +24,7 @@ export interface Permissions {
   canManageCrew: boolean;
   canManageSiteDictionary: boolean;
   canManageFleet: boolean;
+  canUpdateMachineLocation: boolean;
   badge: string;
 }
 
@@ -74,22 +76,26 @@ export function getPermissions(user?: AccessUser | null): Permissions {
   const accessLevel = normalizeAccessLevel(source?.access_level);
   const workshopCrew = department === 'workshop' && accessLevel >= 2;
   const workshopSupervisor = department === 'workshop' && accessLevel === 3;
+  const production = department === 'production';
+  const productionSupervisor = production && accessLevel === 3;
 
   return {
     department,
     accessLevel,
-    isReadOnly: accessLevel === 1,
+    isReadOnly: production || accessLevel === 1,
+    isReadOnlyWorkshop: production,
     canViewWhiteboard: true,
-    canViewFleetDirectory: true,
-    canUseShiftChat: accessLevel >= 2,
-    canAssignMachine: workshopCrew || (department === 'production' && accessLevel === 3),
+    canViewFleetDirectory: !production,
+    canUseShiftChat: production ? productionSupervisor : accessLevel >= 2,
+    canAssignMachine: workshopCrew,
     canEditWorkshopJobs: workshopCrew,
-    canAddNotes: accessLevel >= 2,
+    canAddNotes: !production && accessLevel >= 2,
     canReleaseMachine: workshopSupervisor,
-    canViewHandover: accessLevel === 3,
-    canManageCrew: accessLevel === 3 && (department === 'workshop' || department === 'training'),
+    canViewHandover: production ? productionSupervisor : accessLevel === 3,
+    canManageCrew: accessLevel === 3 && (department === 'workshop' || department === 'training' || production),
     canManageSiteDictionary: workshopSupervisor,
     canManageFleet: workshopSupervisor,
+    canUpdateMachineLocation: productionSupervisor || workshopSupervisor,
     badge: `${departmentLabel(department)} • Level ${accessLevel}`,
   };
 }

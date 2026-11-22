@@ -12,7 +12,7 @@ import PassoutRegister from '@/components/training/PassoutRegister';
 import SupervisionRegister from '@/components/training/SupervisionRegister';
 import RecordTrail from '@/components/training/RecordTrail';
 import ProductionStatus from '@/components/production/ProductionStatus';
-import ProductionHandover from '@/components/production/ProductionHandover';
+import ProductionShiftHandover from '@/components/production/ProductionShiftHandover';
 
 import WorkboardTab from '@/components/WorkboardTab';
 import FleetDossierTab from '@/components/FleetDossierTab';
@@ -42,11 +42,7 @@ function Workboard() {
   const [currentTab, setCurrentTab] = useState<'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status'>('board');
   const [trainingSection, setTrainingSection] = useState<'tickets' | 'passouts' | 'supervision'>('tickets');
   const [routedProfile, setRoutedProfile] = useState<string | null>(null);
-  const homeTab = permissions.department === 'training'
-    ? 'training'
-    : permissions.department === 'production'
-      ? 'status'
-      : 'board';
+  const homeTab = permissions.department === 'training' ? 'training' : 'board';
   if (profile && routedProfile !== profile.id) {
     setRoutedProfile(profile.id);
     setCurrentTab(homeTab);
@@ -59,8 +55,7 @@ function Workboard() {
       || (currentTab === 'dossier' && permissions.canViewFleetDirectory)
       || (currentTab === 'handover' && permissions.canViewHandover)
       || (currentTab === 'crew' && permissions.canManageCrew)
-      || (currentTab === 'training' && permissions.department === 'training')
-      || (currentTab === 'status' && permissions.department === 'production');
+      || (currentTab === 'training' && permissions.department === 'training');
     if (!allowed) setCurrentTab(homeTab);
   }, [profile, permissions, currentTab, homeTab]);
   const { showToast } = useFeedback();
@@ -111,6 +106,8 @@ function Workboard() {
     addContractor,
     endShiftExtra,
     clearExpiredShiftExtras,
+    updateMachineLocation,
+    updateMachineCircuit,
     setWorkOrderCrew,
     setShiftPanel,
   } = useWorkboardData({ activeFitter });
@@ -245,6 +242,8 @@ function Workboard() {
             permissions={permissions}
             historyAssets={allAssets}
             activeShiftId={activeShift?.id ?? null}
+            onUpdateLocation={permissions.canUpdateMachineLocation ? updateMachineLocation : undefined}
+            onUpdateCircuit={permissions.canUpdateMachineLocation ? updateMachineCircuit : undefined}
           />
         )}
 
@@ -340,15 +339,15 @@ function Workboard() {
         )}
 
         {currentTab === 'handover' && permissions.canViewHandover && permissions.department === 'production' && (
-          <ProductionHandover
+          <ProductionShiftHandover
             activeShift={activeShift}
-            machines={allAssets}
+            shiftJobs={shiftJobs}
+            assets={allAssets}
+            workOrders={workOrders}
             crew={crew}
-            allocations={machineOperators}
-            seatChanges={seatChanges}
-            supervision={supervision}
-            authorisations={authorisations}
-            holdings={holdings}
+            handoverLog={handoverLog}
+            onRefresh={fetchAllData}
+            supervisorName={activeFitter}
           />
         )}
 
@@ -382,6 +381,10 @@ function Workboard() {
             endShiftExtra={endShiftExtra}
             clearExpiredShiftExtras={clearExpiredShiftExtras}
             assets={shiftJobs}
+            fleetAssets={allAssets}
+            downAssetIds={shiftJobs.filter((asset) => !(asset.status === 'OPERATIONAL' && !asset.in_shift)).map((asset) => asset.id)}
+            updateMachineLocation={permissions.canUpdateMachineLocation ? updateMachineLocation : undefined}
+            updateMachineCircuit={permissions.canUpdateMachineLocation ? updateMachineCircuit : undefined}
             workOrders={workOrders}
           />
         )}

@@ -25,8 +25,15 @@ function clock(iso: string) {
 
 function friendlySendError(message: string) {
   if (message.toLowerCase().includes('choose a fitter')) return 'Choose which fitter this is for.';
-  return 'That message did not send.';
+  return 'Signal lost — message not sent. Tap Send to retry.';
 }
+
+const CALLOUTS = [
+  'ETA update on ',
+  'Operator ready at Go-Line for ',
+  'New pit breakdown: ',
+  'Can we tram ',
+];
 
 function seenStorageKey(profileId: string) {
   return `shift-chat-seen:${profileId}`;
@@ -56,14 +63,16 @@ export default function ShiftChatDrawer({
   userRole,
   profileId,
   crew = [],
+  callouts = false,
 }: {
   senderName: string;
   userRole: UserRole;
   profileId: string;
   crew?: CrewMember[];
+  callouts?: boolean;
 }) {
   const isSupervisor = userRole === 'management';
-  const { messages, fitters, loading, error, send } = useShiftChat(profileId, isSupervisor);
+  const { messages, fitters, productionDesk, loading, error, send } = useShiftChat(profileId, isSupervisor);
   const [open, setOpen] = useState(false);
   const draft = useDictationTarget();
   const [selectedId, setSelectedId] = useState('');
@@ -74,6 +83,7 @@ export default function ShiftChatDrawer({
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
   const [ready, setReady] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const visible = useMemo(() => {
     return messages.filter((item) => {
@@ -128,17 +138,28 @@ export default function ShiftChatDrawer({
     if (list) list.scrollTop = list.scrollHeight;
   }, [visible, open]);
 
-  const people = useMemo(() => fitters.map((fitter) => {
-    const member = crew.find((person) => person.id === fitter.crew_member_id);
-    const name = member?.display_name?.trim() || fitter.display_name;
-    const employeeId = member?.employee_id || fitter.employee_id;
-    return {
-      id: fitter.id,
-      name,
-      employeeId,
-      label: fitterLabel({ display_name: name, employee_id: employeeId }),
-    };
-  }), [fitters, crew]);
+  const people = useMemo(() => {
+    const workshop = fitters.map((fitter) => {
+      const member = crew.find((person) => person.id === fitter.crew_member_id);
+      const name = member?.display_name?.trim() || fitter.display_name;
+      const employeeId = member?.employee_id || fitter.employee_id;
+      return {
+        id: fitter.id,
+        name,
+        employeeId,
+        pit: false,
+        label: fitterLabel({ display_name: name, employee_id: employeeId }),
+      };
+    });
+    const pit = productionDesk.map((person) => ({
+      id: person.id,
+      name: person.display_name,
+      employeeId: person.employee_id,
+      pit: true,
+      label: `${person.display_name} · Production Sup`,
+    }));
+    return [...workshop, ...pit];
+  }, [fitters, productionDesk, crew]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -348,8 +369,37 @@ export default function ShiftChatDrawer({
           </div>
 
           <form onSubmit={(event) => void handleSend(event)} className="border-t border-slate-200 p-3 space-y-2">
-            {sendError && <p className="text-xs font-bold text-rose-700">{sendError}</p>}
+            {sendError && (
+              <p role="alert" className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">
+                {sendError}
+              </p>
+            )}
+            {callouts && (
+              <div className="flex flex-wrap gap-1.5">
+                {CALLOUTS.map((chip) => (
+                  <button
+                    key={chip}
+                    type="button"
+                    disabled={isSupervisor && !selectedId}
+                    onClick={() => {
+                      draft.setValue(chip);
+                      requestAnimationFrame(() => {
+                        const input = inputRef.current;
+                        if (!input) return;
+                        input.focus();
+                        const end = input.value.length;
+                        input.setSelectionRange(end, end);
+                      });
+                    }}
+                    className="min-h-9 rounded-full border border-slate-300 bg-slate-50 px-3 text-left text-xs font-bold text-slate-800 hover:border-slate-500 hover:bg-white disabled:opacity-50"
+                  >
+                    {chip.trim()}
+                  </button>
+                ))}
+              </div>
+            )}
             <input
+              ref={inputRef}
               value={draft.value}
               onChange={draft.onChange}
               placeholder={isSupervisor ? 'Message this fitter...' : 'Message the supervisor...'}
@@ -394,16 +444,23 @@ export default function ShiftChatDrawer({
 }
 
 function MessageBubble({ item, mine }: { item: ShiftMessage; mine: boolean }) {
+  const production = item.role === 'Production Sup';
   const supervisor = !mine && item.role === 'Workshop Supervisor';
   return (
-    <article className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${bubbleClass(mine, supervisor)}`}>
-      {!mine && (
+    <article className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${production ? `${mine ? 'ml-auto' : 'mr-auto'} bg-emerald-800 text-white` : bubbleClass(mine, supervisor)}`}>
+      {production && (
+        <p className="mb-1 flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex rounded-full bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-900">Production Sup</span>
+          {!mine && <span className="text-[11px] font-bold text-emerald-100">{item.sender_name}</span>}
+        </p>
+      )}
+      {!mine && !production && (
         <p className={`text-[11px] font-black ${supervisor ? 'text-amber-800' : 'text-slate-500'}`}>
           {item.sender_name}{item.role ? ` · ${item.role}` : ''}
         </p>
       )}
       <p className="whitespace-pre-wrap">{item.message}</p>
-      <p className={`mt-1 text-[10px] font-bold ${mine ? 'text-blue-100' : 'text-slate-400'}`}>{clock(item.created_at)}</p>
+      <p className={`mt-1 text-[10px] font-bold ${production ? 'text-emerald-100' : mine ? 'text-blue-100' : 'text-slate-400'}`}>{clock(item.created_at)}</p>
     </article>
   );
 }

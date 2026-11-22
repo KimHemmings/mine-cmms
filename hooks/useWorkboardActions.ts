@@ -1,7 +1,7 @@
 // hooks/useWorkboardActions.ts
 import { SupabaseClient } from '@supabase/supabase-js';
 import { ShiftRecord, CreatePartPayload, PartStatus, Asset, MachineWorkOrder, STAGE_OPTIONS, CrewMember, CrewMemberInput } from '@/types';
-import { AllocationChoice, mainOpenJob } from '@/utils/crewAllocation';
+import { AllocationChoice, mainOpenJob, seatLabel } from '@/utils/crewAllocation';
 import { normalizeAccessLevel, normalizeDepartment } from '@/utils/permissions';
 import { logAssetHistory } from '@/utils/helpers';
 import { isNetworkError, queueStage } from '@/utils/stageQueue';
@@ -249,6 +249,7 @@ export function useWorkboardActions({
       trade: input.trade,
       panel: input.panel || null,
       email: input.email?.trim() || null,
+      ...(input.passed_out_equipment !== undefined ? { passed_out_equipment: input.passed_out_equipment } : {}),
     };
     const { error } = id
       ? await supabase.from('crew_members').update(row).eq('id', id)
@@ -283,6 +284,36 @@ export function useWorkboardActions({
   }
 
   async function setCrewAllocation(member: CrewMember, choice: AllocationChoice, workOrders: MachineWorkOrder[], assets: Asset[]) {
+    if (normalizeDepartment(member.department) === 'production') {
+      if (choice.type === 'role') {
+        const { error } = await supabase.from('crew_members').update({ allocated_role: choice.role }).eq('id', member.id);
+        if (error) alert(`Error saving the seat: ${error.message}`);
+        else {
+          await fetchAllData();
+          showToast({ message: `${member.display_name} is ${seatLabel(choice.role)}` });
+        }
+        return;
+      }
+      const { error: dutyError } = await supabase.from('crew_members').update({
+        allocated_machine_id: choice.type === 'machine' ? choice.assetId : null,
+        shift_duty: choice.type === 'duty' ? choice.duty : null,
+        allocated_role: choice.type === 'machine' ? (choice.role ?? 'Primary') : null,
+      }).eq('id', member.id);
+      if (dutyError) {
+        alert(`Error saving the allocation: ${dutyError.message}`);
+        return;
+      }
+      await fetchAllData();
+      const fleetId = choice.type === 'machine' ? assets.find((asset) => asset.id === choice.assetId)?.fleet_id : null;
+      const message = choice.type === 'clear'
+        ? `${member.display_name} is unassigned`
+        : choice.type === 'duty'
+          ? `${member.display_name} is on ${choice.duty}`
+          : `${member.display_name} is ${seatLabel(choice.type === 'machine' ? choice.role : null)} on ${fleetId ?? 'that machine'}`;
+      showToast({ message });
+      return;
+    }
+
     const open = workOrders.filter((order) => order.status !== 'COMPLETED');
     const target = choice.type === 'machine'
       ? mainOpenJob(open.filter((order) => order.asset_id === choice.assetId))
@@ -354,6 +385,7 @@ export function useWorkboardActions({
     department: string;
     panel: string;
     shiftEndsAt: string;
+    passedOut?: string[];
   }) {
     const { data, error } = await supabase.from('crew_members').insert({
       display_name: input.name.trim(),
@@ -366,6 +398,7 @@ export function useWorkboardActions({
       shift_expires_at: input.shiftEndsAt,
       active: true,
       away: false,
+      passed_out_equipment: input.passedOut ?? [],
     }).select('*').single();
     if (error || !data) {
       alert(`Error adding contractor: ${error?.message ?? 'No record returned'}`);
@@ -390,8 +423,8 @@ export function useWorkboardActions({
     }
 
     const patch = member.is_contractor
-      ? { active: false, shift_duty: null }
-      : { overtime_crew_group: null, shift_expires_at: null, shift_duty: null };
+      ? { active: false, shift_duty: null, allocated_machine_id: null, allocated_role: null }
+      : { overtime_crew_group: null, shift_expires_at: null, shift_duty: null, allocated_machine_id: null, allocated_role: null };
     const { error } = await supabase.from('crew_members').update(patch).eq('id', member.id);
     if (error) {
       alert(`Error removing ${member.display_name} from the shift: ${error.message}`);
@@ -447,6 +480,39 @@ export function useWorkboardActions({
     return true;
   }
 
+  async function updateMachineLocation(assetId: string, location: string) {
+    const { error } = await supabase.from('assets').update({
+      location,
+      location_updated_at: new Date().toISOString(),
+    }).eq('id', assetId);
+    if (error) {
+      showToast({
+        message: 'Park-up location did not save. Check the pit signal and try again.',
+        tone: 'error',
+        durationMs: 8000,
+      });
+      return false;
+    }
+    await fetchAllData();
+    showToast({ message: location ? `Location saved as ${location}` : 'Location cleared' });
+    return true;
+  }
+
+  async function updateMachineCircuit(assetId: string, circuit: string) {
+    const { error } = await supabase.from('assets').update({ circuit: circuit || null }).eq('id', assetId);
+    if (error) {
+      showToast({
+        message: 'Circuit tag did not save. Check the pit signal and try again.',
+        tone: 'error',
+        durationMs: 8000,
+      });
+      return false;
+    }
+    await fetchAllData();
+    showToast({ message: circuit ? `Circuit saved as ${circuit}` : 'Circuit cleared' });
+    return true;
+  }
+
   return {
     saveCrewMember,
     setCrewMemberActive,
@@ -458,6 +524,8 @@ export function useWorkboardActions({
     clearExpiredShiftExtras,
     setCrewOnShift,
     setWorkOrderCrew,
+    updateMachineLocation,
+    updateMachineCircuit,
     setShiftPanel,
     updateWorkOrderStage,
     signOffWorkOrder: (woId: string, assetId: string) => updateWorkOrderStage(woId, assetId, 'COMPLETED'),

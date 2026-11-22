@@ -5,7 +5,7 @@ import { Clock, HardHat, Pencil, Printer, UserPlus, X } from 'lucide-react';
 import { CREW_PANELS, CrewMember, CrewMemberInput, ShiftRecord, Asset, MachineWorkOrder } from '@/types';
 import { Department, departmentLabel, normalizeDepartment } from '@/utils/permissions';
 import { getShiftClock } from '@/utils/shiftClock';
-import { AllocationChoice, allocatedUnitText, memberAssignments } from '@/utils/crewAllocation';
+import { AllocationChoice, defaultAllocationRole, equipmentModels, memberAssignments, preStartLocation, preStartUnit } from '@/utils/crewAllocation';
 import { crewLetter, coveringLetter, rosterRoleNote, visibleOnCrewTab } from '@/utils/shiftRoster';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import { useCrewData } from './CrewDataContext';
@@ -13,6 +13,8 @@ import CrewMemberForm from './CrewMemberForm';
 import AllocationPill from './AllocationPill';
 import OvertimeCrewModal from './OvertimeCrewModal';
 import ContractorModal from './ContractorModal';
+import LocationPill from '@/components/production/LocationPill';
+import CircuitPill from '@/components/production/CircuitPill';
 
 interface CrewTabProps {
   activeShift: ShiftRecord | null;
@@ -23,10 +25,14 @@ interface CrewTabProps {
   setCrewMemberAway: (member: CrewMember, away: boolean) => Promise<void>;
   setCrewAllocation: (member: CrewMember, choice: AllocationChoice, workOrders: MachineWorkOrder[], assets: Asset[]) => Promise<void>;
   addOvertimeCover: (member: CrewMember, letter: string, shiftEndsAt: string) => Promise<boolean>;
-  addContractor: (input: { name: string; company: string; trade: string; department: string; panel: string; shiftEndsAt: string }) => Promise<CrewMember | null>;
+  addContractor: (input: { name: string; company: string; trade: string; department: string; panel: string; shiftEndsAt: string; passedOut?: string[] }) => Promise<CrewMember | null>;
   endShiftExtra: (member: CrewMember, workOrders: MachineWorkOrder[]) => Promise<void>;
   clearExpiredShiftExtras: (members: CrewMember[]) => Promise<void>;
   assets: Asset[];
+  fleetAssets?: Asset[];
+  downAssetIds?: string[];
+  updateMachineLocation?: (assetId: string, location: string) => Promise<boolean>;
+  updateMachineCircuit?: (assetId: string, circuit: string) => Promise<boolean>;
   workOrders: MachineWorkOrder[];
 }
 
@@ -61,6 +67,10 @@ export default function CrewTab({
   endShiftExtra,
   clearExpiredShiftExtras,
   assets,
+  fleetAssets,
+  downAssetIds = [],
+  updateMachineLocation,
+  updateMachineCircuit,
   workOrders,
 }: CrewTabProps) {
   const { crew } = useCrewData();
@@ -92,9 +102,15 @@ export default function CrewTab({
     .filter((member) => visibleOnCrewTab(member, selected))
     .slice()
     .sort((a, b) => a.display_name.localeCompare(b.display_name));
+  const fleet = fleetAssets ?? assets;
+  const production = department === 'production';
+  const isAssigned = (member: CrewMember) => {
+    if (member.allocated_machine_id || member.shift_duty) return true;
+    return !production && memberAssignments(member.id, workOrders, assets).length > 0;
+  };
   const dueOnSheet = shown.filter((member) => !member.away);
   const onRoster = dueOnSheet;
-  const unassigned = onRoster.filter((member) => !memberAssignments(member.id, workOrders, assets).length && !member.shift_duty).length;
+  const unassigned = onRoster.filter((member) => !isAssigned(member)).length;
   const printLabel = selected === 'all' ? 'Print Pre-Start Sheet (PDF)' : `Print ${selected} Pre-Start (PDF)`;
   const defaultPanel = selected === 'all' ? (onShiftPanel ?? 'A Crew') : selected;
 
@@ -107,7 +123,8 @@ export default function CrewTab({
         trade: member.trade,
         department: member.department,
         roleNote: rosterRoleNote(member),
-        allocated: allocatedUnitText(member, workOrders, assets),
+        allocated: preStartUnit(member, workOrders, fleet),
+        location: preStartLocation(member, workOrders, fleet, downAssetIds),
       })),
       {
         date: new Date(),
@@ -127,22 +144,27 @@ export default function CrewTab({
     if (ok) setShowOvertime(false);
   };
 
-  const placeContractor = async (input: { name: string; company: string; trade: string; allocation: AllocationChoice | null }) => {
+  const placeContractor = async (input: { name: string; company: string; trade: string; allocation: AllocationChoice | null; passedOut: string[] }) => {
     const panel = selected === 'all' ? (onShiftPanel ?? 'A Crew') : selected;
     const created = await addContractor({
       ...input,
       department,
       panel,
       shiftEndsAt: getShiftClock().shiftEnd.toISOString(),
+      passedOut: input.passedOut,
     });
-    if (!created) return;
-    if (input.allocation) await setCrewAllocation(created, input.allocation, workOrders, assets);
+    if (created && input.allocation) {
+      const choice = input.allocation.type === 'machine' && production
+        ? { ...input.allocation, role: input.allocation.role ?? defaultAllocationRole(input.allocation.assetId, created.id, departmentCrew) }
+        : input.allocation;
+      await setCrewAllocation(created, choice, workOrders, fleet);
+    }
     setShowContractor(false);
   };
 
   const assign = async (member: CrewMember, choice: AllocationChoice) => {
     setSavingAllocation(member.id);
-    await setCrewAllocation(member, choice, workOrders, assets);
+    await setCrewAllocation(member, choice, workOrders, fleet);
     setSavingAllocation(null);
   };
 
@@ -265,6 +287,9 @@ export default function CrewTab({
                   </span>
                 )}
                 <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-bold">{member.trade}</span>
+                {production && (member.passed_out_equipment ?? []).map((ticket) => (
+                  <span key={ticket} className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-900 text-[11px] font-bold border border-sky-200">{ticket}</span>
+                ))}
                 {!member.is_contractor && (
                   <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-950 text-xs font-bold border border-amber-200">
                     {accessPill(member.access_level)}
@@ -289,11 +314,28 @@ export default function CrewTab({
                     <AllocationPill
                       member={member}
                       assets={assets}
+                      fleetAssets={fleet}
+                      downAssetIds={downAssetIds}
+                      roster={departmentCrew}
                       workOrders={workOrders}
                       busy={savingAllocation === member.id}
+                      variant={production ? 'production' : 'workshop'}
                       onChange={(choice) => void assign(member, choice)}
                     />
                   </span>
+                )}
+                {production && !member.away && member.allocated_machine_id && updateMachineLocation && (
+                  <LocationPill
+                    location={fleet.find((asset) => asset.id === member.allocated_machine_id)?.location || ''}
+                    onSave={(location) => updateMachineLocation(member.allocated_machine_id as string, location)}
+                  />
+                )}
+                {production && !member.away && member.allocated_machine_id && updateMachineCircuit && (
+                  <CircuitPill
+                    circuit={fleet.find((asset) => asset.id === member.allocated_machine_id)?.circuit || ''}
+                    assets={fleet}
+                    onSave={(circuit) => updateMachineCircuit(member.allocated_machine_id as string, circuit)}
+                  />
                 )}
                 {temporary && (
                   <button
@@ -353,6 +395,7 @@ export default function CrewTab({
           editing={editor === 'new' ? null : editor}
           department={department}
           defaultPanel={defaultPanel}
+          equipmentModels={equipmentModels(fleet)}
           onSave={saveForDepartment}
           onClose={() => setEditor(null)}
           onRemove={editor === 'new' ? undefined : () => void handleRemove(editor)}
@@ -369,8 +412,9 @@ export default function CrewTab({
       {showContractor && (
         <ContractorModal
           crewLabel={selected === 'all' ? (onShiftPanel ?? 'A Crew') : selected}
-          assets={assets}
+          assets={production ? fleet : assets}
           workOrders={workOrders}
+          variant={production ? 'production' : 'workshop'}
           onSave={placeContractor}
           onClose={() => setShowContractor(false)}
         />

@@ -1,13 +1,16 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { CheckCircle2, CheckCircle, Search, X } from 'lucide-react';
+import { CheckCircle2, CheckCircle, Clock, Search, X } from 'lucide-react';
 import { Asset, CrewMember, MachineWorkOrder, HistoryNote } from '@/types';
 import MachineWorkboardCard, { workOrdersForActiveCard } from '@/components/MachineWorkboardCard';
 import BreakdownHistorySearch from '@/components/workboard/BreakdownHistorySearch';
 import SiteDictionaryPanel from '@/components/workboard/SiteDictionaryPanel';
 import { getEventConfig } from '@/components/workboard/workboardTheme';
-import { Permissions, isWorkshopRoster } from '@/utils/permissions';
+import { Permissions, isProductionDepartment, isWorkshopRoster } from '@/utils/permissions';
+import { seatLabel } from '@/utils/crewAllocation';
+import LocationPill, { parkUpNeedsConfirm } from '@/components/production/LocationPill';
+import CircuitPill from '@/components/production/CircuitPill';
 
 interface WorkboardTabProps {
   shiftJobs: Asset[];
@@ -32,6 +35,8 @@ interface WorkboardTabProps {
   permissions: Permissions;
   historyAssets?: Asset[];
   activeShiftId?: string | null;
+  onUpdateLocation?: (assetId: string, location: string) => Promise<boolean>;
+  onUpdateCircuit?: (assetId: string, circuit: string) => Promise<boolean>;
 }
 
 type SortMode = 'urgent' | 'longest' | 'fleet';
@@ -73,11 +78,16 @@ export default function WorkboardTab({
   permissions,
   historyAssets = [],
   activeShiftId = null,
+  onUpdateLocation,
+  onUpdateCircuit,
 }: WorkboardTabProps) {
   const [expandedAssetIds, setExpandedAssetIds] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('urgent');
+  const [gearFilter, setGearFilter] = useState<'all' | 'critical'>('all');
+  const [fleetView, setFleetView] = useState<'all' | 'down' | 'spare'>('all');
   const [now, setNow] = useState(() => Date.now());
+  const productionBoard = permissions.isReadOnlyWorkshop;
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
@@ -130,6 +140,13 @@ export default function WorkboardTab({
       return fields.some((f) => f?.toLowerCase().includes(term));
     };
 
+    const isCritical = (asset: Asset) => {
+      if (asset.priority === 'P1') return true;
+      const main = newestOpenJob(ordersByAsset.get(asset.id) ?? []);
+      const label = getEventConfig(main?.order_type, asset.status === 'DOWN_PLANNED').label;
+      return label === 'BREAKDOWN' || label === 'ACCIDENT DAMAGE';
+    };
+
     const floatMyJobs = permissions.department === 'workshop' && permissions.accessLevel === 2;
     const supervisorBoard = permissions.canManageSiteDictionary;
 
@@ -157,7 +174,7 @@ export default function WorkboardTab({
       return timeOf(a.down_since) - timeOf(b.down_since);
     };
 
-    const searched = shiftJobs.filter(matchesSearch);
+    const searched = shiftJobs.filter(matchesSearch).filter((asset) => !productionBoard || gearFilter === 'all' || isCritical(asset));
     const active = searched.filter((a) => !isReleasedAsset(a));
 
     return {
@@ -166,9 +183,9 @@ export default function WorkboardTab({
       mineIds: new Set(active.filter(isMine).map((asset) => asset.id)),
       counts: { all: active.length },
     };
-  }, [shiftJobs, ordersByAsset, search, sortMode, myName, now, crew, myCrewMemberId, permissions]);
+  }, [shiftJobs, ordersByAsset, search, sortMode, gearFilter, productionBoard, myName, now, crew, myCrewMemberId, permissions]);
 
-  if (loading && shiftJobs.length === 0) {
+  if (loading && shiftJobs.length === 0 && historyAssets.length === 0) {
     return (
       <div className="py-20 text-center">
         <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-amber-500 border-t-transparent mb-3" />
@@ -177,17 +194,25 @@ export default function WorkboardTab({
     );
   }
 
-  if (shiftJobs.length === 0) {
+  if (shiftJobs.length === 0 && !productionBoard) {
     return (
       <div className="p-12 text-center bg-white border border-slate-300 rounded-2xl max-w-xl mx-auto mt-8 shadow-md">
         <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto mb-3" />
         <h2 className="text-xl font-bold text-slate-900">No machines on the board</h2>
-        <p className="text-sm text-slate-500 mt-1">Every machine is running. Use Assign Machine to log a new job.</p>
+        <p className="text-sm text-slate-500 mt-1">{productionBoard ? 'Nothing is down in the workshop.' : 'Every machine is running. Use Assign Machine to log a new job.'}</p>
       </div>
     );
   }
 
   const isFiltering = search.trim() !== '';
+  const downIds = new Set(shiftJobs.filter((asset) => !isReleasedAsset(asset)).map((asset) => asset.id));
+  const spareTerm = search.trim().toLowerCase();
+  const spareFleet = historyAssets
+    .filter((asset) => !downIds.has(asset.id))
+    .filter((asset) => !spareTerm || [asset.fleet_id, asset.make_model, asset.location].some((field) => field?.toLowerCase().includes(spareTerm)))
+    .sort((a, b) => a.fleet_id.localeCompare(b.fleet_id, undefined, { numeric: true }));
+  const showDown = !productionBoard || fleetView !== 'spare';
+  const showSpare = productionBoard && fleetView !== 'down';
   const visibleIds = activeFleet.concat(releasedFleet).map((asset) => asset.id);
   const allVisibleOpen = visibleIds.length > 0 && visibleIds.every((id) => expandedAssetIds.has(id));
 
@@ -250,7 +275,7 @@ export default function WorkboardTab({
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search fleet number, fitter, WO number or job..."
+              placeholder={productionBoard ? 'Search fleet number, pit location or fault...' : 'Search fleet number, fitter, WO number or job...'}
               className="w-full min-h-12 pl-11 pr-11 rounded-lg border-2 border-slate-300 bg-slate-50 text-base text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white"
             />
             {search && (
@@ -265,6 +290,47 @@ export default function WorkboardTab({
             )}
           </label>
 
+          {productionBoard && (
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Fleet view">
+              {([
+                ['all', 'All Fleet'],
+                ['down', `Down Gear (${downIds.size})`],
+                ['spare', `Ready / Spare Gear (${historyAssets.filter((asset) => !downIds.has(asset.id)).length})`],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setFleetView(id)}
+                  aria-pressed={fleetView === id}
+                  className={`min-h-10 px-3 rounded-full text-sm font-black border ${fleetView === id ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {productionBoard && fleetView !== 'spare' && (
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Down gear filter">
+              {([
+                ['all', 'All Down Gear'],
+                ['critical', 'Critical / Breakdowns Only'],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setGearFilter(id)}
+                  className={`min-h-10 px-3 rounded-full text-sm font-black border ${
+                    gearFilter === id
+                      ? 'bg-slate-900 text-white border-slate-900'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  }`}
+                  aria-pressed={gearFilter === id}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {permissions.canManageSiteDictionary && (
           <label className="flex items-center gap-2 text-sm font-bold text-slate-600">
             Sort
@@ -285,12 +351,15 @@ export default function WorkboardTab({
         {permissions.canManageSiteDictionary && <SiteDictionaryPanel />}
       </div>
 
+      {showDown && (
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm font-bold text-slate-600">
           <span>
-            {isFiltering
-              ? `Showing ${activeFleet.length} of ${counts.all} machines being worked on`
-              : `Machines being worked on (${activeFleet.length})`}
+            {isFiltering || (productionBoard && gearFilter === 'critical')
+              ? `Showing ${activeFleet.length} down`
+              : productionBoard
+                ? `Down fleet (${activeFleet.length})`
+                : `Machines being worked on (${activeFleet.length})`}
           </span>
           <span className="flex flex-wrap items-center gap-2">
             <button
@@ -327,14 +396,60 @@ export default function WorkboardTab({
               isFiltering ? 'bg-white border-slate-300 text-slate-600' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
             }`}
           >
-            {isFiltering ? 'No machines match. Try a different search or filter.' : 'All machines have been released to production!'}
+            {isFiltering ? 'No machines match. Try a different search or filter.' : productionBoard ? 'Nothing is down in the workshop.' : 'All machines have been released to production!'}
           </div>
         ) : (
           activeFleet.map(renderCard)
         )}
       </div>
+      )}
 
-      {releasedFleet.length > 0 && (
+      {showSpare && (
+        <div className="space-y-3 pt-2">
+          <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Ready / Spare fleet ({spareFleet.length})</h3>
+          {spareFleet.length === 0 ? (
+            <p className="p-4 rounded-xl border border-slate-300 bg-white text-sm font-bold text-slate-600">No healthy machines match.</p>
+          ) : (
+            <ul className="divide-y divide-slate-200 rounded-xl border border-slate-300 bg-white">
+              {spareFleet.map((asset) => {
+                const operators = crew
+                  .filter((member) => member.active && !member.away && member.allocated_machine_id === asset.id && isProductionDepartment(member.department))
+                  .sort((a, b) => (a.allocated_role === 'Trainee (Buddy Seat)' ? 2 : a.allocated_role === 'Hot Seat' ? 1 : 0) - (b.allocated_role === 'Trainee (Buddy Seat)' ? 2 : b.allocated_role === 'Hot Seat' ? 1 : 0) || a.display_name.localeCompare(b.display_name));
+                const manned = operators.map((member) => `${member.display_name} (${seatLabel(member.allocated_role)})`).join(', ');
+                return (
+                  <li key={asset.id} className="px-3 py-2 flex flex-wrap items-center gap-2">
+                    <span className="text-base font-black text-slate-900">{asset.fleet_id}</span>
+                    <span className="text-sm font-bold text-slate-500">{asset.make_model}</span>
+                    {manned ? (
+                      <span className="px-2 py-0.5 rounded-full bg-slate-900 text-white text-[11px] font-black">MANNED · {manned}</span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[11px] font-black">SPARE / UNMANNED</span>
+                    )}
+                    {permissions.canUpdateMachineLocation && onUpdateLocation && (
+                      <LocationPill location={asset.location || ''} onSave={(location) => onUpdateLocation(asset.id, location)} />
+                    )}
+                    {parkUpNeedsConfirm(asset.location_updated_at, now) && (
+                      <span title="Verify Park-Up" className="inline-flex items-center gap-1 text-amber-700">
+                        <Clock className="w-3.5 h-3.5" aria-hidden />
+                        <span className="text-[10px] font-black uppercase tracking-wide">Verify Park-Up</span>
+                      </span>
+                    )}
+                    {manned && permissions.canUpdateMachineLocation && onUpdateCircuit && (
+                      <CircuitPill
+                        circuit={asset.circuit || ''}
+                        assets={historyAssets}
+                        onSave={(circuit) => onUpdateCircuit(asset.id, circuit)}
+                      />
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {!productionBoard && releasedFleet.length > 0 && (
         <div className="pt-6 space-y-4 border-t-2 border-dashed border-slate-300">
           <div className="flex items-center gap-2 text-sm font-bold text-slate-600">
             <CheckCircle className="w-5 h-5 text-emerald-600" />

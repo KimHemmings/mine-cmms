@@ -36,6 +36,9 @@ export interface CrewMember {
   email: string | null;
   away: boolean;
   shift_duty: string | null;
+  allocated_machine_id: string | null;
+  allocated_role: 'Primary' | 'Hot Seat' | 'Trainee (Buddy Seat)' | null;
+  passed_out_equipment: string[];
   is_contractor: boolean;
   contractor_company: string | null;
   overtime_crew_group: string | null;
@@ -71,4 +74,5 @@ export interface CrewMemberInput {
   trade: string;
   panel: string | null;
   email: string | null;
+  passed_out_equipment?: string[];
 }

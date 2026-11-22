@@ -47,6 +47,7 @@ export function useShiftChat(profileId: string, isSupervisor: boolean) {
   const supabase = useMemo(() => createClient(), []);
   const [messages, setMessages] = useState<ShiftMessage[]>([]);
   const [fitters, setFitters] = useState<ShiftFitter[]>([]);
+  const [productionDesk, setProductionDesk] = useState<ShiftFitter[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -109,6 +110,17 @@ export function useShiftChat(profileId: string, isSupervisor: boolean) {
         if (cancelled || loadError) return;
         setFitters((data ?? []) as ShiftFitter[]);
       });
+    void supabase
+      .from('profiles')
+      .select('id, display_name, employee_id, crew_member_id')
+      .eq('department', 'production')
+      .eq('access_level', 3)
+      .eq('active', true)
+      .order('display_name')
+      .then(({ data, error: loadError }) => {
+        if (cancelled || loadError) return;
+        setProductionDesk((data ?? []) as ShiftFitter[]);
+      });
     return () => {
       cancelled = true;
     };
@@ -127,5 +139,5 @@ export function useShiftChat(profileId: string, isSupervisor: boolean) {
     return { ok: true as const, error: null };
   }, [supabase, append]);
 
-  return { messages, fitters, loading, error, send };
+  return { messages, fitters, productionDesk, loading, error, send };
 }

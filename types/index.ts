@@ -93,6 +93,8 @@ export interface Asset {
   asset_type: string;
   make_model: string;
   location: string;
+  location_updated_at?: string | null;
+  circuit?: string | null;
   machine_owner?: string | null;
   serial_number?: string | null;
   status: 'OPERATIONAL' | 'DOWN_UNPLANNED' | 'DOWN_PLANNED';
@@ -147,4 +149,5 @@ export interface HandoverLogEntry {
   details: string;
   action_required?: string;
   logged_at: string;
+  department?: string;
 }

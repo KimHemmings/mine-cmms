@@ -11,7 +11,6 @@ import {
   ClipboardList,
   Users,
   GraduationCap,
-  Factory,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
@@ -20,7 +19,7 @@ import { ChangePasswordButton } from '@/components/auth/ChangePasswordButton';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import { CREW_PANELS, CrewMember, ShiftRecord, UserRole } from '@/types';
 import ShiftChatDrawer from '@/components/ShiftChatDrawer';
-import { Permissions, isWorkshopRoster } from '@/utils/permissions';
+import { Permissions, isWorkshopRoster, type Department } from '@/utils/permissions';
 import { getShiftClock, type ShiftClock } from '@/utils/shiftClock';
 import { formatStartDay, shiftIsPast } from '@/utils/crewStanding';
 import type { SyncStatus } from '@/hooks/useRealtimeWorkboard';
@@ -48,9 +47,10 @@ interface TopHeaderProps {
   profileId?: string | null;
 }
 
-function screenTitle(tab: Tab) {
+function screenTitle(tab: Tab, department: Department) {
   if (tab === 'training') return 'Training';
   if (tab === 'status') return 'Production whiteboard';
+  if (tab === 'board' && department === 'production') return 'Down Fleet & ETAs';
   if (tab === 'dossier') return 'Fleet directory';
   if (tab === 'handover') return 'Shift handover';
   if (tab === 'crew') return 'Crew';
@@ -114,7 +114,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   }
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
-    { id: 'status', label: 'Production', icon: <Factory className="w-4 h-4" />, show: permissions.department === 'production' },
     { id: 'board', label: `Whiteboard (${shiftJobsCount})`, icon: <ClipboardList className="w-4 h-4" />, show: permissions.canViewWhiteboard },
     { id: 'dossier', label: 'Fleet directory', icon: <BookOpen className="w-4 h-4" />, show: permissions.canViewFleetDirectory },
     { id: 'handover', label: 'Shift handover', icon: <FileSpreadsheet className="w-4 h-4" />, show: permissions.canViewHandover },
@@ -128,7 +127,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     <header className="space-y-3 pb-4 border-b border-slate-300 print:hidden">
       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-black tracking-tight text-slate-900">{screenTitle(currentTab)}</h1>
+          <h1 className="text-2xl font-black tracking-tight text-slate-900">{screenTitle(currentTab, permissions.department)}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
             <span className="font-black uppercase tracking-wide text-slate-800">{permissions.badge}</span>
             <strong className="text-slate-900" title="Your name is stamped on every note and sign-off you make">
@@ -163,7 +162,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 <span className="font-bold text-slate-600">{clock.timeRemaining}</span>
               </span>
             )}
-            {permissions.canViewHandover && onSetShiftCrew ? (
+            {permissions.canViewHandover && permissions.department !== 'production' && onSetShiftCrew ? (
               <label className="inline-flex items-center gap-1 text-xs font-bold text-slate-600">
                 <span className="sr-only">Active crew</span>
                 <select
@@ -209,6 +208,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               userRole={workshopDesk ? 'management' : 'fitter'}
               profileId={profileId}
               crew={crew}
+              callouts={workshopDesk || (permissions.department === 'production' && permissions.accessLevel === 3)}
             />
           )}
           <ChangePasswordButton />

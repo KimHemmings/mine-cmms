@@ -126,7 +126,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   const fetchHandoverLog = useCallback(async () => {
     const { data, error } = await supabase
       .from('handover_log_entries')
-      .select('id, category, fleet_id, details, action_required, logged_at, shift_records!inner(status)')
+      .select('id, category, fleet_id, details, action_required, logged_at, department, shift_records!inner(status)')
       .eq('shift_records.status', 'ACTIVE')
       .order('logged_at', { ascending: true });
 
@@ -143,6 +143,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
         details: row.details,
         action_required: row.action_required ?? undefined,
         logged_at: row.logged_at,
+        department: row.department ?? undefined,
       }))
     );
   }, [supabase]);

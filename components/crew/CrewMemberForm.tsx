@@ -9,6 +9,7 @@ interface CrewMemberFormProps {
   editing: CrewMember | null;
   department: Department;
   defaultPanel: string;
+  equipmentModels?: string[];
   onSave: (input: CrewMemberInput, id?: string) => Promise<boolean>;
   onClose: () => void;
   onRemove?: () => void;
@@ -17,8 +18,22 @@ interface CrewMemberFormProps {
 const inputClass =
   'w-full min-h-11 rounded-lg border-2 border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:border-amber-500';
 
+const PRODUCTION_TRADES = ['Operator', 'Multi-Skilled Operator', 'Leading Hand', 'OCE / Supervisor'] as const;
+
+function tradesFor(department: Department) {
+  return department === 'production' ? PRODUCTION_TRADES : CREW_TRADES;
+}
+
 function blank(department: Department, panel: string): CrewMemberInput {
-  return { display_name: '', employee_id: '', email: '', department, access_level: 2, trade: 'Fitter', panel };
+  return {
+    display_name: '',
+    employee_id: '',
+    email: '',
+    department,
+    access_level: 2,
+    trade: department === 'production' ? 'Operator' : 'Fitter',
+    panel,
+  };
 }
 
 function toInput(member: CrewMember | null, department: Department, defaultPanel: string): CrewMemberInput {
@@ -35,9 +50,11 @@ function toInput(member: CrewMember | null, department: Department, defaultPanel
     : blank(department, defaultPanel);
 }
 
-export default function CrewMemberForm({ editing, department, defaultPanel, onSave, onClose, onRemove }: CrewMemberFormProps) {
+export default function CrewMemberForm({ editing, department, defaultPanel, equipmentModels = [], onSave, onClose, onRemove }: CrewMemberFormProps) {
   const [form, setForm] = useState<CrewMemberInput>(() => toInput(editing, department, defaultPanel));
+  const [tickets, setTickets] = useState<string[]>(() => editing?.passed_out_equipment ?? []);
   const [saving, setSaving] = useState(false);
+  const trades = tradesFor(department);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -54,7 +71,11 @@ export default function CrewMemberForm({ editing, department, defaultPanel, onSa
     event.preventDefault();
     if (!form.display_name.trim()) return;
     setSaving(true);
-    const ok = await onSave({ ...form, department }, editing?.id);
+    const ok = await onSave({
+      ...form,
+      department,
+      ...(department === 'production' ? { passed_out_equipment: tickets } : {}),
+    }, editing?.id);
     setSaving(false);
     if (ok) onClose();
   };
@@ -106,10 +127,10 @@ export default function CrewMemberForm({ editing, department, defaultPanel, onSa
           <label className="space-y-1">
             <span className="text-xs font-bold text-slate-600">Trade / Role</span>
             <select value={form.trade} onChange={set('trade')} className={`${inputClass} cursor-pointer`}>
-              {CREW_TRADES.map((trade) => (
+              {trades.map((trade) => (
                 <option key={trade} value={trade}>{trade}</option>
               ))}
-              {form.trade && !(CREW_TRADES as readonly string[]).includes(form.trade) && (
+              {form.trade && !(trades as readonly string[]).includes(form.trade) && (
                 <option value={form.trade}>{form.trade}</option>
               )}
             </select>
@@ -127,6 +148,32 @@ export default function CrewMemberForm({ editing, department, defaultPanel, onSa
             </select>
           </label>
         </div>
+
+        {department === 'production' && (
+          <fieldset className="space-y-2">
+            <legend className="text-xs font-bold text-slate-600">Passed-Out Equipment (Competencies)</legend>
+            {equipmentModels.length === 0 && tickets.length === 0 ? (
+              <p className="text-sm text-slate-500">No machine models are on the fleet yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {[...new Set([...equipmentModels, ...tickets])].sort((a, b) => a.localeCompare(b)).map((model) => {
+                  const on = tickets.includes(model);
+                  return (
+                    <button
+                      key={model}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => setTickets((current) => on ? current.filter((item) => item !== model) : [...current, model])}
+                      className={`min-h-10 px-3 rounded-full border text-sm font-bold ${on ? 'bg-sky-700 text-white border-sky-700' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
+                    >
+                      {model}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </fieldset>
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200">
           {editing && onRemove ? (
