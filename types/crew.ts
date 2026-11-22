@@ -33,6 +33,13 @@ export interface CrewMember {
   access_level: number;
   trade: string;
   panel: string | null;
+  email: string | null;
+  away: boolean;
+  shift_duty: string | null;
+  is_contractor: boolean;
+  contractor_company: string | null;
+  overtime_crew_group: string | null;
+  shift_expires_at: string | null;
   active: boolean;
   created_at: string;
 }
@@ -63,4 +70,5 @@ export interface CrewMemberInput {
   access_level: number;
   trade: string;
   panel: string | null;
+  email: string | null;
 }

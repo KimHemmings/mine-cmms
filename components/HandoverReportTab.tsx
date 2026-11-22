@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   FileSpreadsheet, Printer, Presentation, RotateCw,
 } from 'lucide-react';
@@ -33,6 +33,9 @@ import { useCrewData } from './crew/CrewDataContext';
 import { siteCover } from '@/utils/crewStanding';
 import { IncomingCrewPicker } from './handover/IncomingCrewPicker';
 import { inWindow, windowFor } from '@/utils/shiftClock';
+import { allocationSummary } from '@/utils/crewAllocation';
+import { normalizeDepartment } from '@/utils/permissions';
+import { rosterRoleNote, visibleOnCrewTab } from '@/utils/shiftRoster';
 
 const LOG_CATEGORIES: HandoverLogCategory[] = [
   'SAFETY', 'WEATHER', 'MANNING', 'WATCHLIST', 'BRAKE_TEST', 'TOOLING', 'PRIORITY',
@@ -133,6 +136,27 @@ export default function HandoverReportTab({
   const windowedNotes = notes.filter((note) => inReport(note.created_at));
   const windowedLog = handoverLog.filter((entry) => inReport(entry.logged_at));
   const windowedReleased = completedJobs.filter((asset) => inReport(asset.actual_up));
+  const shiftAllocations = useMemo(() => {
+    const panel = activeShift?.crew;
+    return crew
+      .filter((member) => member.active && !member.away)
+      .filter((member) => {
+        const department = normalizeDepartment(member.department);
+        return department === 'workshop' || department === 'training';
+      })
+      .filter((member) => visibleOnCrewTab(member, panel || 'all'))
+      .sort((a, b) => a.display_name.localeCompare(b.display_name))
+      .map((member) => {
+        const detail = allocationSummary(member, workOrders, assets);
+        const note = rosterRoleNote(member);
+        return {
+          id: member.id,
+          name: note ? `${member.display_name} (${note})` : member.display_name,
+          detail,
+          assigned: detail !== 'Unassigned',
+        };
+      });
+  }, [crew, activeShift?.crew, workOrders, assets]);
   const liveSnapshot = buildHandoverSnapshot({
     assets,
     handedOver,
@@ -511,16 +535,18 @@ export default function HandoverReportTab({
             />
           </div>
 
+          <div className="mt-6">
+            <ShiftHandoverLog
+              entries={windowedLog}
+              onAddEntry={handleAddLogEntry}
+              onUpdateCategory={handleUpdateCategory}
+              onDeleteEntry={handleDeleteLogEntry}
+              allocations={reportWindow === '12h' ? shiftAllocations : undefined}
+            />
+          </div>
+
           <details className="mt-6 rounded-xl border border-slate-200 p-4">
-            <summary className="text-sm font-black text-slate-800 cursor-pointer">Add a note or a written summary</summary>
-            <div className="mt-4">
-              <ShiftHandoverLog
-                entries={windowedLog}
-                onAddEntry={handleAddLogEntry}
-                onUpdateCategory={handleUpdateCategory}
-                onDeleteEntry={handleDeleteLogEntry}
-              />
-            </div>
+            <summary className="text-sm font-black text-slate-800 cursor-pointer">Add a written summary</summary>
             <div className="mt-4">
               <AiHandoverDigest
                 activeShift={activeShift}

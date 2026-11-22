@@ -1,6 +1,7 @@
 // hooks/useWorkboardActions.ts
 import { SupabaseClient } from '@supabase/supabase-js';
-import { ShiftRecord, CreatePartPayload, PartStatus, Asset, STAGE_OPTIONS, CrewMember, CrewMemberInput } from '@/types';
+import { ShiftRecord, CreatePartPayload, PartStatus, Asset, MachineWorkOrder, STAGE_OPTIONS, CrewMember, CrewMemberInput } from '@/types';
+import { AllocationChoice, mainOpenJob } from '@/utils/crewAllocation';
 import { normalizeAccessLevel, normalizeDepartment } from '@/utils/permissions';
 import { logAssetHistory } from '@/utils/helpers';
 import { isNetworkError, queueStage } from '@/utils/stageQueue';
@@ -247,6 +248,7 @@ export function useWorkboardActions({
       access_level: normalizeAccessLevel(input.access_level),
       trade: input.trade,
       panel: input.panel || null,
+      email: input.email?.trim() || null,
     };
     const { error } = id
       ? await supabase.from('crew_members').update(row).eq('id', id)
@@ -271,6 +273,154 @@ export function useWorkboardActions({
     }
     await fetchAllData();
     showToast({ message: active ? `${member.display_name} is back on the crew list` : `${member.display_name} removed from the crew list` });
+  }
+
+  async function setCrewMemberAway(member: CrewMember, away: boolean) {
+    const { error } = await supabase.from('crew_members').update({ away }).eq('id', member.id);
+    if (error) return alert(`Error updating ${member.display_name}: ${error.message}`);
+    await fetchAllData();
+    showToast({ message: away ? `${member.display_name} is away` : `${member.display_name} is on the roster` });
+  }
+
+  async function setCrewAllocation(member: CrewMember, choice: AllocationChoice, workOrders: MachineWorkOrder[], assets: Asset[]) {
+    const open = workOrders.filter((order) => order.status !== 'COMPLETED');
+    const target = choice.type === 'machine'
+      ? mainOpenJob(open.filter((order) => order.asset_id === choice.assetId))
+      : undefined;
+    if (choice.type === 'machine' && !target) {
+      alert('That machine has no open job to assign.');
+      return;
+    }
+
+    const mine = open.filter((order) => order.crew?.some((row) => row.crew_member_id === member.id));
+    for (const order of mine) {
+      if (target && order.id === target.id) continue;
+      const remaining = (order.crew ?? []).map((row) => row.crew_member_id).filter((id) => id !== member.id);
+      const { error } = await supabase.rpc('set_work_order_crew', { p_work_order_id: order.id, p_crew_ids: remaining });
+      if (error) {
+        alert(`Error updating ${member.display_name}'s job: ${error.message}`);
+        await fetchAllData();
+        return;
+      }
+    }
+
+    if (target) {
+      const ids = new Set((target.crew ?? []).map((row) => row.crew_member_id));
+      ids.add(member.id);
+      const { error } = await supabase.rpc('set_work_order_crew', { p_work_order_id: target.id, p_crew_ids: [...ids] });
+      if (error) {
+        alert(`Error assigning ${member.display_name}: ${error.message}`);
+        await fetchAllData();
+        return;
+      }
+    }
+
+    const duty = choice.type === 'duty' ? choice.duty : null;
+    const { error: dutyError } = await supabase.from('crew_members').update({ shift_duty: duty }).eq('id', member.id);
+    if (dutyError) {
+      alert(`Error saving the shift duty: ${dutyError.message}`);
+      await fetchAllData();
+      return;
+    }
+
+    await fetchAllData();
+    const fleetId = choice.type === 'machine' ? assets.find((asset) => asset.id === choice.assetId)?.fleet_id : null;
+    const message = choice.type === 'clear'
+      ? `${member.display_name} is unassigned`
+      : choice.type === 'duty'
+        ? `${member.display_name} is on ${choice.duty}`
+        : `${member.display_name} is on ${fleetId ?? 'that machine'}`;
+    showToast({ message });
+  }
+
+  async function addOvertimeCover(member: CrewMember, letter: string, shiftEndsAt: string) {
+    const { error } = await supabase.from('crew_members').update({
+      overtime_crew_group: letter,
+      shift_expires_at: shiftEndsAt,
+    }).eq('id', member.id);
+    if (error) {
+      alert(`Error adding ${member.display_name} to overtime: ${error.message}`);
+      return false;
+    }
+    await fetchAllData();
+    showToast({ message: `${member.display_name} is covering ${letter} Crew until handover` });
+    return true;
+  }
+
+  async function addContractor(input: {
+    name: string;
+    company: string;
+    trade: string;
+    department: string;
+    panel: string;
+    shiftEndsAt: string;
+  }) {
+    const { data, error } = await supabase.from('crew_members').insert({
+      display_name: input.name.trim(),
+      trade: input.trade,
+      department: normalizeDepartment(input.department),
+      access_level: 1,
+      panel: input.panel,
+      is_contractor: true,
+      contractor_company: input.company.trim(),
+      shift_expires_at: input.shiftEndsAt,
+      active: true,
+      away: false,
+    }).select('*').single();
+    if (error || !data) {
+      alert(`Error adding contractor: ${error?.message ?? 'No record returned'}`);
+      return null;
+    }
+    await fetchAllData();
+    showToast({ message: `${input.name.trim()} added until handover` });
+    return data as CrewMember;
+  }
+
+  async function endShiftExtra(member: CrewMember, workOrders: MachineWorkOrder[]) {
+    const open = workOrders.filter((order) => order.status !== 'COMPLETED');
+    const mine = open.filter((order) => order.crew?.some((row) => row.crew_member_id === member.id));
+    for (const order of mine) {
+      const remaining = (order.crew ?? []).map((row) => row.crew_member_id).filter((id) => id !== member.id);
+      const { error } = await supabase.rpc('set_work_order_crew', { p_work_order_id: order.id, p_crew_ids: remaining });
+      if (error) {
+        alert(`Error taking ${member.display_name} off the job: ${error.message}`);
+        await fetchAllData();
+        return;
+      }
+    }
+
+    const patch = member.is_contractor
+      ? { active: false, shift_duty: null }
+      : { overtime_crew_group: null, shift_expires_at: null, shift_duty: null };
+    const { error } = await supabase.from('crew_members').update(patch).eq('id', member.id);
+    if (error) {
+      alert(`Error removing ${member.display_name} from the shift: ${error.message}`);
+      await fetchAllData();
+      return;
+    }
+    await fetchAllData();
+    showToast({
+      message: member.is_contractor
+        ? `${member.display_name} removed from this shift`
+        : `${member.display_name} is back on ${member.panel ?? 'their home crew'}`,
+    });
+  }
+
+  async function clearExpiredShiftExtras(members: CrewMember[]) {
+    const now = Date.now();
+    const expired = members.filter((member) => {
+      if (!member.shift_expires_at) return false;
+      if (new Date(member.shift_expires_at).getTime() > now) return false;
+      return member.is_contractor ? member.active : !!member.overtime_crew_group;
+    });
+    if (expired.length === 0) return;
+    for (const member of expired) {
+      const patch = member.is_contractor
+        ? { active: false }
+        : { overtime_crew_group: null, shift_expires_at: null };
+      await supabase.from('crew_members').update(patch).eq('id', member.id);
+    }
+    await fetchAllData();
   }
 
   async function setCrewOnShift(crewIds: string[], onShift: boolean) {
@@ -300,6 +450,12 @@ export function useWorkboardActions({
   return {
     saveCrewMember,
     setCrewMemberActive,
+    setCrewMemberAway,
+    setCrewAllocation,
+    addOvertimeCover,
+    addContractor,
+    endShiftExtra,
+    clearExpiredShiftExtras,
     setCrewOnShift,
     setWorkOrderCrew,
     setShiftPanel,

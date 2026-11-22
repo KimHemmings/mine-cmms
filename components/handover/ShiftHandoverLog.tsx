@@ -23,6 +23,7 @@ interface ShiftHandoverLogProps {
   onAddEntry: (entry: Omit<HandoverLogEntry, 'id' | 'logged_at'>) => void;
   onUpdateCategory: (id: string, category: HandoverLogCategory) => void;
   onDeleteEntry: (id: string) => void;
+  allocations?: { id: string; name: string; detail: string; assigned: boolean }[];
 }
 
 export default function ShiftHandoverLog({
@@ -30,6 +31,7 @@ export default function ShiftHandoverLog({
   onAddEntry,
   onUpdateCategory,
   onDeleteEntry,
+  allocations,
 }: ShiftHandoverLogProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [category, setCategory] = useState<HandoverLogCategory>('SAFETY');
@@ -54,6 +56,23 @@ export default function ShiftHandoverLog({
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-sm print:border-black print:shadow-none overflow-hidden font-sans">
+      {allocations && (
+        <div className="p-3 border-b border-slate-200 bg-white">
+          <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">Shift Crew Allocations</h3>
+          {allocations.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">No one from this crew is on the roster.</p>
+          ) : (
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {allocations.map((person) => (
+                <li key={person.id} className={`px-3 py-1.5 rounded-full border text-sm ${person.assigned ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                  <span className="font-black">{person.name}</span>
+                  <span className={person.assigned ? 'text-slate-200' : 'text-slate-500'}> · {person.detail}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between print:bg-white print:border-black">
         <div className="flex items-center gap-2">
           <ClipboardList className="w-4 h-4 text-slate-700" />

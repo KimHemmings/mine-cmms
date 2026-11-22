@@ -105,7 +105,12 @@ function Workboard() {
     updatePartStatus,
     saveCrewMember,
     setCrewMemberActive,
-    setCrewOnShift,
+    setCrewMemberAway,
+    setCrewAllocation,
+    addOvertimeCover,
+    addContractor,
+    endShiftExtra,
+    clearExpiredShiftExtras,
     setWorkOrderCrew,
     setShiftPanel,
   } = useWorkboardData({ activeFitter });
@@ -366,10 +371,18 @@ function Workboard() {
         {currentTab === 'crew' && permissions.canManageCrew && (
           <CrewTab
             activeShift={activeShift}
+            canManageCrew={permissions.canManageCrew}
+            department={permissions.department}
             saveCrewMember={saveCrewMember}
             setCrewMemberActive={setCrewMemberActive}
-            setCrewOnShift={setCrewOnShift}
-            setShiftPanel={setShiftPanel}
+            setCrewMemberAway={setCrewMemberAway}
+            setCrewAllocation={setCrewAllocation}
+            addOvertimeCover={addOvertimeCover}
+            addContractor={addContractor}
+            endShiftExtra={endShiftExtra}
+            clearExpiredShiftExtras={clearExpiredShiftExtras}
+            assets={shiftJobs}
+            workOrders={workOrders}
           />
         )}
       </section>
