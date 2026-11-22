@@ -24,7 +24,7 @@ import { getShiftClock, type ShiftClock } from '@/utils/shiftClock';
 import { formatStartDay, shiftIsPast } from '@/utils/crewStanding';
 import type { SyncStatus } from '@/hooks/useRealtimeWorkboard';
 
-type Tab = 'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status';
+type Tab = 'management' | 'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status';
 
 interface TopHeaderProps {
   activeShift: ShiftRecord | null;
@@ -47,13 +47,15 @@ interface TopHeaderProps {
   profileId?: string | null;
 }
 
-function screenTitle(tab: Tab, department: Department) {
+function screenTitle(tab: Tab, department: Department, management = false) {
+  if (tab === 'management') return 'Management & Gaps';
   if (tab === 'training') return 'Training';
   if (tab === 'status') return 'Production whiteboard';
+  if (tab === 'board' && management) return 'Whiteboard';
   if (tab === 'board' && department === 'production') return 'Down Fleet & ETAs';
   if (tab === 'dossier') return 'Fleet directory';
   if (tab === 'handover') return 'Shift handover';
-  if (tab === 'crew') return 'Crew';
+  if (tab === 'crew') return department === 'training' ? 'Competencies' : 'Crew';
   return 'Workshop whiteboard';
 }
 
@@ -114,10 +116,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   }
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
+    { id: 'management', label: 'Management & Gaps', icon: <ClipboardList className="w-4 h-4" />, show: permissions.canViewManagementDashboard },
     { id: 'board', label: `Whiteboard (${shiftJobsCount})`, icon: <ClipboardList className="w-4 h-4" />, show: permissions.canViewWhiteboard },
     { id: 'dossier', label: 'Fleet directory', icon: <BookOpen className="w-4 h-4" />, show: permissions.canViewFleetDirectory },
     { id: 'handover', label: 'Shift handover', icon: <FileSpreadsheet className="w-4 h-4" />, show: permissions.canViewHandover },
-    { id: 'crew', label: crewAttention > 0 ? `Crew (${crewAttention})` : 'Crew', icon: <Users className="w-4 h-4" />, show: permissions.canManageCrew },
+    { id: 'crew', label: permissions.department === 'training' ? 'Competencies' : (crewAttention > 0 ? `Crew (${crewAttention})` : 'Crew'), icon: <Users className="w-4 h-4" />, show: permissions.canViewCrew },
     { id: 'training', label: 'Training', icon: <GraduationCap className="w-4 h-4" />, show: permissions.department === 'training' },
   ];
 
@@ -127,9 +130,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     <header className="space-y-3 pb-4 border-b border-slate-300 print:hidden">
       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-black tracking-tight text-slate-900">{screenTitle(currentTab, permissions.department)}</h1>
+          <h1 className="text-2xl font-black tracking-tight text-slate-900">{screenTitle(currentTab, permissions.department, permissions.isManagementLevel4)}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-            <span className="font-black uppercase tracking-wide text-slate-800">{permissions.badge}</span>
+            <span className={permissions.isManagementLevel4
+              ? 'inline-flex items-center rounded-full bg-slate-900 px-3 py-1 text-xs font-black tracking-wide text-amber-300'
+              : 'font-black uppercase tracking-wide text-slate-800'}>
+              {permissions.badge}
+            </span>
             <strong className="text-slate-900" title="Your name is stamped on every note and sign-off you make">
               {activeFitter || '...'}
             </strong>
@@ -205,7 +212,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           {permissions.canUseShiftChat && profileId && (
             <ShiftChatDrawer
               senderName={activeFitter}
-              userRole={workshopDesk ? 'management' : 'fitter'}
+              userRole={permissions.department === 'training' ? 'training' : workshopDesk ? 'management' : 'fitter'}
               profileId={profileId}
               crew={crew}
               callouts={workshopDesk || (permissions.department === 'production' && permissions.accessLevel === 3)}

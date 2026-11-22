@@ -72,6 +72,8 @@ export default function ShiftChatDrawer({
   callouts?: boolean;
 }) {
   const isSupervisor = userRole === 'management';
+  const isTraining = userRole === 'training';
+  const trainingPing = (item: ShiftMessage) => item.message.startsWith('@Training');
   const { messages, fitters, productionDesk, loading, error, send } = useShiftChat(profileId, isSupervisor);
   const [open, setOpen] = useState(false);
   const draft = useDictationTarget();
@@ -88,16 +90,17 @@ export default function ShiftChatDrawer({
   const visible = useMemo(() => {
     return messages.filter((item) => {
       if (!item.sender_id && !item.recipient_id) return false;
+      if (isTraining) return trainingPing(item) || item.sender_id === profileId || item.recipient_id === profileId;
       if (!isSupervisor) return item.sender_id === profileId || item.recipient_id === profileId;
       if (!selectedId) return false;
       return fitterOnMessage(item, profileId) === selectedId;
     });
-  }, [messages, isSupervisor, profileId, selectedId]);
+  }, [messages, isSupervisor, isTraining, profileId, selectedId]);
 
   const unread = useMemo(() => {
     if (!ready) return [];
-    return messages.filter((item) => item.sender_id && item.sender_id !== profileId && !seen.has(item.id));
-  }, [messages, profileId, seen, ready]);
+    return messages.filter((item) => item.sender_id && item.sender_id !== profileId && !seen.has(item.id) && (!isTraining || trainingPing(item)));
+  }, [messages, profileId, seen, ready, isTraining]);
 
   const unreadByFitter = useMemo(() => {
     const counts = new Map<string, number>();
@@ -231,7 +234,9 @@ export default function ShiftChatDrawer({
   }
 
   const alertNames = [...new Set(unread.map((item) => item.sender_name.replace(/\s+\(#.*\)$/, '')))];
-  const alertText = !isSupervisor
+  const alertText = isTraining
+    ? 'New pass-out request from Production'
+    : !isSupervisor
     ? 'New message from the supervisor'
     : alertNames.length <= 1
       ? `New message from ${alertNames[0] || 'a fitter'}`
@@ -255,15 +260,17 @@ export default function ShiftChatDrawer({
       {open && (
         <section
           className="fixed right-4 top-16 z-50 flex h-[min(70vh,34rem)] w-[min(100vw-2rem,24rem)] flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl"
-          aria-label={isSupervisor ? 'Message a fitter' : 'Message the supervisor'}
+          aria-label={isTraining ? 'Training pass-out requests' : isSupervisor ? 'Message a fitter' : 'Message the supervisor'}
         >
           <header className="flex items-start justify-between gap-2 border-b border-slate-200 px-4 py-3">
             <div>
               <h2 className="text-sm font-black text-slate-900">
-                {isSupervisor ? 'Message a fitter' : 'Message the supervisor'}
+                {isTraining ? 'Training pass-outs' : isSupervisor ? 'Message a fitter' : 'Message the supervisor'}
               </h2>
               <p className="text-xs text-slate-500">
-                {isSupervisor
+                {isTraining
+                  ? 'Production asks here when an operator has no tickets.'
+                  : isSupervisor
                   ? 'Choose one fitter. The others do not see it.'
                   : 'Only the supervisor sees this. It does not go on a work order.'}
               </p>
@@ -346,15 +353,17 @@ export default function ShiftChatDrawer({
           <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
             {loading && <p className="text-sm text-slate-500">Loading messages...</p>}
             {error && <p className="text-sm font-bold text-rose-700">{error}</p>}
-            {!loading && !error && isSupervisor && !selectedId && (
+            {!loading && !error && !isTraining && isSupervisor && !selectedId && (
               <p className="text-sm text-slate-500">Choose which fitter you are writing to.</p>
             )}
             {!loading && !error && isSupervisor && fitters.length === 0 && (
               <p className="text-sm text-slate-500">No fitter has a sign-in yet.</p>
             )}
-            {!loading && !error && (!isSupervisor || selectedId) && visible.length === 0 && (
+            {!loading && !error && (isTraining || !isSupervisor || selectedId) && visible.length === 0 && (
               <p className="text-sm text-slate-500">
-                {isSupervisor && selected
+                {isTraining
+                  ? 'No pass-out requests in the last day.'
+                  : isSupervisor && selected
                   ? `No messages with ${selected.name} in the last day.`
                   : 'No messages from the supervisor in the last day.'}
               </p>

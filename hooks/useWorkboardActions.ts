@@ -265,6 +265,20 @@ export function useWorkboardActions({
     return true;
   }
 
+  async function updateOperatorCompetencies(member: CrewMember, passed: string[], training: string[]) {
+    const { error } = await supabase.from('crew_members').update({
+      passed_out_equipment: passed,
+      in_training_equipment: training,
+    }).eq('id', member.id);
+    if (error) {
+      showToast({ message: 'Those competencies did not save. Check the signal and try again.', tone: 'error' });
+      return false;
+    }
+    await fetchAllData();
+    showToast({ message: `Competencies saved for ${member.display_name}` });
+    return true;
+  }
+
   async function setCrewMemberActive(member: CrewMember, active: boolean) {
     const { error } = await supabase.from('crew_members').update({ active }).eq('id', member.id);
     if (error) return alert(`Error updating crew member: ${error.message}`);
@@ -294,10 +308,12 @@ export function useWorkboardActions({
         }
         return;
       }
+      const role = choice.type === 'machine' ? (choice.role ?? 'Primary') : null;
       const { error: dutyError } = await supabase.from('crew_members').update({
         allocated_machine_id: choice.type === 'machine' ? choice.assetId : null,
         shift_duty: choice.type === 'duty' ? choice.duty : null,
-        allocated_role: choice.type === 'machine' ? (choice.role ?? 'Primary') : null,
+        allocated_role: role,
+        hot_seat_assignments: role === 'Hot Seat' && choice.type === 'machine' ? [{ assetId: choice.assetId }] : [],
       }).eq('id', member.id);
       if (dutyError) {
         alert(`Error saving the allocation: ${dutyError.message}`);
@@ -423,8 +439,8 @@ export function useWorkboardActions({
     }
 
     const patch = member.is_contractor
-      ? { active: false, shift_duty: null, allocated_machine_id: null, allocated_role: null }
-      : { overtime_crew_group: null, shift_expires_at: null, shift_duty: null, allocated_machine_id: null, allocated_role: null };
+      ? { active: false, shift_duty: null, allocated_machine_id: null, allocated_role: null, hot_seat_assignments: [] }
+      : { overtime_crew_group: null, shift_expires_at: null, shift_duty: null, allocated_machine_id: null, allocated_role: null, hot_seat_assignments: [] };
     const { error } = await supabase.from('crew_members').update(patch).eq('id', member.id);
     if (error) {
       alert(`Error removing ${member.display_name} from the shift: ${error.message}`);
@@ -515,6 +531,7 @@ export function useWorkboardActions({
 
   return {
     saveCrewMember,
+    updateOperatorCompetencies,
     setCrewMemberActive,
     setCrewMemberAway,
     setCrewAllocation,

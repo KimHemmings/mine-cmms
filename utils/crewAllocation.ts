@@ -5,7 +5,7 @@ import { holdBadge } from '@/utils/jobHold';
 export const SHIFT_DUTIES = ['Pit Patrol / Field', 'Workshop / Fab'] as const;
 export type ShiftDuty = (typeof SHIFT_DUTIES)[number];
 
-export const PRODUCTION_DUTIES = ['Hot Seat / Relief (General)', 'Standby / Crib Relief', 'Pit Utility / Ancillary', 'Go-Line / Training'] as const;
+export const PRODUCTION_DUTIES = ['Floating Hot Seat / Relief', 'Standby / Pit Utility'] as const;
 export type ProductionDuty = (typeof PRODUCTION_DUTIES)[number];
 export type AnyDuty = ShiftDuty | ProductionDuty;
 
@@ -15,12 +15,6 @@ export function seatLabel(role: AllocationRole | null | undefined) {
   if (role === 'Hot Seat') return 'Hot Seat';
   if (role === 'Trainee (Buddy Seat)') return 'Trainee';
   return 'Primary';
-}
-
-export function nextAllocationRole(role: AllocationRole | null | undefined): AllocationRole {
-  if (role === 'Hot Seat') return 'Trainee (Buddy Seat)';
-  if (role === 'Trainee (Buddy Seat)') return 'Primary';
-  return 'Hot Seat';
 }
 
 export type AllocationChoice =
@@ -125,18 +119,37 @@ export function fleetLabel(assetId: string | null | undefined, assets: Asset[]) 
   return assets.find((asset) => asset.id === assetId)?.fleet_id ?? '';
 }
 
+const SUPPORT_GEAR = ['led', 'lighting', 'minespec', 'multiflo', 'skid', 'pump', 'landcruiser', 'light vehicle', 'trailer', 'generator'];
+
+export function isOperatorEquipment(asset: Pick<Asset, 'make_model' | 'asset_type'>) {
+  const haystack = `${asset.make_model} ${asset.asset_type || ''}`.toLowerCase();
+  return !SUPPORT_GEAR.some((word) => haystack.includes(word));
+}
+
 export function equipmentModels(assets: Asset[]) {
   return [...new Set(assets.map((asset) => asset.make_model.trim()).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b));
 }
 
+export function operatorEquipmentModels(assets: Asset[]) {
+  return equipmentModels(assets.filter(isOperatorEquipment));
+}
+
+const MODEL_MAKERS = new Set(['cat', 'caterpillar', 'komatsu', 'hitachi', 'liebherr', 'sandvik', 'epiroc', 'toyota', 'mack', 'allightsykes']);
+
+export function competencyCore(value: string) {
+  const parts = value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  const stripped = parts.length > 1 && MODEL_MAKERS.has(parts[0]) ? parts.slice(1) : parts;
+  return stripped.join('');
+}
+
 export function machineMatchesTickets(asset: Asset, tickets: string[]) {
-  const model = asset.make_model.trim().toLowerCase();
-  const type = (asset.asset_type || '').trim().toLowerCase();
+  const cores = [competencyCore(asset.make_model), competencyCore(asset.asset_type || ''), competencyCore(asset.fleet_id)]
+    .filter((item) => item.length >= 3);
   return tickets.some((ticket) => {
-    const needle = ticket.trim().toLowerCase();
-    if (!needle) return false;
-    return model === needle || type === needle || model.includes(needle) || type.includes(needle);
+    const needle = competencyCore(ticket);
+    if (needle.length < 3) return false;
+    return cores.some((item) => item === needle || item.includes(needle) || needle.includes(item));
   });
 }
 
@@ -152,18 +165,18 @@ export function machineHasPassedOutPrimary(asset: Asset, roster: CrewMember[], m
 }
 
 export function defaultAllocationRole(assetId: string, memberId: string, roster: CrewMember[]): AllocationRole {
-  const primaryTaken = roster.some((person) =>
+  const taken = roster.some((person) =>
     person.id !== memberId
     && person.active
-    && person.allocated_machine_id === assetId
-    && person.allocated_role === 'Primary',
+    && !person.away
+    && person.allocated_machine_id === assetId,
   );
-  return primaryTaken ? 'Hot Seat' : 'Primary';
+  return taken ? 'Hot Seat' : 'Primary';
 }
 
-export function namesOnMachine(assetId: string, roster: CrewMember[]) {
+export function namesOnMachine(assetId: string, roster: CrewMember[], exceptId?: string) {
   return roster
-    .filter((person) => person.active && person.allocated_machine_id === assetId)
+    .filter((person) => person.active && !person.away && person.id !== exceptId && person.allocated_machine_id === assetId)
     .map((person) => person.display_name);
 }
 
@@ -176,7 +189,9 @@ export function preStartUnit(
   const fleet = fleetLabel(member.allocated_machine_id, assets);
   if (production) {
     if (!fleet) return member.shift_duty?.trim() || '';
-    return member.allocated_role ? `${fleet} (${seatLabel(member.allocated_role)})` : fleet;
+    if (member.allocated_role === 'Hot Seat') return `${fleet} (Hot Seat)`;
+    if (member.allocated_role === 'Trainee (Buddy Seat)') return `${fleet} (Trainee)`;
+    return fleet;
   }
   const jobs = memberAssignments(member.id, workOrders, assets);
   if (jobs.length > 0) return jobs.map((job) => job.fleetId).join(', ');
@@ -234,7 +249,11 @@ export function productionSeatLines(operators: CrewMember[], assets: Asset[], do
   }
 
   const roleOrder = (member: CrewMember) => (member.allocated_role === 'Trainee (Buddy Seat)' ? 2 : member.allocated_role === 'Hot Seat' ? 1 : 0);
-  const seat = (member: CrewMember) => `${member.display_name} (${seatLabel(member.allocated_role)})`;
+  const seat = (member: CrewMember) => member.allocated_role === 'Hot Seat'
+    ? `${member.display_name} (Hot Seat)`
+    : member.allocated_role === 'Trainee (Buddy Seat)'
+      ? `${member.display_name} (Trainee)`
+      : member.display_name;
   const lines: ProductionSeatLine[] = [...machines.entries()]
     .map(([assetId, people]) => {
       const asset = assets.find((item) => item.id === assetId);
@@ -277,7 +296,7 @@ export function allocatedUnitText(member: Pick<CrewMember, 'id' | 'shift_duty' |
   return member.shift_duty?.trim() || '';
 }
 
-export function allocationSummary(member: Pick<CrewMember, 'id' | 'shift_duty' | 'allocated_machine_id'>, workOrders: MachineWorkOrder[], assets: Asset[]) {
+export function allocationSummary(member: Pick<CrewMember, 'id' | 'shift_duty' | 'allocated_machine_id' | 'allocated_role' | 'department'>, workOrders: MachineWorkOrder[], assets: Asset[]) {
   const fleet = fleetLabel(member.allocated_machine_id, assets);
   if (fleet) return fleet;
   const jobs = memberAssignments(member.id, workOrders, assets);

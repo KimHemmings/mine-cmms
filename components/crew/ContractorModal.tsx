@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { Asset, MachineWorkOrder } from '@/types';
-import { AllocationChoice, PRODUCTION_DUTIES, SHIFT_DUTIES, equipmentModels, machineMatchesTickets, whiteboardMachines } from '@/utils/crewAllocation';
+import { AllocationChoice, PRODUCTION_DUTIES, SHIFT_DUTIES, isOperatorEquipment, machineMatchesTickets, operatorEquipmentModels, whiteboardMachines } from '@/utils/crewAllocation';
 
 const WORKSHOP_TRADES = ['Field Fitter', 'Fitter', 'Boilermaker', 'Auto Sparky', 'Auto Electrician', 'Other'];
 const PRODUCTION_TRADES = ['Operator', 'Multi-Skilled Operator', 'Leading Hand', 'OCE / Supervisor'];
@@ -15,6 +15,7 @@ interface ContractorModalProps {
   variant?: 'workshop' | 'production';
   onSave: (input: { name: string; company: string; trade: string; allocation: AllocationChoice | null; passedOut: string[] }) => Promise<void>;
   onClose: () => void;
+  embedded?: boolean;
 }
 
 export default function ContractorModal({
@@ -24,6 +25,7 @@ export default function ContractorModal({
   variant = 'workshop',
   onSave,
   onClose,
+  embedded = false,
 }: ContractorModalProps) {
   const production = variant === 'production';
   const trades = production ? PRODUCTION_TRADES : WORKSHOP_TRADES;
@@ -34,8 +36,8 @@ export default function ContractorModal({
   const [tickets, setTickets] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const machines = whiteboardMachines(assets, workOrders);
-  const models = equipmentModels(assets);
-  const fleet = [...assets].sort((a, b) => a.fleet_id.localeCompare(b.fleet_id, undefined, { numeric: true }));
+  const models = operatorEquipmentModels(assets);
+  const fleet = [...assets].filter(isOperatorEquipment).sort((a, b) => a.fleet_id.localeCompare(b.fleet_id, undefined, { numeric: true }));
   const passedFleet = tickets.length === 0 ? [] : fleet.filter((asset) => machineMatchesTickets(asset, tickets));
 
   useEffect(() => {
@@ -60,8 +62,7 @@ export default function ContractorModal({
     setSaving(false);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
+  const card = (
       <form
         onSubmit={(event) => void submit(event)}
         onClick={(event) => event.stopPropagation()}
@@ -75,9 +76,11 @@ export default function ContractorModal({
             <h3 id="contractor-title" className="text-xl font-black text-slate-900">Contractor on {crewLabel}</h3>
             <p className="text-sm text-slate-500">{production ? 'Labour hire stays on this crew until handover, then drops off.' : 'They stay on this crew until handover, then drop off.'}</p>
           </div>
-          <button type="button" onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 rounded-lg" aria-label="Close">
-            <X className="w-5 h-5" />
-          </button>
+          {!embedded && (
+            <button type="button" onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 rounded-lg" aria-label="Close">
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
         <label className="block space-y-1">
           <span className="text-xs font-bold text-slate-600">Full name *</span>
@@ -148,6 +151,12 @@ export default function ContractorModal({
           </button>
         </div>
       </form>
+  );
+
+  if (embedded) return card;
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
+      {card}
     </div>
   );
 }

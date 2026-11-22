@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Asset, CrewMember, HandoverLogEntry, MachineWorkOrder, ShiftRecord } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 import { getEventConfig, getPriorityConfig, STAGE_THEMES } from '@/components/workboard/workboardTheme';
@@ -9,7 +9,10 @@ import { mainOpenJob, productionSeatLines } from '@/utils/crewAllocation';
 import { formatDateTime, getEtuStatus } from '@/utils/helpers';
 import { getShiftClock, inWindow } from '@/utils/shiftClock';
 import { crewLetter, visibleOnCrewTab } from '@/utils/shiftRoster';
-import PitChecksCard, { EMPTY_PIT_CHECKS, pitCheckLines, type PitCheckValues } from '@/components/production/PitChecksCard';
+import PitChecksCard from '@/components/production/PitChecksCard';
+import OceHandoverSections from '@/components/production/OceHandoverSections';
+import { useProductionHandoverRecord } from '@/hooks/useProductionHandoverRecord';
+import { pitCheckLines } from '@/utils/productionHandoverRecord';
 import { isProductionDepartment } from '@/utils/permissions';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import DictationMicButton, { useDictationTarget } from '@/components/ui/DictationMicButton';
@@ -30,6 +33,7 @@ export default function ProductionShiftHandover({
   handoverLog,
   onRefresh,
   supervisorName,
+  readOnly = false,
 }: {
   activeShift: ShiftRecord | null;
   shiftJobs: Asset[];
@@ -39,19 +43,14 @@ export default function ProductionShiftHandover({
   handoverLog: HandoverLogEntry[];
   onRefresh: () => void;
   supervisorName: string;
+  readOnly?: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const { showToast } = useFeedback();
   const [now, setNow] = useState(() => Date.now());
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [showReport, setShowReport] = useState(false);
-  const [checks, setChecks] = useState<PitCheckValues>(EMPTY_PIT_CHECKS);
-  const [carriedChecks, setCarriedChecks] = useState<string[]>([]);
-  const rememberChecks = useCallback((next: PitCheckValues, carried: string[] = []) => {
-    setChecks(next);
-    setCarriedChecks(carried);
-  }, []);
+  const [showReport, setShowReport] = useState(readOnly);
   const note = useDictationTarget();
   const clock = getShiftClock(new Date(now));
 
@@ -131,7 +130,14 @@ export default function ProductionShiftHandover({
 
   const crewGroup = crewLetter(activeShift?.crew);
   const shiftDate = activeShift?.shift_date || `${clock.shiftStart.getFullYear()}-${String(clock.shiftStart.getMonth() + 1).padStart(2, '0')}-${String(clock.shiftStart.getDate()).padStart(2, '0')}`;
-  const checkLines = pitCheckLines(checks, carriedChecks);
+  const handover = useProductionHandoverRecord({
+    shiftDate,
+    shiftName: clock.shiftName,
+    crewGroup,
+    supervisorName,
+  });
+  const checkLines = pitCheckLines(handover.record, handover.record.carried_fields);
+  const stamp = (name: string, at: string) => name ? `${name} · ${formatDateTime(at)}` : 'Not signed';
 
   const exportDeck = async () => {
     setExporting(true);
@@ -146,6 +152,33 @@ export default function ProductionShiftHandover({
         seats: seats.map((line) => ({ unit: line.unit, people: line.people, location: line.location })),
         checks: checkLines,
         notes: notes.map((entry) => ({ when: formatDateTime(entry.logged_at), details: entry.details })),
+        oce: {
+          status: handover.record.oce_inspection_status,
+          file: handover.record.oce_report_filename || '',
+        },
+        tarps: handover.record.active_tarps.map((tarp) => ({
+          name: tarp.name,
+          level: tarp.carried && tarp.level !== 'Normal' ? `${tarp.level} · CARRIED OVER` : tarp.level,
+          note: tarp.note,
+        })),
+        incidents: handover.record.incidents.map((item) => ({
+          category: item.category,
+          location: item.location,
+          summary: item.summary,
+          flags: [item.openInvestigation ? 'Open investigation' : 'Closed', item.carried ? 'CARRIED OVER' : ''].filter(Boolean).join(' · '),
+        })),
+        safety: handover.record.safety_awareness,
+        production: {
+          rom: handover.record.shift_production.romCoal,
+          overburden: handover.record.shift_production.primeOverburden,
+          delays: handover.record.shift_production.delays,
+          services: handover.record.services_status,
+          servicesNotes: handover.record.services_notes,
+        },
+        signoff: {
+          outgoing: stamp(handover.record.outgoing_signed_by, handover.record.outgoing_signed_at),
+          oncoming: stamp(handover.record.oncoming_signed_by, handover.record.oncoming_signed_at),
+        },
       });
     } finally {
       setExporting(false);
@@ -156,7 +189,7 @@ export default function ProductionShiftHandover({
     return (
       <div className="space-y-4 font-sans">
         <div className="print:hidden flex flex-wrap gap-2">
-          <button type="button" onClick={() => setShowReport(false)} className="min-h-11 px-4 rounded-lg border border-slate-300 bg-white text-sm font-bold text-slate-800">Back to handover</button>
+          {!readOnly && <button type="button" onClick={() => setShowReport(false)} className="min-h-11 px-4 rounded-lg border border-slate-300 bg-white text-sm font-bold text-slate-800">Back to handover</button>}
           <button type="button" onClick={() => window.print()} className="min-h-11 px-4 rounded-lg bg-slate-900 text-white text-sm font-black">Print report</button>
           <button type="button" onClick={() => void exportDeck()} disabled={exporting} className="min-h-11 px-4 rounded-lg bg-amber-600 text-white text-sm font-black disabled:opacity-50 inline-flex items-center gap-1.5">
             <Presentation className="w-4 h-4" /> {exporting ? 'Building...' : 'Export PowerPoint'}
@@ -168,6 +201,41 @@ export default function ProductionShiftHandover({
             <h2 className="text-2xl font-black text-slate-900">{clock.shiftName}</h2>
             <p className="text-sm font-bold text-slate-600">{clock.shiftName === 'Day Shift' ? '06:00–18:00' : '18:00–06:00'} · {dateLabel} · {activeShift?.crew || 'Crew not set'} · {supervisorName || 'Production Supervisor'}</p>
           </header>
+          <section>
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">OCE report status</h3>
+            <p className="mt-2 text-sm"><span className="font-black">{handover.record.oce_inspection_status}</span>{handover.record.oce_report_filename ? ` — ${handover.record.oce_report_filename}` : ''}</p>
+          </section>
+          <section>
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Active TARPs</h3>
+            <ul className="mt-2 space-y-1 text-sm">
+              {handover.record.active_tarps.map((tarp) => (
+                <li key={tarp.name}><span className="font-black">{tarp.name}:</span> {tarp.level}{tarp.carried && tarp.level !== 'Normal' ? ' · CARRIED OVER' : ''}{tarp.note ? ` — ${tarp.note}` : ''}</li>
+              ))}
+            </ul>
+          </section>
+          <section>
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Incidents / HPIs</h3>
+            {handover.record.incidents.length === 0 ? <p className="mt-2 text-sm text-slate-500">No incidents logged for this shift.</p> : (
+              <ul className="mt-2 space-y-2 text-sm">
+                {handover.record.incidents.map((item) => (
+                  <li key={item.id}><span className="font-black">{item.category}</span> — {item.location}. {item.summary} {item.openInvestigation ? '· Open investigation' : '· Closed'}{item.carried ? ' · CARRIED OVER' : ''}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <section>
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Safety awareness</h3>
+            <p className="mt-2 text-sm whitespace-pre-wrap">{handover.record.safety_awareness.trim() || 'No safety awareness note for this shift.'}</p>
+          </section>
+          <section>
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Shift production actuals</h3>
+            <ul className="mt-2 space-y-1 text-sm">
+              <li><span className="font-black">ROM coal (tonnes):</span> {handover.record.shift_production.romCoal || '—'}</li>
+              <li><span className="font-black">Prime overburden (BCMs):</span> {handover.record.shift_production.primeOverburden || '—'}</li>
+              <li><span className="font-black">Major non-mechanical delays:</span> {handover.record.shift_production.delays || '—'}</li>
+              <li><span className="font-black">Pit services:</span> {handover.record.services_status}{handover.record.services_notes ? ` — ${handover.record.services_notes}` : ''}</li>
+            </ul>
+          </section>
           <section>
             <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Statutory pit and OCE checks</h3>
             <ul className="mt-2 space-y-1 text-sm">
@@ -197,6 +265,11 @@ export default function ProductionShiftHandover({
               <ul className="mt-2 space-y-2">{notes.map((entry) => <li key={entry.id}><p className="text-sm text-slate-900 whitespace-pre-wrap">{entry.details}</p><p className="text-[11px] font-bold text-slate-400">{formatDateTime(entry.logged_at)}</p></li>)}</ul>
             )}
           </section>
+          <section>
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">OCE sign-off</h3>
+            <p className="mt-2 text-sm"><span className="font-black">Outgoing:</span> {stamp(handover.record.outgoing_signed_by, handover.record.outgoing_signed_at)}</p>
+            <p className="text-sm"><span className="font-black">Oncoming:</span> {stamp(handover.record.oncoming_signed_by, handover.record.oncoming_signed_at)}</p>
+          </section>
         </article>
       </div>
     );
@@ -223,13 +296,26 @@ export default function ProductionShiftHandover({
         </div>
       </section>
 
-      <PitChecksCard
+      {handover.error && <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">{handover.error}</p>}
+      {!handover.ready ? <p className="text-sm font-bold text-slate-500">Loading handover...</p> : null}
+      {handover.ready && <OceHandoverSections
+        record={handover.record}
+        crewGroup={crewGroup}
+        supervisorName={supervisorName}
+        onEdit={handover.edit}
+        onSave={handover.save}
+        onUpload={handover.uploadOceReport}
+        onOpenReport={handover.openOceReport}
+      />}
+      {handover.ready && <PitChecksCard
         shiftDate={shiftDate}
         shiftName={clock.shiftName}
         crewGroup={crewGroup}
-        supervisorName={supervisorName}
-        onChange={rememberChecks}
-      />
+        values={handover.record}
+        carried={handover.record.carried_fields}
+        onEdit={handover.edit}
+        onCommit={handover.commitPit}
+      />}
 
       <section className="bg-white border border-slate-300 rounded-xl shadow-2xs overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-200">
@@ -351,6 +437,17 @@ export default function ProductionShiftHandover({
           </ul>
         )}
       </section>
+
+      {handover.ready && <OceHandoverSections
+        part="signoff"
+        record={handover.record}
+        crewGroup={crewGroup}
+        supervisorName={supervisorName}
+        onEdit={handover.edit}
+        onSave={handover.save}
+        onUpload={handover.uploadOceReport}
+        onOpenReport={handover.openOceReport}
+      />}
     </div>
   );
 }

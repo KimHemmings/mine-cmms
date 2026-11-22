@@ -10,6 +10,7 @@ interface CrewMemberFormProps {
   department: Department;
   defaultPanel: string;
   equipmentModels?: string[];
+  readOnlyCompetencies?: boolean;
   onSave: (input: CrewMemberInput, id?: string) => Promise<boolean>;
   onClose: () => void;
   onRemove?: () => void;
@@ -50,7 +51,7 @@ function toInput(member: CrewMember | null, department: Department, defaultPanel
     : blank(department, defaultPanel);
 }
 
-export default function CrewMemberForm({ editing, department, defaultPanel, equipmentModels = [], onSave, onClose, onRemove }: CrewMemberFormProps) {
+export default function CrewMemberForm({ editing, department, defaultPanel, equipmentModels = [], readOnlyCompetencies = false, onSave, onClose, onRemove }: CrewMemberFormProps) {
   const [form, setForm] = useState<CrewMemberInput>(() => toInput(editing, department, defaultPanel));
   const [tickets, setTickets] = useState<string[]>(() => editing?.passed_out_equipment ?? []);
   const [saving, setSaving] = useState(false);
@@ -74,7 +75,7 @@ export default function CrewMemberForm({ editing, department, defaultPanel, equi
     const ok = await onSave({
       ...form,
       department,
-      ...(department === 'production' ? { passed_out_equipment: tickets } : {}),
+      ...(department === 'production' && !readOnlyCompetencies ? { passed_out_equipment: tickets } : {}),
     }, editing?.id);
     setSaving(false);
     if (ok) onClose();
@@ -149,7 +150,27 @@ export default function CrewMemberForm({ editing, department, defaultPanel, equi
           </label>
         </div>
 
-        {department === 'production' && (
+        {department === 'production' && readOnlyCompetencies && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-600">Verified by Training Department</p>
+            {editing?.competency_updated_by && (
+              <p className="text-xs font-bold text-slate-500">Signed by {editing.competency_updated_by}</p>
+            )}
+            <div className="flex flex-wrap gap-1.5">
+              {(editing?.passed_out_equipment ?? []).map((ticket) => (
+                <span key={ticket} className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-900 text-xs font-bold border border-emerald-300">{ticket}</span>
+              ))}
+              {(editing?.in_training_equipment ?? []).map((ticket) => (
+                <span key={ticket} className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-950 text-xs font-black border border-amber-300">Training: {ticket}</span>
+              ))}
+              {(editing?.passed_out_equipment ?? []).length === 0 && (editing?.in_training_equipment ?? []).length === 0 && (
+                <span className="text-sm text-slate-500">No pass-outs set by Training</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {department === 'production' && !readOnlyCompetencies && (
           <fieldset className="space-y-2">
             <legend className="text-xs font-bold text-slate-600">Passed-Out Equipment (Competencies)</legend>
             {equipmentModels.length === 0 && tickets.length === 0 ? (

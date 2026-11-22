@@ -10,9 +10,10 @@ interface OvertimeCrewModalProps {
   targetPanel: string;
   onAdd: (member: CrewMember) => Promise<void>;
   onClose: () => void;
+  embedded?: boolean;
 }
 
-export default function OvertimeCrewModal({ crew, targetPanel, onAdd, onClose }: OvertimeCrewModalProps) {
+export default function OvertimeCrewModal({ crew, targetPanel, onAdd, onClose, embedded = false }: OvertimeCrewModalProps) {
   const [query, setQuery] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
   const letter = crewLetter(targetPanel);
@@ -40,11 +41,10 @@ export default function OvertimeCrewModal({ crew, targetPanel, onAdd, onClose }:
     setSavingId(null);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
+  const card = (
       <div
         onClick={(event) => event.stopPropagation()}
-        className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl my-8 space-y-4"
+        className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4"
         role="dialog"
         aria-modal="true"
         aria-labelledby="overtime-title"
@@ -54,9 +54,11 @@ export default function OvertimeCrewModal({ crew, targetPanel, onAdd, onClose }:
             <h3 id="overtime-title" className="text-xl font-black text-slate-900">Overtime onto {targetPanel}</h3>
             <p className="text-sm text-slate-500">Their home crew stays the same. This cover ends at handover.</p>
           </div>
-          <button type="button" onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 rounded-lg" aria-label="Close">
-            <X className="w-5 h-5" />
-          </button>
+          {!embedded && (
+            <button type="button" onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 rounded-lg" aria-label="Close">
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
         <input
           value={query}
@@ -86,6 +88,12 @@ export default function OvertimeCrewModal({ crew, targetPanel, onAdd, onClose }:
           ))}
         </ul>
       </div>
+  );
+
+  if (embedded) return card;
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
+      {card}
     </div>
   );
 }

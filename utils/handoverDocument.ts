@@ -51,7 +51,7 @@ function peopleOnJob(order: MachineWorkOrder, crew: CrewMember[]) {
   if (!text || text.toLowerCase() === 'unassigned') return [];
   const named = crew.filter((member) => member.active && text.toLowerCase().includes(member.display_name.toLowerCase()));
   if (named.length > 0) return named;
-  return [{ id: '', display_name: text, department: 'workshop', access_level: 2, trade: '', panel: null, email: null, away: false, shift_duty: null, allocated_machine_id: null, allocated_role: null, passed_out_equipment: [], is_contractor: false, contractor_company: null, overtime_crew_group: null, shift_expires_at: null, active: true, created_at: '' }];
+  return [{ id: '', display_name: text, department: 'workshop', access_level: 2, trade: '', panel: null, email: null, away: false, shift_duty: null, allocated_machine_id: null, allocated_role: null, hot_seat_assignments: [], passed_out_equipment: [], in_training_equipment: [], competency_updated_by: null, competency_updated_at: null, is_contractor: false, contractor_company: null, overtime_crew_group: null, shift_expires_at: null, active: true, created_at: '' }];
 }
 
 function ordersFor(asset: Asset, workOrders: MachineWorkOrder[]): HandoverSnapshot['handedOver'][number]['orders'] {

@@ -1,24 +1,28 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Clock, HardHat, Pencil, Printer, UserPlus, X } from 'lucide-react';
+import { Pencil, Printer, UserPlus } from 'lucide-react';
 import { CREW_PANELS, CrewMember, CrewMemberInput, ShiftRecord, Asset, MachineWorkOrder } from '@/types';
 import { Department, departmentLabel, normalizeDepartment } from '@/utils/permissions';
 import { getShiftClock } from '@/utils/shiftClock';
-import { AllocationChoice, defaultAllocationRole, equipmentModels, memberAssignments, preStartLocation, preStartUnit } from '@/utils/crewAllocation';
+import { AllocationChoice, defaultAllocationRole, memberAssignments, operatorEquipmentModels, preStartLocation, preStartUnit } from '@/utils/crewAllocation';
 import { crewLetter, coveringLetter, rosterRoleNote, visibleOnCrewTab } from '@/utils/shiftRoster';
+import { createClient } from '@/utils/supabase/client';
+import { latestSafetyAwareness } from '@/utils/productionHandoverRecord';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import { useCrewData } from './CrewDataContext';
 import CrewMemberForm from './CrewMemberForm';
 import AllocationPill from './AllocationPill';
-import OvertimeCrewModal from './OvertimeCrewModal';
-import ContractorModal from './ContractorModal';
-import LocationPill from '@/components/production/LocationPill';
-import CircuitPill from '@/components/production/CircuitPill';
+import CompetencyBoard from './CompetencyBoard';
+import ShiftExtraModal from './ShiftExtraModal';
 
 interface CrewTabProps {
   activeShift: ShiftRecord | null;
   canManageCrew: boolean;
+  crossDepartment?: boolean;
+  canManageCompetencies?: boolean;
+  accessLevel?: number;
+  signerName?: string;
   department: Department;
   saveCrewMember: (input: CrewMemberInput, id?: string) => Promise<boolean>;
   setCrewMemberActive: (member: CrewMember, active: boolean) => Promise<void>;
@@ -26,6 +30,7 @@ interface CrewTabProps {
   setCrewAllocation: (member: CrewMember, choice: AllocationChoice, workOrders: MachineWorkOrder[], assets: Asset[]) => Promise<void>;
   addOvertimeCover: (member: CrewMember, letter: string, shiftEndsAt: string) => Promise<boolean>;
   addContractor: (input: { name: string; company: string; trade: string; department: string; panel: string; shiftEndsAt: string; passedOut?: string[] }) => Promise<CrewMember | null>;
+  updateOperatorCompetencies?: (member: CrewMember, passed: string[], training: string[]) => Promise<boolean>;
   endShiftExtra: (member: CrewMember, workOrders: MachineWorkOrder[]) => Promise<void>;
   clearExpiredShiftExtras: (members: CrewMember[]) => Promise<void>;
   assets: Asset[];
@@ -48,15 +53,12 @@ function shiftCrew(crew: string | null | undefined): CrewPanel | null {
   return (CREW_PANELS as readonly string[]).includes(crew ?? '') ? (crew as CrewPanel) : null;
 }
 
-function accessPill(level: number) {
-  if (level === 1) return 'L1 Read-Only';
-  if (level === 3) return 'L3 Supervisor';
-  return 'L2 Crew';
-}
-
 export default function CrewTab({
   activeShift,
   canManageCrew,
+  crossDepartment = false,
+  canManageCompetencies = false,
+  accessLevel = 2,
   department,
   saveCrewMember,
   setCrewMemberActive,
@@ -64,24 +66,25 @@ export default function CrewTab({
   setCrewAllocation,
   addOvertimeCover,
   addContractor,
-  endShiftExtra,
   clearExpiredShiftExtras,
+  updateOperatorCompetencies,
   assets,
   fleetAssets,
   downAssetIds = [],
-  updateMachineLocation,
-  updateMachineCircuit,
   workOrders,
 }: CrewTabProps) {
   const { crew } = useCrewData();
-  const { confirm } = useFeedback();
+  const { confirm, showToast } = useFeedback();
+  const [pinged, setPinged] = useState<Record<string, true>>({});
+  const [pingingId, setPingingId] = useState<string | null>(null);
   const onShiftPanel = shiftCrew(activeShift?.crew);
   const [selected, setSelected] = useState<CrewFilter>(onShiftPanel ?? 'all');
   const [editor, setEditor] = useState<CrewMember | 'new' | null>(null);
   const [showRemoved, setShowRemoved] = useState(false);
   const [savingAllocation, setSavingAllocation] = useState<string | null>(null);
-  const [showOvertime, setShowOvertime] = useState(false);
-  const [showContractor, setShowContractor] = useState(false);
+  const [showExtra, setShowExtra] = useState(false);
+  const [trainingView, setTrainingView] = useState<'passouts' | 'team'>(accessLevel >= 3 ? 'team' : 'passouts');
+  const [departmentFilter, setDepartmentFilter] = useState<Department | 'all'>('all');
 
   const clearExpiredRef = useRef(clearExpiredShiftExtras);
   clearExpiredRef.current = clearExpiredShiftExtras;
@@ -94,7 +97,11 @@ export default function CrewTab({
     void clearExpiredRef.current(crew);
   }, [crew]);
 
-  const inDepartment = (member: CrewMember) => normalizeDepartment(member.department) === department;
+  const inDepartment = (member: CrewMember) => {
+    const memberDepartment = normalizeDepartment(member.department);
+    if (!crossDepartment) return memberDepartment === department;
+    return departmentFilter === 'all' || memberDepartment === departmentFilter;
+  };
   const departmentCrew = crew.filter((member) => inDepartment(member));
   const removedCrew = departmentCrew.filter((member) => !member.active && !member.is_contractor);
   const countFor = (panel: CrewFilter) => departmentCrew.filter((member) => visibleOnCrewTab(member, panel)).length;
@@ -104,6 +111,8 @@ export default function CrewTab({
     .sort((a, b) => a.display_name.localeCompare(b.display_name));
   const fleet = fleetAssets ?? assets;
   const production = department === 'production';
+  const training = department === 'training';
+  const showPassouts = training && (accessLevel < 3 || trainingView === 'passouts');
   const isAssigned = (member: CrewMember) => {
     if (member.allocated_machine_id || member.shift_duty) return true;
     return !production && memberAssignments(member.id, workOrders, assets).length > 0;
@@ -111,12 +120,27 @@ export default function CrewTab({
   const dueOnSheet = shown.filter((member) => !member.away);
   const onRoster = dueOnSheet;
   const unassigned = onRoster.filter((member) => !isAssigned(member)).length;
-  const printLabel = selected === 'all' ? 'Print Pre-Start Sheet (PDF)' : `Print ${selected} Pre-Start (PDF)`;
+  const printLabel = selected === 'all' ? 'Print All Crews Pre-Start (PDF)' : `Print ${selected} Pre-Start (PDF)`;
+  const extraPanel = selected === 'all' ? (onShiftPanel ?? 'A Crew') : selected;
   const defaultPanel = selected === 'all' ? (onShiftPanel ?? 'A Crew') : selected;
 
   const printPreStart = async () => {
     const { generatePreStartSheet } = await import('@/utils/generatePreStartPDF');
     const clock = getShiftClock();
+    let safetyAwareness = '';
+    if (production) {
+      const letter = crewLetter(selected === 'all' ? activeShift?.crew : selected);
+      if (letter) {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from('production_handover_checks')
+          .select('safety_awareness, shift_date, shift_name, updated_at')
+          .eq('crew_group', letter)
+          .order('shift_date', { ascending: false })
+          .limit(12);
+        safetyAwareness = latestSafetyAwareness(data ?? []);
+      }
+    }
     generatePreStartSheet(
       dueOnSheet.map((member) => ({
         display_name: member.display_name,
@@ -130,6 +154,7 @@ export default function CrewTab({
         date: new Date(),
         shiftName: clock.shiftName,
         crew: selected === 'all' ? 'All crews' : selected,
+        safetyAwareness,
       },
     );
   };
@@ -138,10 +163,10 @@ export default function CrewTab({
     saveCrewMember({ ...input, department }, id);
 
   const placeOnOvertime = async (member: CrewMember) => {
-    const letter = crewLetter(selected);
+    const letter = crewLetter(extraPanel);
     if (!letter) return;
     const ok = await addOvertimeCover(member, letter, getShiftClock().shiftEnd.toISOString());
-    if (ok) setShowOvertime(false);
+    if (ok) setShowExtra(false);
   };
 
   const placeContractor = async (input: { name: string; company: string; trade: string; allocation: AllocationChoice | null; passedOut: string[] }) => {
@@ -159,7 +184,21 @@ export default function CrewTab({
         : input.allocation;
       await setCrewAllocation(created, choice, workOrders, fleet);
     }
-    setShowContractor(false);
+    setShowExtra(false);
+  };
+
+  const pingTraining = async (member: CrewMember) => {
+    const letter = crewLetter(member.panel) || 'their';
+    const message = `@Training — Please verify equipment pass-outs for ${member.display_name} (${letter} Crew).`;
+    setPingingId(member.id);
+    const supabase = createClient();
+    const { error } = await supabase.from('shift_chat').insert({ message, recipient_id: null });
+    setPingingId(null);
+    if (error) {
+      showToast({ message: 'Signal lost — message not sent. Tap Send to retry.', tone: 'error', durationMs: 8000 });
+      return;
+    }
+    setPinged((current) => ({ ...current, [member.id]: true }));
   };
 
   const assign = async (member: CrewMember, choice: AllocationChoice) => {
@@ -182,6 +221,27 @@ export default function CrewTab({
 
   return (
     <div className="space-y-4">
+      {training && accessLevel >= 3 && (
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Training views">
+          {([['team', 'Training Team'], ['passouts', 'Production Operator Pass-Outs']] as const).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={trainingView === id}
+              onClick={() => setTrainingView(id)}
+              className={`min-h-11 px-4 rounded-full border text-sm font-black ${trainingView === id ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {showPassouts && updateOperatorCompetencies ? (
+        <section className="bg-white border border-slate-300 rounded-xl p-4 shadow-2xs">
+          <CompetencyBoard crew={crew} assets={fleet} onSave={updateOperatorCompetencies} />
+        </section>
+      ) : (
       <section className="bg-white border border-slate-300 rounded-xl p-4 shadow-2xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -189,29 +249,22 @@ export default function CrewTab({
             <p className="text-sm text-slate-500">People due on the selected crew. Away stays on the list and off the sign-on sheet.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {canManageCrew && (
             <button
               type="button"
               onClick={() => setEditor('new')}
               className="min-h-11 px-4 rounded-lg border-2 border-slate-300 bg-white text-sm font-bold text-slate-800 hover:bg-slate-50 flex items-center gap-2"
             >
-              <UserPlus className="w-4 h-4" /> Add Crew Member
+              <UserPlus className="w-4 h-4" /> + Add Crew
             </button>
-            {canManageCrew && selected !== 'all' && (
-              <button
-                type="button"
-                onClick={() => setShowOvertime(true)}
-                className="min-h-11 px-4 rounded-lg border-2 border-indigo-200 bg-indigo-50 text-sm font-bold text-indigo-800 hover:bg-indigo-100 flex items-center gap-2"
-              >
-                <Clock className="w-4 h-4" /> + Overtime Crew
-              </button>
             )}
             {canManageCrew && (
               <button
                 type="button"
-                onClick={() => setShowContractor(true)}
-                className="min-h-11 px-4 rounded-lg border-2 border-violet-200 bg-violet-50 text-sm font-bold text-violet-800 hover:bg-violet-100 flex items-center gap-2"
+                onClick={() => setShowExtra(true)}
+                className="min-h-11 px-4 rounded-lg border-2 border-slate-300 bg-white text-sm font-bold text-slate-800 hover:bg-slate-50"
               >
-                <HardHat className="w-4 h-4" /> + Contractor
+                + Overtime / Contractor
               </button>
             )}
             {canManageCrew && (
@@ -225,6 +278,22 @@ export default function CrewTab({
             )}
           </div>
         </div>
+
+        {crossDepartment && (
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Department">
+            {(['all', 'production', 'workshop', 'training'] as const).map((item) => (
+              <button
+                key={item}
+                type="button"
+                aria-selected={departmentFilter === item}
+                onClick={() => setDepartmentFilter(item)}
+                className={`min-h-10 px-3 rounded-full border text-sm font-black ${departmentFilter === item ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300'}`}
+              >
+                {item === 'all' ? 'All departments' : departmentLabel(item)}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Crew">
           {FILTERS.map((filter) => {
@@ -272,46 +341,32 @@ export default function CrewTab({
           <ul className="divide-y divide-slate-200 border border-slate-200 rounded-lg">
             {shown.map((member) => {
               const covering = coveringLetter(member);
-              const temporary = !!covering || member.is_contractor;
               return (
-              <li key={member.id} className={`px-3 min-h-14 flex flex-wrap items-center gap-2 ${member.away ? 'bg-slate-50 opacity-60' : ''}`}>
-                <span className="text-base font-bold text-slate-900 truncate">{member.display_name}</span>
-                {member.is_contractor && (
-                  <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-900 text-xs font-black border border-violet-300">
-                    CONTRACTOR • {member.contractor_company || 'Contractor'}
-                  </span>
-                )}
-                {covering && (
-                  <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 text-xs font-black border border-indigo-300">
-                    OVERTIME • {member.panel || 'Home crew'}
-                  </span>
-                )}
-                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-bold">{member.trade}</span>
-                {production && (member.passed_out_equipment ?? []).map((ticket) => (
-                  <span key={ticket} className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-900 text-[11px] font-bold border border-sky-200">{ticket}</span>
-                ))}
-                {!member.is_contractor && (
-                  <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-950 text-xs font-bold border border-amber-200">
-                    {accessPill(member.access_level)}
-                  </span>
-                )}
-                {!member.is_contractor && (
-                  <button
-                    type="button"
-                    onClick={() => void setCrewMemberAway(member, !member.away)}
-                    className={`ml-auto min-h-10 px-3 rounded-full text-xs font-black border ${
-                      member.away
-                        ? 'bg-slate-200 text-slate-600 border-slate-300'
-                        : 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                    }`}
-                    aria-pressed={member.away}
-                  >
-                    {member.away ? 'Away' : 'On Roster'}
-                  </button>
-                )}
-                {!member.away && (
-                  <span className={member.is_contractor ? 'ml-auto' : ''}>
+              <li key={member.id} className={`px-3 min-h-14 ${member.away ? 'bg-slate-50' : ''}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-base font-bold text-slate-900 truncate">{member.display_name}</span>
+                    <span className="shrink-0 text-sm text-slate-500">{member.trade}</span>
+                    {covering && <span className="shrink-0 text-xs font-bold text-indigo-700">OT</span>}
+                    {member.is_contractor && <span className="shrink-0 text-xs font-bold text-violet-700">Contractor</span>}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {canManageCrew && (
+                    <button
+                      type="button"
+                      onClick={() => void setCrewMemberAway(member, !member.away)}
+                      className={`min-h-10 px-3 rounded-full text-xs font-black border ${
+                        member.away
+                          ? 'bg-slate-200 text-slate-600 border-slate-300'
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      }`}
+                      aria-pressed={member.away}
+                    >
+                      {member.away ? 'Away' : 'On Roster'}
+                    </button>
+                    )}
                     <AllocationPill
+                      readOnly={!canManageCrew}
                       member={member}
                       assets={assets}
                       fleetAssets={fleet}
@@ -321,46 +376,42 @@ export default function CrewTab({
                       busy={savingAllocation === member.id}
                       variant={production ? 'production' : 'workshop'}
                       onChange={(choice) => void assign(member, choice)}
+                      onPingTraining={production ? () => void pingTraining(member) : undefined}
+                      pinging={pingingId === member.id}
+                      pingSent={!!pinged[member.id]}
                     />
-                  </span>
-                )}
-                {production && !member.away && member.allocated_machine_id && updateMachineLocation && (
-                  <LocationPill
-                    location={fleet.find((asset) => asset.id === member.allocated_machine_id)?.location || ''}
-                    onSave={(location) => updateMachineLocation(member.allocated_machine_id as string, location)}
-                  />
-                )}
-                {production && !member.away && member.allocated_machine_id && updateMachineCircuit && (
-                  <CircuitPill
-                    circuit={fleet.find((asset) => asset.id === member.allocated_machine_id)?.circuit || ''}
-                    assets={fleet}
-                    onSave={(circuit) => updateMachineCircuit(member.allocated_machine_id as string, circuit)}
-                  />
-                )}
-                {temporary && (
-                  <button
-                    type="button"
-                    onClick={() => void endShiftExtra(member, workOrders)}
-                    className="min-h-10 min-w-10 rounded-full border border-slate-300 text-slate-500 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 inline-flex items-center justify-center"
-                    aria-label={`Remove ${member.display_name} from this shift`}
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setEditor(member)}
-                  className="min-h-10 px-3 rounded-lg border border-slate-300 text-sm font-bold text-slate-700 hover:bg-amber-50 hover:border-amber-400 flex items-center gap-1.5"
-                >
-                  <Pencil className="w-4 h-4" /> Edit
-                </button>
+                    {production && (member.passed_out_equipment ?? []).length === 0 && (
+                      pinged[member.id] ? (
+                        <span className="shrink-0 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-800">Sent to Training ✓</span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={pingingId === member.id}
+                          onClick={() => void pingTraining(member)}
+                          className="min-h-10 shrink-0 rounded-full border border-amber-400 bg-amber-50 px-3 text-xs font-black text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+                        >
+                          {pingingId === member.id ? 'Sending...' : 'Ping Training'}
+                        </button>
+                      )
+                    )}
+                    {canManageCrew && (
+                    <button
+                      type="button"
+                      onClick={() => setEditor(member)}
+                      className="min-h-10 px-3 rounded-lg border border-slate-300 text-sm font-bold text-slate-700 hover:bg-amber-50 hover:border-amber-400 flex items-center gap-1.5"
+                    >
+                      <Pencil className="w-4 h-4" /> Edit
+                    </button>
+                    )}
+                  </div>
+                </div>
               </li>
               );
             })}
           </ul>
         )}
 
-        {removedCrew.length > 0 && (
+        {canManageCrew && removedCrew.length > 0 && (
           <div className="pt-1">
             <button
               type="button"
@@ -388,6 +439,7 @@ export default function CrewTab({
           </div>
         )}
       </section>
+      )}
 
       {editor && (
         <CrewMemberForm
@@ -395,28 +447,23 @@ export default function CrewTab({
           editing={editor === 'new' ? null : editor}
           department={department}
           defaultPanel={defaultPanel}
-          equipmentModels={equipmentModels(fleet)}
+          equipmentModels={operatorEquipmentModels(fleet)}
+          readOnlyCompetencies={production}
           onSave={saveForDepartment}
           onClose={() => setEditor(null)}
           onRemove={editor === 'new' ? undefined : () => void handleRemove(editor)}
         />
       )}
-      {showOvertime && selected !== 'all' && (
-        <OvertimeCrewModal
+      {showExtra && (
+        <ShiftExtraModal
           crew={departmentCrew}
-          targetPanel={selected}
-          onAdd={placeOnOvertime}
-          onClose={() => setShowOvertime(false)}
-        />
-      )}
-      {showContractor && (
-        <ContractorModal
-          crewLabel={selected === 'all' ? (onShiftPanel ?? 'A Crew') : selected}
+          targetPanel={extraPanel}
           assets={production ? fleet : assets}
           workOrders={workOrders}
           variant={production ? 'production' : 'workshop'}
-          onSave={placeContractor}
-          onClose={() => setShowContractor(false)}
+          onAddOvertime={placeOnOvertime}
+          onAddContractor={placeContractor}
+          onClose={() => setShowExtra(false)}
         />
       )}
     </div>

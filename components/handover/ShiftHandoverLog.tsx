@@ -23,7 +23,8 @@ interface ShiftHandoverLogProps {
   onAddEntry: (entry: Omit<HandoverLogEntry, 'id' | 'logged_at'>) => void;
   onUpdateCategory: (id: string, category: HandoverLogCategory) => void;
   onDeleteEntry: (id: string) => void;
-  allocations?: { id: string; name: string; detail: string; assigned: boolean }[];
+  allocations?: { id: string; name: string; detail: string; assigned: boolean; hotSeat?: boolean }[];
+  readOnly?: boolean;
 }
 
 export default function ShiftHandoverLog({
@@ -32,6 +33,7 @@ export default function ShiftHandoverLog({
   onUpdateCategory,
   onDeleteEntry,
   allocations,
+  readOnly = false,
 }: ShiftHandoverLogProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [category, setCategory] = useState<HandoverLogCategory>('SAFETY');
@@ -39,6 +41,15 @@ export default function ShiftHandoverLog({
   const detailsField = useDictationTarget();
   const details = detailsField.value;
   const [actionRequired, setActionRequired] = useState('');
+
+  const allocationGroups = (allocations ?? []).reduce<{ key: string; names: string[] }[]>((groups, person) => {
+    const key = person.assigned ? person.detail : 'Unassigned';
+    const name = person.hotSeat && !person.name.includes('(Hot Seat)') ? `${person.name} (Hot Seat)` : person.name;
+    const existing = groups.find((group) => group.key === key);
+    if (existing) existing.names.push(name);
+    else groups.push({ key, names: [name] });
+    return groups;
+  }, []);
 
   const handleSave = () => {
     if (!details.trim()) return;
@@ -59,14 +70,14 @@ export default function ShiftHandoverLog({
       {allocations && (
         <div className="p-3 border-b border-slate-200 bg-white">
           <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">Shift Crew Allocations</h3>
-          {allocations.length === 0 ? (
+          {allocationGroups.length === 0 ? (
             <p className="mt-2 text-sm text-slate-500">No one from this crew is on the roster.</p>
           ) : (
-            <ul className="mt-2 flex flex-wrap gap-2">
-              {allocations.map((person) => (
-                <li key={person.id} className={`px-3 py-1.5 rounded-full border text-sm ${person.assigned ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                  <span className="font-black">{person.name}</span>
-                  <span className={person.assigned ? 'text-slate-200' : 'text-slate-500'}> · {person.detail}</span>
+            <ul className="mt-2 space-y-1 text-sm text-slate-800">
+              {allocationGroups.map((group) => (
+                <li key={group.key}>
+                  <span className="font-black">{group.key}</span>
+                  <span> — {group.names.join(', ')}</span>
                 </li>
               ))}
             </ul>
@@ -80,13 +91,13 @@ export default function ShiftHandoverLog({
             Shift Handover & Compliance Register
           </h3>
         </div>
-        <button
+        {!readOnly && <button
           type="button"
           onClick={() => setIsAdding(true)}
           className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide bg-white border border-slate-300 text-slate-700 px-2.5 py-1 rounded hover:bg-slate-100 transition print:hidden cursor-pointer"
         >
           <Plus className="w-3.5 h-3.5 text-amber-600" /> Add Entry
-        </button>
+        </button>}
       </div>
 
       {isAdding && (
@@ -199,14 +210,14 @@ export default function ShiftHandoverLog({
                       {item.action_required || '-'}
                     </td>
                     <td className="p-2.5 text-right print:hidden">
-                      <button
+                      {!readOnly && <button
                         type="button"
                         onClick={() => onDeleteEntry(item.id)}
                         className="text-slate-400 hover:text-rose-600 p-1 transition cursor-pointer"
                         title="Remove Entry"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      </button>}
                     </td>
                   </tr>
                 );

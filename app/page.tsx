@@ -22,6 +22,7 @@ import { getPermissions } from '@/utils/permissions';
 import { TopHeader } from '@/components/TopHeader';
 import { FeedbackProvider, useFeedback } from '@/components/ui/FeedbackProvider';
 import CrewTab from '@/components/crew/CrewTab';
+import ManagementTab from '@/components/ManagementTab';
 import AssignCrewModal from '@/components/crew/AssignCrewModal';
 import { CrewDataContext, CrewData } from '@/components/crew/CrewDataContext';
 import { getOpenJobsByCrew } from '@/utils/crew';
@@ -39,10 +40,10 @@ function Workboard() {
   const { profile, displayName: activeFitter, loading: profileLoading, reload } = useCurrentUser();
   const userRole: UserRole = profile?.role ?? 'fitter';
   const permissions = getPermissions(profile);
-  const [currentTab, setCurrentTab] = useState<'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status'>('board');
+  const [currentTab, setCurrentTab] = useState<'management' | 'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status'>('board');
   const [trainingSection, setTrainingSection] = useState<'tickets' | 'passouts' | 'supervision'>('tickets');
   const [routedProfile, setRoutedProfile] = useState<string | null>(null);
-  const homeTab = permissions.department === 'training' ? 'training' : 'board';
+  const homeTab = permissions.canViewManagementDashboard ? 'management' : permissions.department === 'training' ? 'training' : 'board';
   if (profile && routedProfile !== profile.id) {
     setRoutedProfile(profile.id);
     setCurrentTab(homeTab);
@@ -51,10 +52,11 @@ function Workboard() {
   useEffect(() => {
     if (!profile) return;
     const allowed =
-      (currentTab === 'board' && permissions.canViewWhiteboard)
+      (currentTab === 'management' && permissions.canViewManagementDashboard)
+      || (currentTab === 'board' && permissions.canViewWhiteboard)
       || (currentTab === 'dossier' && permissions.canViewFleetDirectory)
       || (currentTab === 'handover' && permissions.canViewHandover)
-      || (currentTab === 'crew' && permissions.canManageCrew)
+      || (currentTab === 'crew' && permissions.canViewCrew)
       || (currentTab === 'training' && permissions.department === 'training');
     if (!allowed) setCurrentTab(homeTab);
   }, [profile, permissions, currentTab, homeTab]);
@@ -99,6 +101,7 @@ function Workboard() {
     addWorkOrderPart,
     updatePartStatus,
     saveCrewMember,
+    updateOperatorCompetencies,
     setCrewMemberActive,
     setCrewMemberAway,
     setCrewAllocation,
@@ -247,6 +250,16 @@ function Workboard() {
           />
         )}
 
+        {currentTab === 'management' && permissions.canViewManagementDashboard && (
+          <ManagementTab
+            assets={allAssets}
+            crew={crew}
+            workOrders={workOrders}
+            activeShift={activeShift}
+            downAssetIds={shiftJobs.filter((asset) => !(asset.status === 'OPERATIONAL' && !asset.in_shift)).map((asset) => asset.id)}
+          />
+        )}
+
         {currentTab === 'dossier' && (
           <FleetDossierTab
             assets={allAssets}
@@ -262,8 +275,11 @@ function Workboard() {
           />
         )}
 
-        {currentTab === 'handover' && permissions.canViewHandover && permissions.department !== 'production' && (
+        {currentTab === 'handover' && permissions.canViewHandover && (permissions.isManagementLevel4 || permissions.department !== 'production') && (
+          <div className="space-y-3">
+            {permissions.isManagementLevel4 && <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Workshop handover</h2>}
           <HandoverReportTab
+            readOnly={permissions.isManagementLevel4}
             activeShift={activeShift}
             shiftJobs={shiftJobs}
             completedJobs={completedJobs}
@@ -276,6 +292,7 @@ function Workboard() {
             onRefresh={fetchAllData}
             onRolloverShift={handleRolloverShift}
           />
+          </div>
         )}
 
         {currentTab === 'training' && permissions.department === 'training' && (
@@ -338,8 +355,11 @@ function Workboard() {
           </div>
         )}
 
-        {currentTab === 'handover' && permissions.canViewHandover && permissions.department === 'production' && (
+        {currentTab === 'handover' && permissions.canViewHandover && (permissions.isManagementLevel4 || permissions.department === 'production') && (
+          <div className="space-y-3">
+            {permissions.isManagementLevel4 && <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Production handover</h2>}
           <ProductionShiftHandover
+            readOnly={permissions.isManagementLevel4}
             activeShift={activeShift}
             shiftJobs={shiftJobs}
             assets={allAssets}
@@ -349,6 +369,7 @@ function Workboard() {
             onRefresh={fetchAllData}
             supervisorName={activeFitter}
           />
+          </div>
         )}
 
         {currentTab === 'status' && permissions.department === 'production' && (
@@ -367,10 +388,14 @@ function Workboard() {
           />
         )}
 
-        {currentTab === 'crew' && permissions.canManageCrew && (
+        {currentTab === 'crew' && permissions.canViewCrew && (
           <CrewTab
             activeShift={activeShift}
             canManageCrew={permissions.canManageCrew}
+            crossDepartment={permissions.isManagementLevel4}
+            canManageCompetencies={permissions.canManageCompetencies}
+            accessLevel={permissions.accessLevel}
+            signerName={activeFitter}
             department={permissions.department}
             saveCrewMember={saveCrewMember}
             setCrewMemberActive={setCrewMemberActive}
@@ -386,6 +411,7 @@ function Workboard() {
             updateMachineLocation={permissions.canUpdateMachineLocation ? updateMachineLocation : undefined}
             updateMachineCircuit={permissions.canUpdateMachineLocation ? updateMachineCircuit : undefined}
             workOrders={workOrders}
+            updateOperatorCompetencies={updateOperatorCompetencies}
           />
         )}
       </section>

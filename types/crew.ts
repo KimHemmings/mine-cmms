@@ -9,6 +9,7 @@ export const ACCESS_LEVELS = [
   { value: 1, label: 'Level 1 — Read-Only' },
   { value: 2, label: 'Level 2 — Crew' },
   { value: 3, label: 'Level 3 — Supervisor' },
+  { value: 4, label: 'Level 4 — Management / Superintendent' },
 ] as const;
 
 export const CREW_PANELS = ['A Crew', 'B Crew', 'C Crew', 'D Crew'] as const;
@@ -38,7 +39,11 @@ export interface CrewMember {
   shift_duty: string | null;
   allocated_machine_id: string | null;
   allocated_role: 'Primary' | 'Hot Seat' | 'Trainee (Buddy Seat)' | null;
+  hot_seat_assignments: { assetId: string }[];
   passed_out_equipment: string[];
+  in_training_equipment: string[];
+  competency_updated_by: string | null;
+  competency_updated_at: string | null;
   is_contractor: boolean;
   contractor_company: string | null;
   overtime_crew_group: string | null;

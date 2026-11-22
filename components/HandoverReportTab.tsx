@@ -53,6 +53,7 @@ interface HandoverReportTabProps {
   loading: boolean;
   onRefresh: () => void;
   onRolloverShift: (nextCrew?: string) => Promise<boolean>;
+  readOnly?: boolean;
 }
 
 function isLogCategory(value: unknown): value is HandoverLogCategory {
@@ -97,6 +98,7 @@ export default function HandoverReportTab({
   loading,
   onRefresh,
   onRolloverShift,
+  readOnly = false,
 }: HandoverReportTabProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -154,6 +156,7 @@ export default function HandoverReportTab({
           name: note ? `${member.display_name} (${note})` : member.display_name,
           detail,
           assigned: detail !== 'Unassigned',
+          hotSeat: member.allocated_role === 'Hot Seat',
         };
       });
   }, [crew, activeShift?.crew, workOrders, assets]);
@@ -423,7 +426,7 @@ export default function HandoverReportTab({
         </div>
       </div>
 
-      {view === 'current' && !opened && (
+      {view === 'current' && !opened && !readOnly && (
         <div className="sticky top-0 z-10 bg-white py-3 space-y-3">
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={saveHandover} disabled={saving} className={`${actionClass} bg-emerald-600 text-white`}>
@@ -537,6 +540,7 @@ export default function HandoverReportTab({
 
           <div className="mt-6">
             <ShiftHandoverLog
+              readOnly={readOnly}
               entries={windowedLog}
               onAddEntry={handleAddLogEntry}
               onUpdateCategory={handleUpdateCategory}

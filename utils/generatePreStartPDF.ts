@@ -15,6 +15,7 @@ export interface PreStartShiftDetails {
   date: Date;
   shiftName: string;
   crew: string | null;
+  safetyAwareness?: string | null;
 }
 
 function fileDate(date: Date) {
@@ -52,6 +53,25 @@ export function generatePreStartSheet(crewList: PreStartPerson[], shiftDetails: 
   );
   doc.text('Supervisor: ______________', pageWidth / 2, 31, { align: 'center' });
 
+  let startY = 36;
+  const focus = shiftDetails.safetyAwareness?.trim();
+  if (focus) {
+    const lines = doc.splitTextToSize(focus, pageWidth - 32).slice(0, 8);
+    const boxHeight = 14 + lines.length * 5;
+    doc.setDrawColor(180, 83, 9);
+    doc.setFillColor(255, 251, 235);
+    doc.rect(12, 34, pageWidth - 24, boxHeight, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(146, 64, 14);
+    doc.text('SAFETY AWARENESS / PRE-START FOCUS', 16, 40);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text(lines, 16, 46);
+    startY = 34 + boxHeight + 4;
+  }
+
   const people = crewList.filter((person) => !person.away).sort((a, b) => a.display_name.localeCompare(b.display_name));
   const body = (people.length > 0 ? people : [{ display_name: '', trade: '', allocated: '', location: '' }]).map((person) => [
     person.display_name,
@@ -64,7 +84,7 @@ export function generatePreStartSheet(crewList: PreStartPerson[], shiftDetails: 
   ]);
 
   autoTable(doc, {
-    startY: 36,
+    startY,
     head: [['Name', 'Trade / Role', 'Allocated Unit', 'Location', 'Time In', 'Signature', 'Fit for Work?']],
     body,
     theme: 'grid',
