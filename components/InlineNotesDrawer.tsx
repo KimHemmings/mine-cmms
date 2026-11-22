@@ -25,7 +25,7 @@ export default function InlineNotesDrawer({
   notes,
   activeFitter,
   onRefresh,
-  heading = 'Progressive SAP Notes:',
+  heading = 'Work order notes:',
   taskDescription = '',
   fleetId,
 }: InlineNotesDrawerProps) {

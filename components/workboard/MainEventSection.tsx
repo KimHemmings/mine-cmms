@@ -15,7 +15,6 @@ import PartsArrivedPrompt from './PartsArrivedPrompt';
 interface MainEventSectionProps {
   asset: Asset;
   mainEvent: MachineWorkOrder;
-  eventConfig: { badge: string; label: string; icon: React.ReactNode };
   notes: HistoryNote[];
   openPartsModal?: (wo: MachineWorkOrder) => void;
   openCrewPicker?: (wo: MachineWorkOrder) => void;
@@ -32,14 +31,13 @@ interface MainEventSectionProps {
 export default function MainEventSection({
   asset,
   mainEvent,
-  eventConfig,
   notes,
   activeFitter,
   isNotesExpanded,
   toggleNotes,
   isCopied,
   onCopySapNotes,
-  copyLabel = 'Copy SAP Notes',
+  copyLabel = 'Copy Work Order Notes',
   updateWorkOrderStage,
   openPartsModal,
   openCrewPicker,
@@ -67,10 +65,6 @@ export default function MainEventSection({
     <div className={`p-4 border-b border-slate-200 transition-colors ${isDone ? 'bg-slate-100/75' : 'bg-slate-50/70'}`}>
       <div className="flex flex-wrap items-center gap-2 pb-2 mb-3 border-b border-slate-200">
         <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Main job</span>
-        <span className={`text-xs font-black px-2 py-1 rounded uppercase tracking-wider flex items-center gap-1 ${eventConfig.badge}`}>
-          {eventConfig.icon}
-          {eventConfig.label}
-        </span>
         <h4 className={`text-lg ${isDone ? 'line-through text-slate-500 font-medium' : 'font-bold text-slate-900'}`}>
           {mainEvent.task_description}
         </h4>
@@ -81,7 +75,7 @@ export default function MainEventSection({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-mono font-bold px-2.5 py-1 rounded border bg-sky-50 text-sky-800 border-sky-300">
               <FileText className="w-4 h-4 inline mr-1" />
-              {formatWoDisplay(mainEvent.wo_number, copyLabel === 'Copy Work Order Notes' ? 'No WO # yet' : undefined)}
+              {formatWoDisplay(mainEvent.wo_number)}
             </span>
             {mainEvent.notification_num && (
               <span className="text-sm font-mono text-slate-700 bg-white px-2.5 py-1 rounded border border-slate-200">
@@ -184,7 +178,7 @@ export default function MainEventSection({
           taskDescription={mainEvent.task_description}
           fleetId={asset.fleet_id}
           activeFitter={activeFitter}
-          heading={copyLabel === 'Copy Work Order Notes' ? 'Work order notes:' : 'Progressive SAP Notes:'}
+          heading="Work order notes:"
           onRefresh={onRefresh}
         />
       )}

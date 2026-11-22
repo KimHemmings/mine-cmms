@@ -15,6 +15,10 @@ interface FleetDossierGroupProps {
   onSpotRepeats: (asset: Asset) => void;
   onHideRepeats: () => void;
   onRefreshRepeats: (asset: Asset) => void;
+  expandedMachineIds: Set<string>;
+  onToggleMachine: (id: string) => void;
+  openDefectCounts: Map<string, number>;
+  recordCounts: Map<string, number>;
 }
 
 export const FleetDossierGroup: React.FC<FleetDossierGroupProps> = ({
@@ -28,6 +32,10 @@ export const FleetDossierGroup: React.FC<FleetDossierGroupProps> = ({
   onSpotRepeats,
   onHideRepeats,
   onRefreshRepeats,
+  expandedMachineIds,
+  onToggleMachine,
+  openDefectCounts,
+  recordCounts,
 }) => {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -72,11 +80,15 @@ export const FleetDossierGroup: React.FC<FleetDossierGroupProps> = ({
       </button>
 
       {isOpen && (
-        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="divide-y divide-slate-200">
           {assets.map((asset) => (
             <FleetDossierCard
               key={asset.id}
               asset={asset}
+              expanded={expandedMachineIds.has(asset.id)}
+              onToggle={() => onToggleMachine(asset.id)}
+              openDefectCount={openDefectCounts.get(asset.id) ?? 0}
+              recordCount={recordCounts.get(asset.id) ?? 0}
               openHistory={openHistory}
               onAssignJob={onAssignJob}
               repeatResult={openRepeatId === asset.id ? repeatCache[asset.id] ?? null : null}

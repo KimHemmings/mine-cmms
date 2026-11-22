@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { useWorkboardData } from '@/hooks/useWorkboardData';
@@ -48,6 +48,12 @@ function Workboard() {
     if (profile.role === 'training') setCurrentTab('training');
     if (profile.role === 'production') setCurrentTab('status');
   }
+
+  useEffect(() => {
+    if (!profile || isWorkshopSupervisor) return;
+    if (userRole === 'production' || userRole === 'training') return;
+    if (currentTab === 'handover' || currentTab === 'crew') setCurrentTab('board');
+  }, [profile, isWorkshopSupervisor, userRole, currentTab]);
   const { showToast } = useFeedback();
 
   // Modal Visibility State
@@ -228,6 +234,8 @@ function Workboard() {
         {currentTab === 'dossier' && (
           <FleetDossierTab
             assets={allAssets}
+            defects={defects}
+            notes={notes}
             openHistory={setActiveHistoryAsset}
             onAssignJob={(asset) => {
               setAssignAssetId(asset.id);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Wrench, AlertTriangle, AlertOctagon, FileText } from 'lucide-react';
+import { Wrench, AlertTriangle, AlertOctagon, Clipboard } from 'lucide-react';
 
 export const STAGE_THEMES: Record<string, { label: string; badge: string; select: string }> = {
   IN_PROGRESS: {
@@ -52,31 +52,44 @@ export function getEventConfig(orderType?: string | null, isPlanned?: boolean) {
   const map = {
     PLANNED: {
       border: 'border-l-emerald-500',
-      badge: 'bg-emerald-600 text-white',
-      label: 'PLANNED',
-      icon: <Wrench className="w-3.5 h-3.5" />,
+      badge: 'bg-sky-100 text-sky-800 border border-sky-300',
+      label: 'PLANNED PM',
+      icon: <Wrench className="w-3 h-3" />,
     },
     INSPECTION: {
       border: 'border-l-sky-500',
-      badge: 'bg-sky-600 text-white',
+      badge: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
       label: 'INSPECTION',
-      icon: <FileText className="w-3.5 h-3.5" />,
+      icon: <Clipboard className="w-3 h-3" />,
     },
     ACCIDENT_DAMAGE: {
       border: 'border-l-orange-500',
       badge: 'bg-orange-600 text-white',
       label: 'ACCIDENT DAMAGE',
-      icon: <AlertTriangle className="w-3.5 h-3.5" />,
+      icon: <AlertTriangle className="w-3 h-3" />,
     },
     UNPLANNED: {
       border: 'border-l-rose-600',
       badge: 'bg-rose-600 text-white',
       label: 'BREAKDOWN',
-      icon: <AlertOctagon className="w-3.5 h-3.5" />,
+      icon: <AlertOctagon className="w-3 h-3" />,
     },
   };
 
   return map[type];
+}
+
+export function EventClassBadge({
+  config,
+}: {
+  config: { badge: string; label: string; icon: React.ReactNode };
+}) {
+  return (
+    <span className={`shrink-0 text-xs font-extrabold uppercase px-2 py-0.5 rounded inline-flex items-center gap-1 ${config.badge}`}>
+      {config.icon}
+      {config.label}
+    </span>
+  );
 }
 
 export function getPriorityConfig(priority?: string | null) {
@@ -106,7 +119,7 @@ export function getPriorityConfig(priority?: string | null) {
 }
 
 export function formatWoDisplay(woNum?: string | null, emptyLabel?: string): string {
-  if (!woNum || !woNum.trim()) return emptyLabel || 'No SAP WO yet';
+  if (!woNum || !woNum.trim()) return emptyLabel || 'No WO # yet';
   const clean = woNum.replace(/^WO-?/i, '').trim();
   return `WO #${clean}`;
 }

@@ -6,7 +6,7 @@ import { Asset, MachineWorkOrder, HistoryNote } from '@/types';
 import { generateSapNotesText, copyToClipboard, notesForWorkOrder } from '@/utils/sapFormatter';
 import { formatDateTime, getElapsedDown, getEtuStatus } from '@/utils/helpers';
 import { createClient } from '@/utils/supabase/client';
-import { getEventConfig, getPriorityConfig } from './workboard/workboardTheme';
+import { EventClassBadge, getEventConfig, getPriorityConfig } from './workboard/workboardTheme';
 import MachineCardHeader from './workboard/MachineCardHeader';
 import MainEventSection from './workboard/MainEventSection';
 import AdditionalWorkOrdersSection from './workboard/AdditionalWorkOrdersSection';
@@ -78,6 +78,7 @@ interface MachineWorkboardCardProps {
   onRefresh: () => void;
   heldOnTablet?: boolean;
   compact?: boolean;
+  yours?: boolean;
   copyLabel?: string;
   activeShiftId?: string | null;
 }
@@ -100,7 +101,8 @@ export default function MachineWorkboardCard({
   onRefresh,
   heldOnTablet = false,
   compact = false,
-  copyLabel = 'Copy SAP Notes',
+  yours = false,
+  copyLabel = 'Copy Work Order Notes',
   activeShiftId = null,
 }: MachineWorkboardCardProps) {
   const [expandedNotesItemIds, setExpandedNotesItemIds] = useState<Set<string>>(new Set());
@@ -136,8 +138,14 @@ export default function MachineWorkboardCard({
         isReleased ? 'bg-slate-100 hover:bg-slate-200' : fill.row
       }`}
     >
-      <span className={`shrink-0 text-[11px] font-black px-2 py-0.5 rounded uppercase tracking-wide ${solidBadge}`}>
-        {isReleased ? 'RELEASED' : priorityConfig.label}
+      <span className="shrink-0 inline-flex items-center gap-1.5">
+        <span className={`text-xs font-extrabold uppercase px-2 py-0.5 rounded ${solidBadge}`}>
+          {isReleased ? 'RELEASED' : priorityConfig.label}
+        </span>
+        {mainEvent && <EventClassBadge config={eventConfig} />}
+        {yours && (
+          <span className="text-[11px] font-black uppercase px-2 py-0.5 rounded bg-slate-900 text-white">Your job</span>
+        )}
       </span>
       <span className="shrink-0 text-sm text-slate-800">
         <strong className="text-base font-black text-slate-900">{asset.fleet_id}</strong>
@@ -183,12 +191,12 @@ export default function MachineWorkboardCard({
     const woNum = (inlineWoInputs[id] || '').trim();
     if (!woNum) return;
     const { error } = await supabase.from('machine_work_orders').update({ wo_number: woNum }).eq('id', id);
-    if (error) return alert(`Error saving SAP WO number: ${error.message}`);
+    if (error) return alert(`Error saving work order number: ${error.message}`);
     await supabase.from('asset_history_notes').insert([{
       asset_id: asset.id,
       work_order_id: id,
       fitter_name: activeFitter || 'Planner',
-      note: `Assigned SAP Work Order #${woNum} to item.`,
+      note: `Assigned work order #${woNum} to item.`,
       stage: 'IN_PROGRESS',
     }]);
     setActiveInlineWoTarget(null);
@@ -216,10 +224,11 @@ export default function MachineWorkboardCard({
       <>
       <MachineCardHeader
         asset={asset}
-        eventConfig={eventConfig}
+        eventConfig={mainEvent ? eventConfig : undefined}
         priorityBadge={isReleased ? 'bg-slate-200 text-slate-700 border-slate-300' : compact ? `${fill.badge} border-transparent` : priorityConfig.badge}
         priorityLabel={isReleased ? 'RELEASED' : priorityConfig.label}
         isReleased={isReleased}
+        yours={yours}
         openQuickEdit={openQuickEdit}
         openHistory={openHistory}
         openDefects={openDefects}
@@ -230,7 +239,6 @@ export default function MachineWorkboardCard({
         <MainEventSection
           asset={asset}
           mainEvent={mainEvent}
-          eventConfig={eventConfig}
           notes={notes}
           activeFitter={activeFitter}
           isNotesExpanded={expandedNotesItemIds.has(mainEvent.id)}

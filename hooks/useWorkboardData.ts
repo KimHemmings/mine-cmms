@@ -203,6 +203,21 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   }, [fetchAllData]);
 
   useEffect(() => {
+    const refresh = () => {
+      void fetchAllData();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    window.addEventListener('online', refresh);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('online', refresh);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [fetchAllData]);
+
+  useEffect(() => {
     const refreshCount = () => {
       const pending = readStageQueue();
       setPendingStages(pending.length);

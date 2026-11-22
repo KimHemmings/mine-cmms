@@ -39,6 +39,7 @@ export default function AssignJobModal({
   const [isMachineDown, setIsMachineDown] = useState(true);
   const [workOrderNum, setWorkOrderNum] = useState('');
   const [sapNotification, setSapNotification] = useState('');
+  const [location, setLocation] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
   const [crewIds, setCrewIds] = useState<string[]>([]);
   const [downSinceInput, setDownSinceInput] = useState('');
@@ -58,12 +59,15 @@ export default function AssignJobModal({
       const target = new Date(Date.now() + 4 * 60 * 60 * 1000);
       setExpectedUpInput(new Date(target.getTime() - target.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
       setActivePreset('4h');
-      setSelectedAssetId(preselectedAssetId || '');
+      const id = preselectedAssetId || '';
+      setSelectedAssetId(id);
+      const chosen = unassignedMachines.find((machine) => machine.id === id) || preselectedAsset;
+      setLocation(chosen?.location || '');
       setSelectedSystems([]);
       setCrewIds([]);
       setFormError(null);
     }
-  }, [isOpen, preselectedAssetId]);
+  }, [isOpen, preselectedAssetId, preselectedAsset]);
 
   if (!isOpen) return null;
 
@@ -84,6 +88,7 @@ export default function AssignJobModal({
         in_shift: true,
         status: assetStatus,
         priority: selectedPriority || null,
+        location: location.trim(),
         down_since: isMachineDown ? new Date(downSinceInput).toISOString() : null,
         expected_up: isMachineDown && expectedUpInput ? new Date(expectedUpInput).toISOString() : null,
       })
@@ -149,10 +154,14 @@ export default function AssignJobModal({
     onClose();
   }
 
+  const machineChoices = preselectedAsset && !unassignedMachines.some((machine) => machine.id === preselectedAsset.id)
+    ? [preselectedAsset, ...unassignedMachines]
+    : unassignedMachines;
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white border border-slate-300 rounded-2xl max-w-2xl w-full p-6 shadow-2xl my-8">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white border border-slate-300 rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl">
+        <div className="shrink-0 flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white rounded-t-2xl">
           <div>
             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Star className="w-5 h-5 text-amber-500 fill-amber-400" /> Assign Machine & Define Main Event
@@ -164,27 +173,29 @@ export default function AssignJobModal({
           </button>
         </div>
 
-        {formError && (
-          <div className="mt-3 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-lg">
-            {formError}
-          </div>
-        )}
-
-        <form onSubmit={handleAssignToShift} className="space-y-4 mt-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <form onSubmit={handleAssignToShift} className="flex flex-col min-h-0 flex-1">
+          <div className="overflow-y-auto px-6 py-4 space-y-4">
+          {formError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-lg">
+              {formError}
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">EQUIPMENT *</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">MACHINE *</label>
               <select
                 value={selectedAssetId}
-                onChange={(e) => setSelectedAssetId(e.target.value)}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSelectedAssetId(id);
+                  const chosen = machineChoices.find((machine) => machine.id === id);
+                  setLocation(chosen?.location || '');
+                }}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
                 required
               >
                 <option value="">-- Choose Unit --</option>
-                {(preselectedAsset && !unassignedMachines.some((machine) => machine.id === preselectedAsset.id)
-                  ? [preselectedAsset, ...unassignedMachines]
-                  : unassignedMachines
-                ).map((a) => (
+                {machineChoices.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.fleet_id} ({a.make_model}) [{a.machine_owner || 'Central'}]
                   </option>
@@ -202,6 +213,16 @@ export default function AssignJobModal({
                   <option key={p.label} value={p.value || ''}>{p.label}</option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">LOCATION</label>
+              <input
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Workshop bay or pad"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
+              />
             </div>
           </div>
 
@@ -253,8 +274,9 @@ export default function AssignJobModal({
               setActivePreset={setActivePreset}
             />
           )}
+          </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+          <div className="shrink-0 flex justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-white rounded-b-2xl">
             <button
               type="button"
               onClick={onClose}

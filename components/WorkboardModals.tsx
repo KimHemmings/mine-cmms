@@ -102,7 +102,7 @@ export default function WorkboardModals({
         notes={notes}
         onClose={onCloseDefectsModal}
         onRefresh={onSuccessRefresh}
-        plainLabels={userRole === 'management'}
+        plainLabels
       />
 
       <QuickEditAssetModal

@@ -69,7 +69,7 @@ export default function PartsTrackingModal({
           <div>
             <h3 className="text-lg font-bold">Parts for this job</h3>
             <p className="text-sm text-slate-400">
-              {workOrder.task_description} · {workOrder.wo_number ? `WO #${workOrder.wo_number}` : 'No SAP WO yet'}
+              {workOrder.task_description} · {workOrder.wo_number ? `WO #${workOrder.wo_number}` : 'No WO # yet'}
             </p>
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-white" aria-label="Close">✕</button>

@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { FileText, PlusCircle, Check, Copy, MessageSquare, User, Package } from 'lucide-react';
 import { Asset, MachineWorkOrder, HistoryNote } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
-import { formatWoDisplay } from './workboardTheme';
+import { EventClassBadge, formatWoDisplay, getEventConfig } from './workboardTheme';
 import { generateSapNotesText, notesForWorkOrder } from '@/utils/sapFormatter';
 import TidyNotesButton from '@/components/ui/TidyNotesButton';
 import InlineNotesDrawer from '@/components/InlineNotesDrawer';
@@ -43,7 +43,7 @@ export default function AdditionalWorkOrderItem({
   toggleNotes,
   isCopied,
   onCopySapNotes,
-  copyLabel = 'Copy SAP Notes',
+  copyLabel = 'Copy Work Order Notes',
   isAttachingWo,
   onOpenAttachWo,
   onCancelAttachWo,
@@ -81,15 +81,18 @@ export default function AdditionalWorkOrderItem({
     >
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div className="space-y-2 flex-1">
-          <p className={`text-base ${isDone ? 'line-through text-slate-500 font-medium' : 'font-bold text-slate-900'}`}>
-            {wo.task_description}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <EventClassBadge config={getEventConfig(wo.order_type)} />
+            <p className={`text-base ${isDone ? 'line-through text-slate-500 font-medium' : 'font-bold text-slate-900'}`}>
+              {wo.task_description}
+            </p>
+          </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {wo.wo_number ? (
               <span className="text-sm font-mono font-bold px-2.5 py-1 rounded border bg-sky-50 text-sky-800 border-sky-200">
                 <FileText className="w-4 h-4 inline mr-1" />
-                {formatWoDisplay(wo.wo_number, copyLabel === 'Copy Work Order Notes' ? 'No WO # yet' : undefined)}
+                {formatWoDisplay(wo.wo_number)}
               </span>
             ) : (
               <button
@@ -97,7 +100,7 @@ export default function AdditionalWorkOrderItem({
                 onClick={onOpenAttachWo}
                 className="min-h-9 text-sm font-bold text-amber-800 bg-amber-50 border border-amber-300 px-3 rounded-lg hover:bg-amber-100 flex items-center gap-1.5 cursor-pointer"
               >
-                <PlusCircle className="w-4 h-4" /> {copyLabel === 'Copy Work Order Notes' ? 'Add work order number' : 'Add SAP WO number'}
+                <PlusCircle className="w-4 h-4" /> Add work order number
               </button>
             )}
 
@@ -187,7 +190,7 @@ export default function AdditionalWorkOrderItem({
         <div className="mt-3 pt-3 border-t border-slate-200 flex flex-wrap items-center gap-2">
           <input
             type="text"
-            placeholder={copyLabel === 'Copy Work Order Notes' ? 'Work order number' : 'SAP WO number'}
+            placeholder="Work order number"
             value={inlineWoValue}
             onChange={(e) => onInlineWoChange(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && onSaveInlineWo()}
@@ -225,7 +228,7 @@ export default function AdditionalWorkOrderItem({
           taskDescription={wo.task_description}
           fleetId={asset.fleet_id}
           activeFitter={activeFitter}
-          heading={copyLabel === 'Copy Work Order Notes' ? 'Work order notes:' : 'Progressive SAP Notes:'}
+          heading="Work order notes:"
           onRefresh={onRefresh}
         />
       )}

@@ -35,7 +35,7 @@ export default function AdditionalWorkOrdersSection({
   toggleItemNotes,
   copiedId,
   onCopySapNotes,
-  copyLabel = 'Copy SAP Notes',
+  copyLabel = 'Copy Work Order Notes',
   activeInlineWoTarget,
   setActiveInlineWoTarget,
   inlineWoInputs,

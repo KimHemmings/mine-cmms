@@ -87,7 +87,7 @@ export default function AssetDetailsInputs({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="flex items-center gap-1 font-bold text-slate-700 mb-1">
-            <FileText className="w-3.5 h-3.5 text-indigo-500" /> SAP WORK ORDER #
+            <FileText className="w-3.5 h-3.5 text-indigo-500" /> WORK ORDER #
           </label>
           <input
             type="text"

@@ -19,7 +19,7 @@ export default function SapDetailsInputs({
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
       <div>
         <label className="block text-xs font-bold text-slate-700 mb-1">
-          SAP WORK ORDER # <span className="font-normal text-slate-400">(Optional)</span>
+          WORK ORDER # <span className="font-normal text-slate-400">(Optional)</span>
         </label>
         <input
           type="text"
@@ -31,7 +31,7 @@ export default function SapDetailsInputs({
       </div>
       <div>
         <label className="block text-xs font-bold text-slate-700 mb-1">
-          SAP NOTIF # <span className="font-normal text-slate-400">(Optional)</span>
+          NOTIFICATION # <span className="font-normal text-slate-400">(Optional)</span>
         </label>
         <input
           type="text"

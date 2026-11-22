@@ -37,7 +37,7 @@ export default function HistoryNoteInput({
         type="text"
         value={newNote}
         onChange={(e) => setNewNote(e.target.value)}
-        placeholder="Add progressive repair / SAP note..."
+        placeholder="Add a progress note..."
         className="flex-1 bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
         required
       />

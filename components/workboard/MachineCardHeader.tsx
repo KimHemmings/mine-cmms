@@ -4,13 +4,15 @@ import React from 'react';
 import { Pencil, History, MapPin, AlertTriangle, ChevronUp } from 'lucide-react';
 import { Asset } from '@/types';
 import { formatDateTime, getElapsedDown, getEtuStatus } from '@/utils/helpers';
+import { EventClassBadge } from './workboardTheme';
 
 interface MachineCardHeaderProps {
   asset: Asset;
-  eventConfig: { badge: string; label: string; icon: React.ReactNode };
+  eventConfig?: { badge: string; label: string; icon: React.ReactNode };
   priorityBadge: string;
   priorityLabel: string;
   isReleased: boolean;
+  yours?: boolean;
   openQuickEdit: (asset: Asset) => void;
   openHistory: (asset: Asset) => void;
   openDefects: (asset: Asset) => void;
@@ -19,9 +21,11 @@ interface MachineCardHeaderProps {
 
 export default function MachineCardHeader({
   asset,
+  eventConfig,
   priorityBadge,
   priorityLabel,
   isReleased,
+  yours = false,
   openQuickEdit,
   openHistory,
   openDefects,
@@ -32,8 +36,14 @@ export default function MachineCardHeader({
   return (
     <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span className={`text-xs font-black px-2.5 py-1 rounded border uppercase tracking-wider ${priorityBadge}`}>
-          {priorityLabel}
+        <span className="shrink-0 inline-flex items-center gap-1.5">
+          <span className={`text-xs font-extrabold uppercase px-2 py-0.5 rounded border ${priorityBadge}`}>
+            {priorityLabel}
+          </span>
+          {eventConfig && <EventClassBadge config={eventConfig} />}
+          {yours && (
+            <span className="text-[11px] font-black uppercase px-2 py-0.5 rounded bg-slate-900 text-white">Your job</span>
+          )}
         </span>
 
         <div className="flex items-baseline gap-2">

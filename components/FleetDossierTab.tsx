@@ -1,23 +1,28 @@
 import { useState, useMemo } from 'react';
-import { Asset } from '@/types';
+import { Asset, DefectItem, HistoryNote } from '@/types';
 import { FleetDossierHeader } from './fleet-directory/FleetDossierHeader';
 import { FleetDossierGroup } from './fleet-directory/FleetDossierGroup';
 import { RepeatScan } from './fleet-directory/RepeatFailureCallout';
 
 interface FleetDossierTabProps {
   assets: Asset[];
+  defects?: DefectItem[];
+  notes?: HistoryNote[];
   openHistory: (asset: Asset) => void;
   onAssignJob?: (asset: Asset) => void;
 }
 
 export default function FleetDossierTab({
   assets,
+  defects = [],
+  notes = [],
   openHistory,
   onAssignJob,
 }: FleetDossierTabProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPERATIONAL' | 'DOWN'>('ALL');
   const [selectedOwner, setSelectedOwner] = useState('ALL');
+  const [expandedMachineIds, setExpandedMachineIds] = useState<Set<string>>(() => new Set());
   const [repeatCache, setRepeatCache] = useState<Record<string, RepeatScan>>({});
   const [openRepeatId, setOpenRepeatId] = useState<string | null>(null);
   const [scanningRepeatId, setScanningRepeatId] = useState<string | null>(null);
@@ -114,6 +119,43 @@ export default function FleetDossierTab({
     return { all: assets.length, down, running: assets.length - down };
   }, [assets]);
 
+  const openDefectCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    defects.forEach((defect) => {
+      if (defect.status !== 'OPEN') return;
+      map.set(defect.asset_id, (map.get(defect.asset_id) ?? 0) + 1);
+    });
+    return map;
+  }, [defects]);
+
+  const recordCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    notes.forEach((note) => {
+      map.set(note.asset_id, (map.get(note.asset_id) ?? 0) + 1);
+    });
+    return map;
+  }, [notes]);
+
+  const allVisibleOpen = filteredAssets.length > 0 && filteredAssets.every((asset) => expandedMachineIds.has(asset.id));
+  const allClosed = expandedMachineIds.size === 0;
+
+  function toggleMachine(id: string) {
+    setExpandedMachineIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function expandVisible() {
+    setExpandedMachineIds((current) => {
+      const next = new Set(current);
+      filteredAssets.forEach((asset) => next.add(asset.id));
+      return next;
+    });
+  }
+
   return (
     <div className="w-full">
       <FleetDossierHeader
@@ -126,6 +168,32 @@ export default function FleetDossierTab({
         owners={owners}
         counts={counts}
       />
+
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-sm font-bold text-slate-600">
+        <span>
+          {filteredAssets.length === assets.length
+            ? `Fleet directory (${filteredAssets.length})`
+            : `Showing ${filteredAssets.length} of ${assets.length} machines`}
+        </span>
+        <span className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={expandVisible}
+            disabled={filteredAssets.length === 0 || allVisibleOpen}
+            className="min-h-10 px-3 rounded-lg border border-slate-300 bg-white text-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Expand all
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpandedMachineIds(new Set())}
+            disabled={allClosed}
+            className="min-h-10 px-3 rounded-lg border border-slate-300 bg-white text-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Collapse all
+          </button>
+        </span>
+      </div>
 
       {filteredAssets.length === 0 ? (
         <div className="py-16 text-center bg-white rounded-2xl border border-slate-200">
@@ -148,6 +216,10 @@ export default function FleetDossierTab({
               onSpotRepeats={(asset) => void scanRepeats(asset)}
               onHideRepeats={() => setOpenRepeatId(null)}
               onRefreshRepeats={(asset) => void scanRepeats(asset, true)}
+              expandedMachineIds={expandedMachineIds}
+              onToggleMachine={toggleMachine}
+              openDefectCounts={openDefectCounts}
+              recordCounts={recordCounts}
             />
           ))
       )}

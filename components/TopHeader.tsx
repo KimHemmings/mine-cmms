@@ -110,7 +110,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     { id: 'training', label: 'Training', icon: <GraduationCap className="w-4 h-4" />, show: userRole === 'training' },
   ];
 
-  const showAssign = currentTab === 'board' && (userRole === 'fitter' || userRole === 'management');
+  const showAssign = (currentTab === 'board' || currentTab === 'dossier') && (userRole === 'fitter' || userRole === 'management');
 
   return (
     <header className="space-y-3 pb-4 border-b border-slate-300 print:hidden">

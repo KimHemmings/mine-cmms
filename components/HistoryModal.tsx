@@ -24,7 +24,6 @@ export default function ShiftHistoryModal({
   asset,
   notes = [],
   activeFitter,
-  userRole,
   onClose,
   onRefresh,
 }: ShiftHistoryModalProps) {
@@ -36,8 +35,8 @@ export default function ShiftHistoryModal({
   const [copied, setCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const copyLabel = userRole === 'management' ? 'Copy Work Order Notes' : 'Copy SAP Notes';
-  const titleLabel = userRole === 'management' ? 'WORK ORDER NOTES & RUNNING LOG' : 'SAP NOTES & RUNNING LOG';
+  const copyLabel = 'Copy Work Order Notes';
+  const titleLabel = 'WORK ORDER NOTES & RUNNING LOG';
   const supabase = createClient();
 
   if (!isOpen || !asset) return null;
