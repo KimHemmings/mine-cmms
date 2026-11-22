@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Asset, CrewMember, HandoverLogEntry, MachineWorkOrder, ShiftRecord } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 import { getEventConfig, getPriorityConfig, STAGE_THEMES } from '@/components/workboard/workboardTheme';
@@ -19,6 +19,9 @@ import DictationMicButton, { useDictationTarget } from '@/components/ui/Dictatio
 import { FileText, Presentation } from 'lucide-react';
 import { generateProductionShiftPptx } from '@/utils/productionShiftPptx';
 import TidyNotesButton from '@/components/ui/TidyNotesButton';
+import ManagementDirectives from '@/components/ManagementDirectives';
+import HandoverAddendum from '@/components/production/HandoverAddendum';
+import { handoverDraftKey, readHandoverDraft, updateHandoverDraft } from '@/utils/handoverDraft';
 
 function isReleased(asset: Asset) {
   return asset.status === 'OPERATIONAL' && !asset.in_shift;
@@ -34,6 +37,7 @@ export default function ProductionShiftHandover({
   onRefresh,
   supervisorName,
   readOnly = false,
+  accessLevel = 3,
 }: {
   activeShift: ShiftRecord | null;
   shiftJobs: Asset[];
@@ -44,6 +48,7 @@ export default function ProductionShiftHandover({
   onRefresh: () => void;
   supervisorName: string;
   readOnly?: boolean;
+  accessLevel?: number;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const { showToast } = useFeedback();
@@ -94,6 +99,7 @@ export default function ProductionShiftHandover({
       return;
     }
     note.setValue('');
+    updateHandoverDraft(handoverDraftKey(shiftDate, clock.shiftName, 'production'), { note: null });
     showToast({ message: 'Pit note saved' });
     onRefresh();
   };
@@ -136,6 +142,32 @@ export default function ProductionShiftHandover({
     crewGroup,
     supervisorName,
   });
+  const noteDraftKey = handoverDraftKey(shiftDate, clock.shiftName, 'production');
+  const skipNoteWrite = useRef(0);
+  useEffect(() => {
+    if (handover.signedOff) {
+      skipNoteWrite.current += 1;
+      note.setValue('');
+      return;
+    }
+    const draft = readHandoverDraft<{ note?: string }>(noteDraftKey);
+    if (!draft?.note) return;
+    skipNoteWrite.current += 1;
+    note.setValue(draft.note);
+    // setValue is a new function each render. Restore only when the shift key changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noteDraftKey, handover.signedOff]);
+  useEffect(() => {
+    if (handover.signedOff) {
+      skipNoteWrite.current = 0;
+      return;
+    }
+    if (skipNoteWrite.current > 0) {
+      skipNoteWrite.current -= 1;
+      return;
+    }
+    updateHandoverDraft(noteDraftKey, { note: note.value });
+  }, [note.value, noteDraftKey, handover.signedOff]);
   const checkLines = pitCheckLines(handover.record, handover.record.carried_fields);
   const stamp = (name: string, at: string) => name ? `${name} · ${formatDateTime(at)}` : 'Not signed';
 
@@ -270,6 +302,9 @@ export default function ProductionShiftHandover({
             <p className="mt-2 text-sm"><span className="font-black">Outgoing:</span> {stamp(handover.record.outgoing_signed_by, handover.record.outgoing_signed_at)}</p>
             <p className="text-sm"><span className="font-black">Oncoming:</span> {stamp(handover.record.oncoming_signed_by, handover.record.oncoming_signed_at)}</p>
           </section>
+          {handover.signedOff && (
+            <HandoverAddendum handoverId={handover.handoverId} actorName={supervisorName || 'Supervisor'} canAdd={accessLevel >= 3} />
+          )}
         </article>
       </div>
     );
@@ -296,6 +331,11 @@ export default function ProductionShiftHandover({
         </div>
       </section>
 
+      <ManagementDirectives actorName={supervisorName} department="production" />
+
+      {handover.signedOff && (
+        <p className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm font-black uppercase tracking-wide text-amber-950">STATUTORY RECORD LOCKED (SIGNED OFF)</p>
+      )}
       {handover.error && <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">{handover.error}</p>}
       {!handover.ready ? <p className="text-sm font-bold text-slate-500">Loading handover...</p> : null}
       {handover.ready && <OceHandoverSections
@@ -306,6 +346,9 @@ export default function ProductionShiftHandover({
         onSave={handover.save}
         onUpload={handover.uploadOceReport}
         onOpenReport={handover.openOceReport}
+        statutoryLocked={handover.signedOff}
+        handoverId={handover.handoverId}
+        accessLevel={accessLevel}
       />}
       {handover.ready && <PitChecksCard
         shiftDate={shiftDate}
@@ -315,6 +358,7 @@ export default function ProductionShiftHandover({
         carried={handover.record.carried_fields}
         onEdit={handover.edit}
         onCommit={handover.commitPit}
+        locked={handover.signedOff}
       />}
 
       <section className="bg-white border border-slate-300 rounded-xl shadow-2xs overflow-hidden">
@@ -400,11 +444,12 @@ export default function ProductionShiftHandover({
             value={note.value}
             onChange={note.onChange}
             rows={4}
+            readOnly={handover.signedOff}
             placeholder="Dig face, dumps, ramps, weather, blast delays, oncoming actions..."
-            className="w-full rounded-lg border-2 border-slate-300 bg-slate-50 px-3 py-2 text-base text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white"
+            className="w-full rounded-lg border-2 border-slate-300 bg-slate-50 px-3 py-2 text-base text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white read-only:bg-slate-100"
           />
         </label>
-        <div className="flex flex-wrap items-center gap-2">
+        {!handover.signedOff && <div className="flex flex-wrap items-center gap-2">
           <DictationMicButton {...note.mic} />
           <TidyNotesButton
             rawNotes={note.value}
@@ -420,7 +465,7 @@ export default function ProductionShiftHandover({
           >
             {saving ? 'Saving...' : 'Save note'}
           </button>
-        </div>
+        </div>}
         {notes.length === 0 ? (
           <p className="text-sm text-slate-500">No pit notes for this shift yet.</p>
         ) : (
@@ -430,7 +475,7 @@ export default function ProductionShiftHandover({
                 <p className="text-sm text-slate-900 whitespace-pre-wrap">{entry.details}</p>
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <span className="text-[11px] font-bold text-slate-400">{formatDateTime(entry.logged_at)}</span>
-                  <button type="button" onClick={() => void removeNote(entry.id)} className="text-xs font-bold text-rose-700">Remove</button>
+                  {!handover.signedOff && <button type="button" onClick={() => void removeNote(entry.id)} className="text-xs font-bold text-rose-700">Remove</button>}
                 </div>
               </li>
             ))}
@@ -447,6 +492,9 @@ export default function ProductionShiftHandover({
         onSave={handover.save}
         onUpload={handover.uploadOceReport}
         onOpenReport={handover.openOceReport}
+        statutoryLocked={handover.signedOff}
+        handoverId={handover.handoverId}
+        accessLevel={accessLevel}
       />}
     </div>
   );

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { CREW_PANELS, CrewMember } from '@/types';
 import { operatorEquipmentModels } from '@/utils/crewAllocation';
+import ManagementDirectives from '@/components/ManagementDirectives';
 import { Asset } from '@/types';
 
 type CrewPanel = (typeof CREW_PANELS)[number];
@@ -17,10 +18,16 @@ export default function CompetencyBoard({
   crew,
   assets,
   onSave,
+  actorName = 'Training',
+  readOnly = false,
+  hideDirectives = false,
 }: {
   crew: CrewMember[];
   assets: Asset[];
   onSave: (member: CrewMember, passed: string[], training: string[]) => Promise<boolean>;
+  actorName?: string;
+  readOnly?: boolean;
+  hideDirectives?: boolean;
 }) {
   const [panel, setPanel] = useState<CrewFilter>('all');
   const [missingOnly, setMissingOnly] = useState(false);
@@ -63,6 +70,7 @@ export default function CompetencyBoard({
         <h2 className="text-lg font-black text-slate-900">Production Operator Pass-Outs</h2>
         <p className="text-sm text-slate-500">Passed out is a ticket. In training is the buddy seat until you sign them out.</p>
       </div>
+      {!hideDirectives && <ManagementDirectives actorName={actorName} department="training" />}
       <div className="flex flex-wrap items-center gap-2">
         {FILTERS.map((filter) => (
           <button
@@ -115,9 +123,9 @@ export default function CompetencyBoard({
                       <button
                         key={`${member.id}-pass-${model}`}
                         type="button"
-                        disabled={savingId === member.id}
+                        disabled={readOnly || savingId === member.id}
                         aria-pressed={passed.has(model)}
-                        onClick={() => void toggle(member, model, 'passed')}
+                        onClick={() => { if (!readOnly) void toggle(member, model, 'passed'); }}
                         className={`min-h-9 px-2 rounded-full border text-xs font-bold disabled:opacity-50 ${passed.has(model) ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-white text-slate-600 border-slate-300'}`}
                       >
                         {model}
@@ -132,9 +140,9 @@ export default function CompetencyBoard({
                       <button
                         key={`${member.id}-train-${model}`}
                         type="button"
-                        disabled={savingId === member.id}
+                        disabled={readOnly || savingId === member.id}
                         aria-pressed={training.has(model)}
-                        onClick={() => void toggle(member, model, 'training')}
+                        onClick={() => { if (!readOnly) void toggle(member, model, 'training'); }}
                         className={`min-h-9 px-2 rounded-full border text-xs font-bold disabled:opacity-50 ${training.has(model) ? 'bg-amber-500 text-amber-950 border-amber-500' : 'bg-white text-slate-600 border-slate-300'}`}
                       >
                         {model}

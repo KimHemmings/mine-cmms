@@ -13,6 +13,7 @@ export default function PitChecksCard({
   carried,
   onEdit,
   onCommit,
+  locked = false,
 }: {
   shiftDate: string;
   shiftName: string;
@@ -21,6 +22,7 @@ export default function PitChecksCard({
   carried: string[];
   onEdit: (partial: Partial<HandoverRecord>) => void;
   onCommit: (partial: Partial<HandoverRecord>, key: PitCheckKey) => void;
+  locked?: boolean;
 }) {
   return (
     <section className="bg-white border border-slate-300 rounded-xl p-4 shadow-2xs space-y-3">
@@ -44,8 +46,9 @@ export default function PitChecksCard({
               </div>
               <select
                 value={values[row.status]}
+                disabled={locked}
                 onChange={(event) => onCommit({ [row.status]: event.target.value }, row.key)}
-                className="min-h-11 rounded-lg border-2 border-slate-300 bg-white px-2 text-sm font-bold text-slate-900"
+                className="min-h-11 rounded-lg border-2 border-slate-300 bg-white px-2 text-sm font-bold text-slate-900 disabled:bg-slate-100"
               >
                 {!row.options.includes(values[row.status]) && values[row.status] && (
                   <option value={values[row.status]}>{values[row.status]}</option>
@@ -54,10 +57,11 @@ export default function PitChecksCard({
               </select>
               <input
                 value={values[row.notes]}
+                disabled={locked}
                 onChange={(event) => onEdit({ [row.notes]: event.target.value })}
                 onBlur={(event) => onCommit({ [row.notes]: event.target.value }, row.key)}
                 placeholder="Note"
-                className="min-h-11 rounded-lg border-2 border-slate-300 px-3 text-sm text-slate-900 focus:outline-none focus:border-amber-500"
+                className="min-h-11 rounded-lg border-2 border-slate-300 px-3 text-sm text-slate-900 focus:outline-none focus:border-amber-500 disabled:bg-slate-100"
               />
             </div>
           ))}

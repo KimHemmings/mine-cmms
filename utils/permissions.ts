@@ -1,5 +1,5 @@
 export type Department = 'workshop' | 'production' | 'training';
-export type AccessLevel = 1 | 2 | 3 | 4;
+export type AccessLevel = 1 | 2 | 3 | 4 | 5;
 export type AppRole = 'management' | 'fitter' | 'training' | 'production';
 
 export interface AccessUser {
@@ -26,7 +26,7 @@ export interface Permissions {
   canManageSiteDictionary: boolean;
   canManageFleet: boolean;
   canUpdateMachineLocation: boolean;
-  isManagementLevel4: boolean;
+  isSiteExecutive: boolean;
   canViewManagementDashboard: boolean;
   canViewCrew: boolean;
   badge: string;
@@ -40,7 +40,7 @@ export function normalizeDepartment(value?: string | null): Department {
 }
 
 export function normalizeAccessLevel(value?: number | null): AccessLevel {
-  if (value === 1 || value === 3 || value === 4) return value;
+  if (value === 1 || value === 3 || value === 4 || value === 5) return value;
   return 2;
 }
 
@@ -61,6 +61,7 @@ export function isWorkshopRoster(member: { department?: string | null; trade?: s
 
 /** The role stored for existing row-level rules. The screens use department and access level. */
 export function roleForAccess(department: Department, accessLevel: AccessLevel): AppRole {
+  if (accessLevel === 5) return 'management';
   if (department === 'production') return 'production';
   if (department === 'training') return 'training';
   if (accessLevel === 3 || accessLevel === 4) return 'management';
@@ -78,14 +79,15 @@ export function getPermissions(user?: AccessUser | null): Permissions {
   const source = user?.department || user?.access_level ? user : fromRole(user?.role);
   const department = normalizeDepartment(source?.department);
   const accessLevel = normalizeAccessLevel(source?.access_level);
-  const management = accessLevel === 4;
-  const workshopCrew = department === 'workshop' && (accessLevel === 2 || accessLevel === 3);
-  const workshopSupervisor = department === 'workshop' && accessLevel === 3;
+  const siteExecutive = accessLevel === 5;
+  const departmentLead = accessLevel === 3 || accessLevel === 4;
+  const workshopCrew = department === 'workshop' && (accessLevel === 2 || departmentLead);
+  const workshopSupervisor = department === 'workshop' && departmentLead;
   const production = department === 'production';
-  const productionSupervisor = production && accessLevel === 3;
-  const canManageCrew = !management && accessLevel === 3 && (department === 'workshop' || department === 'training' || production);
+  const productionSupervisor = production && departmentLead;
+  const canManageCrew = departmentLead && (department === 'workshop' || department === 'training' || production);
 
-  if (management) {
+  if (siteExecutive) {
     return {
       department,
       accessLevel,
@@ -104,10 +106,10 @@ export function getPermissions(user?: AccessUser | null): Permissions {
       canManageSiteDictionary: false,
       canManageFleet: false,
       canUpdateMachineLocation: false,
-      isManagementLevel4: true,
+      isSiteExecutive: true,
       canViewManagementDashboard: true,
       canViewCrew: true,
-      badge: 'MANAGEMENT • LEVEL 4',
+      badge: 'SSE / GM • LEVEL 5',
     };
   }
 
@@ -123,15 +125,36 @@ export function getPermissions(user?: AccessUser | null): Permissions {
     canEditWorkshopJobs: workshopCrew,
     canAddNotes: !production && accessLevel >= 2,
     canReleaseMachine: workshopSupervisor,
-    canViewHandover: production ? productionSupervisor : accessLevel === 3,
+    canViewHandover: production ? productionSupervisor : departmentLead,
     canManageCrew,
-    canManageCompetencies: department === 'training' && accessLevel >= 2 && accessLevel < 4,
+    canManageCompetencies: department === 'training' && accessLevel >= 2,
     canManageSiteDictionary: workshopSupervisor,
     canManageFleet: workshopSupervisor,
     canUpdateMachineLocation: productionSupervisor || workshopSupervisor,
-    isManagementLevel4: false,
-    canViewManagementDashboard: false,
+    isSiteExecutive: false,
+    canViewManagementDashboard: accessLevel >= 4,
     canViewCrew: canManageCrew || (department === 'training' && accessLevel >= 2),
-    badge: `${departmentLabel(department)} • Level ${accessLevel}`,
+    badge: accessLevel === 4
+      ? `${departmentLabel(department)} • Superintendent`
+      : `${departmentLabel(department)} • Level ${accessLevel}`,
+  };
+}
+
+/** Level 4 and Level 5 look across departments. The boards stay read-only. */
+export function operationalLens(base: Permissions, viewed: Department): Permissions {
+  return {
+    ...base,
+    department: viewed,
+    isReadOnly: true,
+    isReadOnlyWorkshop: viewed === 'production',
+    canAssignMachine: false,
+    canEditWorkshopJobs: false,
+    canAddNotes: false,
+    canReleaseMachine: false,
+    canManageCrew: false,
+    canManageCompetencies: false,
+    canManageSiteDictionary: false,
+    canManageFleet: false,
+    canUpdateMachineLocation: false,
   };
 }

@@ -8,10 +8,12 @@ import {
   HandoverRecord,
   PitCheckKey,
   emptyHandoverRecord,
+  handoverIsSigned,
   previousHandoverRow,
   recordFromRow,
   toHandoverWrite,
 } from '@/utils/productionHandoverRecord';
+import { clearHandoverDraft, handoverDraftKey, readHandoverDraft, updateHandoverDraft } from '@/utils/handoverDraft';
 
 export function useProductionHandoverRecord({
   shiftDate,
@@ -26,6 +28,7 @@ export function useProductionHandoverRecord({
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [record, setRecord] = useState<HandoverRecord>(emptyHandoverRecord);
+  const [handoverId, setHandoverId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const recordRef = useRef(record);
@@ -62,8 +65,22 @@ export function useProductionHandoverRecord({
               const previous = previousHandoverRow(rows, shiftDate, shiftName);
               return previous ? recordFromRow(previous, true) : emptyHandoverRecord();
             })();
-        recordRef.current = next;
-        setRecord(next);
+        const draftKey = handoverDraftKey(shiftDate, shiftName, 'production');
+        const draft = readHandoverDraft<{ record?: HandoverRecord }>(draftKey);
+        const shown = !handoverIsSigned(next) && draft?.record
+          ? {
+              ...next,
+              ...draft.record,
+              outgoing_signed_by: next.outgoing_signed_by,
+              outgoing_signed_at: next.outgoing_signed_at,
+              oncoming_signed_by: next.oncoming_signed_by,
+              oncoming_signed_at: next.oncoming_signed_at,
+            }
+          : next;
+        if (handoverIsSigned(next)) clearHandoverDraft(draftKey);
+        recordRef.current = shown;
+        setRecord(shown);
+        setHandoverId(current?.id ?? null);
         setError('');
         setReady(true);
       });
@@ -74,19 +91,33 @@ export function useProductionHandoverRecord({
 
   const edit = useCallback((partial: Partial<HandoverRecord>) => {
     setRecord((current) => {
+      if (handoverIsSigned(current)) return current;
       const next = { ...current, ...partial };
       recordRef.current = next;
+      const meta = metaRef.current;
+      if (meta.shiftDate && meta.shiftName) {
+        updateHandoverDraft(handoverDraftKey(meta.shiftDate, meta.shiftName, 'production'), { record: next });
+      }
       return next;
     });
   }, []);
 
   const save = useCallback(async (partial: Partial<HandoverRecord> = {}) => {
     const meta = metaRef.current;
-    const next = { ...recordRef.current, ...partial };
+    if (handoverIsSigned(recordRef.current)) {
+      setError('STATUTORY RECORD LOCKED (SIGNED OFF)');
+      return false;
+    }
+    const previous = recordRef.current;
+    const next = { ...previous, ...partial };
     recordRef.current = next;
     setRecord(next);
-    if (!meta.crewGroup) return false;
-    const { error: saveError } = await supabase.from('production_handover_checks').upsert(
+    const draftKey = handoverDraftKey(meta.shiftDate, meta.shiftName, 'production');
+    if (!meta.crewGroup) {
+      updateHandoverDraft(draftKey, { record: next });
+      return false;
+    }
+    const { data: saved, error: saveError } = await supabase.from('production_handover_checks').upsert(
       toHandoverWrite(next, {
         shiftDate: meta.shiftDate,
         shiftName: meta.shiftName,
@@ -94,9 +125,26 @@ export function useProductionHandoverRecord({
         supervisorName: meta.supervisorName,
       }),
       { onConflict: 'shift_date,shift_name,crew_group' },
-    );
-    setError(saveError ? 'That handover change did not save. Check the pit signal and try again.' : '');
-    return !saveError;
+    ).select('id').maybeSingle();
+    if (saveError) {
+      const kept = {
+        ...next,
+        outgoing_signed_by: previous.outgoing_signed_by,
+        outgoing_signed_at: previous.outgoing_signed_at,
+        oncoming_signed_by: previous.oncoming_signed_by,
+        oncoming_signed_at: previous.oncoming_signed_at,
+      };
+      recordRef.current = kept;
+      setRecord(kept);
+      updateHandoverDraft(draftKey, { record: kept });
+      setError('That handover change did not save. Check the pit signal and try again.');
+      return false;
+    }
+    if (saved?.id) setHandoverId(saved.id);
+    if (handoverIsSigned(next)) clearHandoverDraft(draftKey);
+    else updateHandoverDraft(draftKey, { record: null });
+    setError('');
+    return true;
   }, [supabase]);
 
   const commitPit = useCallback(async (partial: Partial<HandoverRecord>, touched: PitCheckKey) => {
@@ -146,5 +194,5 @@ export function useProductionHandoverRecord({
     window.open(data.signedUrl, '_blank', 'noopener');
   }, [supabase]);
 
-  return { record, ready, error, edit, save, commitPit, uploadOceReport, openOceReport };
+  return { record, handoverId, signedOff: handoverIsSigned(record), ready, error, edit, save, commitPit, uploadOceReport, openOceReport };
 }

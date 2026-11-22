@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { HandoverLogEntry, HandoverLogCategory } from '@/types';
 import { Plus, Trash2, ClipboardList, AlertTriangle } from 'lucide-react';
 import DictationMicButton, { useDictationTarget } from '@/components/ui/DictationMicButton';
+import ManagementDirectives from '@/components/ManagementDirectives';
+import { clearHandoverDraft, handoverDraftKey, readHandoverDraft, writeHandoverDraft } from '@/utils/handoverDraft';
 
 const CATEGORY_CONFIG: Record<
   HandoverLogCategory,
@@ -20,11 +22,15 @@ const CATEGORY_CONFIG: Record<
 
 interface ShiftHandoverLogProps {
   entries: HandoverLogEntry[];
-  onAddEntry: (entry: Omit<HandoverLogEntry, 'id' | 'logged_at'>) => void;
+  onAddEntry: (entry: Omit<HandoverLogEntry, 'id' | 'logged_at'>) => void | Promise<boolean | void>;
   onUpdateCategory: (id: string, category: HandoverLogCategory) => void;
   onDeleteEntry: (id: string) => void;
   allocations?: { id: string; name: string; detail: string; assigned: boolean; hotSeat?: boolean }[];
   readOnly?: boolean;
+  actorName?: string;
+  shiftDate?: string | null;
+  shiftName?: string | null;
+  department?: string;
 }
 
 export default function ShiftHandoverLog({
@@ -34,6 +40,10 @@ export default function ShiftHandoverLog({
   onDeleteEntry,
   allocations,
   readOnly = false,
+  actorName = 'Supervisor',
+  shiftDate = null,
+  shiftName = null,
+  department = 'workshop',
 }: ShiftHandoverLogProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [category, setCategory] = useState<HandoverLogCategory>('SAFETY');
@@ -41,6 +51,35 @@ export default function ShiftHandoverLog({
   const detailsField = useDictationTarget();
   const details = detailsField.value;
   const [actionRequired, setActionRequired] = useState('');
+  const draftKey = shiftDate && shiftName ? handoverDraftKey(shiftDate, shiftName, department) : '';
+  const skipDraftWrite = useRef(0);
+
+  useEffect(() => {
+    if (!draftKey) return;
+    const draft = readHandoverDraft<{ category: HandoverLogCategory; fleetId: string; details: string; actionRequired: string; isAdding: boolean }>(draftKey);
+    if (!draft) return;
+    skipDraftWrite.current += 1;
+    setCategory(draft.category);
+    setFleetId(draft.fleetId);
+    detailsField.setValue(draft.details);
+    setActionRequired(draft.actionRequired);
+    setIsAdding(draft.isAdding);
+    // Restore once per shift. setValue changes identity every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!draftKey) return;
+    if (skipDraftWrite.current > 0) {
+      skipDraftWrite.current -= 1;
+      return;
+    }
+    if (!details && !fleetId && !actionRequired) {
+      clearHandoverDraft(draftKey);
+      return;
+    }
+    writeHandoverDraft(draftKey, { category, fleetId, details, actionRequired, isAdding: true });
+  }, [draftKey, category, fleetId, details, actionRequired]);
 
   const allocationGroups = (allocations ?? []).reduce<{ key: string; names: string[] }[]>((groups, person) => {
     const key = person.assigned ? person.detail : 'Unassigned';
@@ -51,14 +90,17 @@ export default function ShiftHandoverLog({
     return groups;
   }, []);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!details.trim()) return;
-    onAddEntry({
+    const saved = await onAddEntry({
       category,
       fleet_id: fleetId.trim() ? fleetId.toUpperCase() : undefined,
       details,
       action_required: actionRequired.trim() ? actionRequired : undefined,
     });
+    if (saved === false) return;
+    if (draftKey) clearHandoverDraft(draftKey);
+    skipDraftWrite.current += 1;
     setFleetId('');
     detailsField.setValue('');
     setActionRequired('');
@@ -67,6 +109,9 @@ export default function ShiftHandoverLog({
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-sm print:border-black print:shadow-none overflow-hidden font-sans">
+      <div className="p-3 border-b border-slate-200">
+        <ManagementDirectives actorName={actorName} department="workshop" />
+      </div>
       {allocations && (
         <div className="p-3 border-b border-slate-200 bg-white">
           <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">Shift Crew Allocations</h3>

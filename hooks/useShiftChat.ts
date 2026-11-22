@@ -114,7 +114,7 @@ export function useShiftChat(profileId: string, isSupervisor: boolean) {
       .from('profiles')
       .select('id, display_name, employee_id, crew_member_id')
       .eq('department', 'production')
-      .eq('access_level', 3)
+      .in('access_level', [3, 4])
       .eq('active', true)
       .order('display_name')
       .then(({ data, error: loadError }) => {

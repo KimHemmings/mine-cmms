@@ -64,12 +64,18 @@ export default function ShiftChatDrawer({
   profileId,
   crew = [],
   callouts = false,
+  readOnly = false,
+  executive = false,
+  crewMemberId = null,
 }: {
   senderName: string;
   userRole: UserRole;
   profileId: string;
   crew?: CrewMember[];
   callouts?: boolean;
+  readOnly?: boolean;
+  executive?: boolean;
+  crewMemberId?: string | null;
 }) {
   const isSupervisor = userRole === 'management';
   const isTraining = userRole === 'training';
@@ -84,23 +90,35 @@ export default function ShiftChatDrawer({
   const [sendError, setSendError] = useState<string | null>(null);
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
   const [ready, setReady] = useState(false);
+  const [showFeed, setShowFeed] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const directToExecutive = (item: ShiftMessage) => item.sender_id === profileId
+    || item.recipient_id === profileId
+    || (crewMemberId != null && item.recipient_id === crewMemberId);
 
   const visible = useMemo(() => {
     return messages.filter((item) => {
       if (!item.sender_id && !item.recipient_id) return false;
+      if (executive && !showFeed && !directToExecutive(item)) return false;
+      if (readOnly || (executive && showFeed)) return true;
       if (isTraining) return trainingPing(item) || item.sender_id === profileId || item.recipient_id === profileId;
       if (!isSupervisor) return item.sender_id === profileId || item.recipient_id === profileId;
       if (!selectedId) return false;
       return fitterOnMessage(item, profileId) === selectedId;
     });
-  }, [messages, isSupervisor, isTraining, profileId, selectedId]);
+  }, [messages, isSupervisor, isTraining, profileId, selectedId, readOnly, executive, showFeed, crewMemberId]);
 
   const unread = useMemo(() => {
     if (!ready) return [];
-    return messages.filter((item) => item.sender_id && item.sender_id !== profileId && !seen.has(item.id) && (!isTraining || trainingPing(item)));
-  }, [messages, profileId, seen, ready, isTraining]);
+    return messages.filter((item) => {
+      if (!item.sender_id || item.sender_id === profileId || seen.has(item.id)) return false;
+      if (executive && !directToExecutive(item)) return false;
+      if (isTraining && !trainingPing(item)) return false;
+      return true;
+    });
+  }, [messages, profileId, seen, ready, isTraining, executive, crewMemberId]);
 
   const unreadByFitter = useMemo(() => {
     const counts = new Map<string, number>();
@@ -125,7 +143,8 @@ export default function ShiftChatDrawer({
       let changed = false;
       for (const item of messages) {
         if (next.has(item.id)) continue;
-        if (isSupervisor && fitterOnMessage(item, profileId) !== selectedId) continue;
+        if (executive && !showFeed && !directToExecutive(item)) continue;
+        if (!executive && isSupervisor && fitterOnMessage(item, profileId) !== selectedId) continue;
         next.add(item.id);
         changed = true;
       }
@@ -133,7 +152,7 @@ export default function ShiftChatDrawer({
       writeSeen(profileId, next);
       return next;
     });
-  }, [open, ready, messages, selectedId, isSupervisor, profileId]);
+  }, [open, ready, messages, selectedId, isSupervisor, profileId, executive, showFeed, crewMemberId]);
 
   useEffect(() => {
     if (!open) return;
@@ -265,15 +284,23 @@ export default function ShiftChatDrawer({
           <header className="flex items-start justify-between gap-2 border-b border-slate-200 px-4 py-3">
             <div>
               <h2 className="text-sm font-black text-slate-900">
-                {isTraining ? 'Training pass-outs' : isSupervisor ? 'Message a fitter' : 'Message the supervisor'}
+                {executive ? 'Direct messages' : isTraining ? 'Training pass-outs' : isSupervisor ? 'Message a fitter' : 'Message the supervisor'}
               </h2>
               <p className="text-xs text-slate-500">
-                {isTraining
+                {executive
+                  ? 'Routine pit and workshop broadcasts stay out of this list.'
+                  : isTraining
                   ? 'Production asks here when an operator has no tickets.'
                   : isSupervisor
                   ? 'Choose one fitter. The others do not see it.'
                   : 'Only the supervisor sees this. It does not go on a work order.'}
               </p>
+              {executive && (
+                <label className="mt-2 inline-flex items-center gap-2 text-xs font-black text-slate-800">
+                  <input type="checkbox" checked={showFeed} onChange={(event) => setShowFeed(event.target.checked)} className="h-4 w-4" />
+                  Show Live Pit/Workshop Feed
+                </label>
+              )}
             </div>
             <button
               type="button"
@@ -359,9 +386,13 @@ export default function ShiftChatDrawer({
             {!loading && !error && isSupervisor && fitters.length === 0 && (
               <p className="text-sm text-slate-500">No fitter has a sign-in yet.</p>
             )}
-            {!loading && !error && (isTraining || !isSupervisor || selectedId) && visible.length === 0 && (
+            {!loading && !error && (readOnly || isTraining || !isSupervisor || selectedId) && visible.length === 0 && (
               <p className="text-sm text-slate-500">
-                {isTraining
+                {executive && !showFeed
+                  ? 'No direct messages in the last day.'
+                  : readOnly
+                  ? 'No messages in the last day.'
+                  : isTraining
                   ? 'No pass-out requests in the last day.'
                   : isSupervisor && selected
                   ? `No messages with ${selected.name} in the last day.`
@@ -377,7 +408,7 @@ export default function ShiftChatDrawer({
             ))}
           </div>
 
-          <form onSubmit={(event) => void handleSend(event)} className="border-t border-slate-200 p-3 space-y-2">
+          {!readOnly && <form onSubmit={(event) => void handleSend(event)} className="border-t border-slate-200 p-3 space-y-2">
             {sendError && (
               <p role="alert" className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">
                 {sendError}
@@ -426,7 +457,7 @@ export default function ShiftChatDrawer({
                 <Send className="h-4 w-4" /> {sending ? 'Sending...' : 'Send'}
               </button>
             </div>
-          </form>
+          </form>}
         </section>
       )}
 

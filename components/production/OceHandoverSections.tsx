@@ -15,6 +15,7 @@ import {
   TARP_LEVELS,
 } from '@/utils/productionHandoverRecord';
 import { formatDateTime } from '@/utils/helpers';
+import HandoverAddendum from '@/components/production/HandoverAddendum';
 
 function levelClass(level: string) {
   if (level === 'Level 3') return 'bg-rose-700 text-white border-rose-700';
@@ -32,6 +33,9 @@ export default function OceHandoverSections({
   onUpload,
   onOpenReport,
   part = 'fields',
+  statutoryLocked = false,
+  handoverId = null,
+  accessLevel = 3,
 }: {
   record: HandoverRecord;
   crewGroup: string | null;
@@ -41,6 +45,9 @@ export default function OceHandoverSections({
   onUpload: (file: File) => Promise<boolean>;
   onOpenReport: () => Promise<void>;
   part?: 'fields' | 'signoff';
+  statutoryLocked?: boolean;
+  handoverId?: string | null;
+  accessLevel?: number;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const safetyRef = useRef<HTMLTextAreaElement>(null);
@@ -59,7 +66,7 @@ export default function OceHandoverSections({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record.safety_awareness]);
 
-  const locked = !crewGroup;
+  const locked = !crewGroup || statutoryLocked;
 
   const addIncident = async () => {
     const summary = incidentNote.hold().trim();
@@ -107,14 +114,17 @@ export default function OceHandoverSections({
       <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Statutory Outgoing & Oncoming OCE Sign-Off</h3>
       <div className="grid gap-3 md:grid-cols-2">
         <div className="rounded-lg border border-slate-200 p-3 space-y-2">
-          <button type="button" disabled={locked} onClick={() => void onSave({ outgoing_signed_by: supervisorName || 'Production Supervisor', outgoing_signed_at: new Date().toISOString() })} className="min-h-11 w-full rounded-lg bg-slate-900 text-white text-sm font-black disabled:opacity-50">Sign Off as Outgoing Supervisor / OCE</button>
+          <button type="button" disabled={locked || Boolean(record.outgoing_signed_at)} onClick={() => void onSave({ outgoing_signed_by: supervisorName || 'Production Supervisor', outgoing_signed_at: new Date().toISOString() })} className="min-h-11 w-full rounded-lg bg-slate-900 text-white text-sm font-black disabled:opacity-50">Sign Off as Outgoing Supervisor / OCE</button>
           <p className="text-sm font-bold text-slate-700">{record.outgoing_signed_by ? `${record.outgoing_signed_by} · ${formatDateTime(record.outgoing_signed_at)}` : 'Not signed'}</p>
         </div>
         <div className="rounded-lg border border-slate-200 p-3 space-y-2">
-          <button type="button" disabled={locked} onClick={() => void onSave({ oncoming_signed_by: supervisorName || 'Production Supervisor', oncoming_signed_at: new Date().toISOString() })} className="min-h-11 w-full rounded-lg bg-amber-600 text-white text-sm font-black disabled:opacity-50">Acknowledge as Oncoming Supervisor / OCE</button>
+          <button type="button" disabled={locked || Boolean(record.oncoming_signed_at)} onClick={() => void onSave({ oncoming_signed_by: supervisorName || 'Production Supervisor', oncoming_signed_at: new Date().toISOString() })} className="min-h-11 w-full rounded-lg bg-amber-600 text-white text-sm font-black disabled:opacity-50">Acknowledge as Oncoming Supervisor / OCE</button>
           <p className="text-sm font-bold text-slate-700">{record.oncoming_signed_by ? `${record.oncoming_signed_by} · ${formatDateTime(record.oncoming_signed_at)}` : 'Not signed'}</p>
         </div>
       </div>
+      {statutoryLocked && (
+        <HandoverAddendum handoverId={handoverId} actorName={supervisorName || 'Supervisor'} canAdd={accessLevel >= 3} />
+      )}
     </section>
   );
 
@@ -172,7 +182,7 @@ export default function OceHandoverSections({
           <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Incidents, Near Misses & HPIs</h3>
           <button type="button" disabled={locked} onClick={() => setShowForm((open) => !open)} className="min-h-10 px-3 rounded-lg border border-slate-300 bg-white text-sm font-black text-slate-800 disabled:opacity-50">+ Log Incident / Near Miss</button>
         </div>
-        {showForm && (
+        {showForm && !locked && (
           <div className="rounded-lg border border-slate-200 p-3 space-y-2">
             <select value={category} onChange={(event) => setCategory(event.target.value as IncidentCategory)} className="w-full min-h-11 rounded-lg border-2 border-slate-300 px-3 text-sm font-bold">
               {INCIDENT_CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -202,7 +212,7 @@ export default function OceHandoverSections({
                   </div>
                   <p className="mt-2 text-sm font-black text-slate-900">{item.location || 'Location not set'}</p>
                   <p className="text-sm text-slate-800 whitespace-pre-wrap">{item.summary}</p>
-                  <button type="button" onClick={() => setIncident(item.id, { openInvestigation: !item.openInvestigation })} className="mt-2 min-h-10 px-3 rounded-lg border border-slate-300 bg-white text-xs font-black text-slate-800">
+                  <button type="button" disabled={locked} onClick={() => setIncident(item.id, { openInvestigation: !item.openInvestigation })} className="mt-2 min-h-10 px-3 rounded-lg border border-slate-300 bg-white text-xs font-black text-slate-800 disabled:opacity-50">
                     {item.openInvestigation ? 'Mark investigation closed' : 'Reopen investigation'}
                   </button>
                 </li>
@@ -227,7 +237,7 @@ export default function OceHandoverSections({
           placeholder="Fatigue, heat, traffic changes, or the focus for the oncoming pre-start..."
           className="w-full rounded-lg border-2 border-slate-300 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-amber-500"
         />
-        <div className="flex flex-wrap items-center gap-2">
+        {!locked && <div className="flex flex-wrap items-center gap-2">
           <DictationMicButton {...safety.mic} />
           <TidyNotesButton
             rawNotes={safety.value}
@@ -238,7 +248,7 @@ export default function OceHandoverSections({
               void onSave({ safety_awareness: text });
             }}
           />
-        </div>
+        </div>}
       </section>
 
       <section className="bg-white border border-slate-300 rounded-xl p-4 shadow-2xs space-y-3">

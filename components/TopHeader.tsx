@@ -45,13 +45,23 @@ interface TopHeaderProps {
   onLinkCrew?: (crewMemberId: string) => void;
   onSetShiftCrew?: (panel: string) => void;
   profileId?: string | null;
+  lensDepartment?: Department | null;
 }
 
-function screenTitle(tab: Tab, department: Department, management = false) {
-  if (tab === 'management') return 'Management & Gaps';
+function screenTitle(tab: Tab, department: Department, siteCommand = false, lens = false) {
+  if (tab === 'management') return siteCommand ? 'Site Command' : 'Management & Gaps';
+  if (lens && tab === 'board' && department === 'workshop') return 'Workshop whiteboard';
+  if (lens && tab === 'board' && department === 'production') return 'Pit Fleet & ETAs';
+  if (lens && tab === 'board' && department === 'training') return 'Operator Pass-Outs';
+  if (lens && tab === 'handover' && department === 'workshop') return 'Maintenance Shift Handover';
+  if (lens && tab === 'handover' && department === 'production') return 'Pit Shift Handover';
+  if (lens && tab === 'handover' && department === 'training') return 'Operator Pass-Outs';
+  if (lens && tab === 'crew' && department === 'workshop') return 'Trades Roster';
+  if (lens && tab === 'crew' && department === 'production') return 'Operator Allocations';
+  if (lens && tab === 'crew' && department === 'training') return 'Operator Pass-Outs';
   if (tab === 'training') return 'Training';
   if (tab === 'status') return 'Production whiteboard';
-  if (tab === 'board' && management) return 'Whiteboard';
+  if (tab === 'board' && siteCommand) return 'Whiteboard';
   if (tab === 'board' && department === 'production') return 'Down Fleet & ETAs';
   if (tab === 'dossier') return 'Fleet directory';
   if (tab === 'handover') return 'Shift handover';
@@ -82,6 +92,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onLinkCrew,
   onSetShiftCrew,
   profileId = null,
+  lensDepartment = null,
 }) => {
   const router = useRouter();
   const supabase = createClient();
@@ -98,7 +109,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   const people = workshopPeople(crew);
   const linked = myCrewMemberId;
   const workshopCrew = permissions.department === 'workshop' && permissions.accessLevel === 2;
-  const workshopDesk = permissions.department === 'workshop' && permissions.accessLevel === 3;
+  const workshopDesk = permissions.department === 'workshop' && (permissions.accessLevel === 3 || permissions.accessLevel === 4);
 
   async function handleSignOut() {
     const ok = await confirm({
@@ -116,7 +127,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   }
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
-    { id: 'management', label: 'Management & Gaps', icon: <ClipboardList className="w-4 h-4" />, show: permissions.canViewManagementDashboard },
+    { id: 'management', label: 'Site Command', icon: <ClipboardList className="w-4 h-4" />, show: permissions.canViewManagementDashboard },
     { id: 'board', label: `Whiteboard (${shiftJobsCount})`, icon: <ClipboardList className="w-4 h-4" />, show: permissions.canViewWhiteboard },
     { id: 'dossier', label: 'Fleet directory', icon: <BookOpen className="w-4 h-4" />, show: permissions.canViewFleetDirectory },
     { id: 'handover', label: 'Shift handover', icon: <FileSpreadsheet className="w-4 h-4" />, show: permissions.canViewHandover },
@@ -124,15 +135,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     { id: 'training', label: 'Training', icon: <GraduationCap className="w-4 h-4" />, show: permissions.department === 'training' },
   ];
 
-  const showAssign = permissions.canAssignMachine && (currentTab === 'board' || currentTab === 'dossier' || currentTab === 'status');
+  const showAssign = permissions.accessLevel < 4 && permissions.canAssignMachine && (currentTab === 'board' || currentTab === 'dossier' || currentTab === 'status');
 
   return (
     <header className="space-y-3 pb-4 border-b border-slate-300 print:hidden">
       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-black tracking-tight text-slate-900">{screenTitle(currentTab, permissions.department, permissions.isManagementLevel4)}</h1>
+          <h1 className="text-2xl font-black tracking-tight text-slate-900">{screenTitle(currentTab, lensDepartment ?? permissions.department, permissions.canViewManagementDashboard, Boolean(lensDepartment))}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-            <span className={permissions.isManagementLevel4
+            <span className={permissions.isSiteExecutive
               ? 'inline-flex items-center rounded-full bg-slate-900 px-3 py-1 text-xs font-black tracking-wide text-amber-300'
               : 'font-black uppercase tracking-wide text-slate-800'}>
               {permissions.badge}
@@ -169,7 +180,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 <span className="font-bold text-slate-600">{clock.timeRemaining}</span>
               </span>
             )}
-            {permissions.canViewHandover && permissions.department !== 'production' && onSetShiftCrew ? (
+            {permissions.accessLevel < 4 && permissions.canViewHandover && permissions.department !== 'production' && onSetShiftCrew ? (
               <label className="inline-flex items-center gap-1 text-xs font-bold text-slate-600">
                 <span className="sr-only">Active crew</span>
                 <select
@@ -215,7 +226,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               userRole={permissions.department === 'training' ? 'training' : workshopDesk ? 'management' : 'fitter'}
               profileId={profileId}
               crew={crew}
-              callouts={workshopDesk || (permissions.department === 'production' && permissions.accessLevel === 3)}
+              readOnly={permissions.accessLevel >= 4}
+              executive={permissions.accessLevel >= 4}
+              crewMemberId={myCrewMemberId}
+              callouts={workshopDesk || (permissions.department === 'production' && (permissions.accessLevel === 3 || permissions.accessLevel === 4))}
             />
           )}
           <ChangePasswordButton />

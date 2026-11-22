@@ -213,6 +213,7 @@ function carriedPitKeys(row: { carried_fields?: unknown }, values: PitCheckValue
 }
 
 export interface HandoverCheckRow extends Partial<Omit<HandoverRecord, 'incidents' | 'active_tarps' | 'shift_production' | 'carried_fields'>> {
+  id?: string;
   shift_date?: string;
   shift_name?: string;
   crew_group?: string;
@@ -277,8 +278,12 @@ export function latestSafetyAwareness(rows: { safety_awareness?: string | null; 
   return text(filled[0]?.safety_awareness).trim();
 }
 
+export function handoverIsSigned(record: Pick<HandoverRecord, 'outgoing_signed_at' | 'oncoming_signed_at'>) {
+  return Boolean(record.outgoing_signed_at && record.oncoming_signed_at);
+}
+
 export const HANDOVER_CHECK_COLUMNS = [
-  'shift_date', 'shift_name', 'crew_group', 'updated_at', 'carried_fields',
+  'id', 'shift_date', 'shift_name', 'crew_group', 'updated_at', 'carried_fields',
   'highwall_status', 'highwall_notes', 'blast_status', 'blast_notes',
   'dewatering_status', 'dewatering_notes', 'ramps_lighting_status', 'ramps_lighting_notes',
   'oce_report_url', 'oce_report_filename', 'oce_report_uploaded_at', 'oce_inspection_status',

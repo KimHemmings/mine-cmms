@@ -331,7 +331,10 @@ export default function HandoverReportTab({
   }, [activeShift?.id, handoverLog.length, loading, onRefresh, supabase]);
 
   const handleAddLogEntry = async (entry: Omit<HandoverLogEntry, 'id' | 'logged_at'>) => {
-    if (!activeShift?.id) return alert('There is no active shift to log against.');
+    if (!activeShift?.id) {
+      alert('There is no active shift to log against.');
+      return false;
+    }
     const { error } = await supabase.from('handover_log_entries').insert({
       shift_id: activeShift.id,
       category: entry.category,
@@ -339,9 +342,13 @@ export default function HandoverReportTab({
       details: entry.details.trim(),
       action_required: entry.action_required?.trim() || null,
     });
-    if (error) return alert(`Couldn't save that entry: ${error.message}`);
+    if (error) {
+      alert(`Couldn't save that entry: ${error.message}`);
+      return false;
+    }
     showToast({ message: 'Handover entry saved' });
     onRefresh();
+    return true;
   };
 
   const handleUpdateCategory = async (id: string, newCategory: HandoverLogCategory) => {
@@ -541,11 +548,15 @@ export default function HandoverReportTab({
           <div className="mt-6">
             <ShiftHandoverLog
               readOnly={readOnly}
+              shiftDate={activeShift?.shift_date ?? null}
+              shiftName={activeShift?.shift_name ?? null}
+              department="workshop"
               entries={windowedLog}
               onAddEntry={handleAddLogEntry}
               onUpdateCategory={handleUpdateCategory}
               onDeleteEntry={handleDeleteLogEntry}
               allocations={reportWindow === '12h' ? shiftAllocations : undefined}
+              actorName={supervisorName}
             />
           </div>
 

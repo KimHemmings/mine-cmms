@@ -18,10 +18,12 @@ import WorkboardTab from '@/components/WorkboardTab';
 import FleetDossierTab from '@/components/FleetDossierTab';
 import HandoverReportTab from '@/components/HandoverReportTab';
 import WorkboardModals from '@/components/WorkboardModals';
-import { getPermissions } from '@/utils/permissions';
+import { getPermissions, operationalLens, type Department } from '@/utils/permissions';
 import { TopHeader } from '@/components/TopHeader';
 import { FeedbackProvider, useFeedback } from '@/components/ui/FeedbackProvider';
 import CrewTab from '@/components/crew/CrewTab';
+import CompetencyBoard from '@/components/crew/CompetencyBoard';
+import DepartmentLens from '@/components/DepartmentLens';
 import ManagementTab from '@/components/ManagementTab';
 import AssignCrewModal from '@/components/crew/AssignCrewModal';
 import { CrewDataContext, CrewData } from '@/components/crew/CrewDataContext';
@@ -40,6 +42,15 @@ function Workboard() {
   const { profile, displayName: activeFitter, loading: profileLoading, reload } = useCurrentUser();
   const userRole: UserRole = profile?.role ?? 'fitter';
   const permissions = getPermissions(profile);
+  const showLens = permissions.accessLevel >= 4;
+  const [viewedDepartment, setViewedDepartment] = useState<Department>(permissions.accessLevel >= 5 ? 'production' : permissions.department);
+  const [lensProfileId, setLensProfileId] = useState<string | null>(null);
+  if (profile && showLens && lensProfileId !== profile.id) {
+    setLensProfileId(profile.id);
+    setViewedDepartment(permissions.accessLevel >= 5 ? 'production' : permissions.department);
+  }
+  const viewDepartment = showLens ? viewedDepartment : permissions.department;
+  const viewPermissions = showLens ? operationalLens(permissions, viewedDepartment) : permissions;
   const [currentTab, setCurrentTab] = useState<'management' | 'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status'>('board');
   const [trainingSection, setTrainingSection] = useState<'tickets' | 'passouts' | 'supervision'>('tickets');
   const [routedProfile, setRoutedProfile] = useState<string | null>(null);
@@ -129,7 +140,7 @@ function Workboard() {
       authorisations,
       holdings,
       supervision,
-      canCheckAuthorisations: permissions.accessLevel === 3,
+      canCheckAuthorisations: permissions.accessLevel === 3 || permissions.accessLevel === 4,
     };
   }, [crew, onShiftCrewIds, workOrders, allAssets, authorisations, holdings, supervision, permissions.accessLevel]);
 
@@ -218,10 +229,18 @@ function Workboard() {
         onLinkCrew={permissions.department === 'workshop' && permissions.accessLevel === 2 ? linkMyCrew : undefined}
         onSetShiftCrew={setShiftPanel}
         profileId={profile?.id ?? null}
+        lensDepartment={showLens ? viewedDepartment : null}
       />
 
       <section className="mt-6">
         {currentTab === 'board' && permissions.canViewWhiteboard && (
+          <div className="space-y-3">
+          {showLens && <DepartmentLens surface="board" department={viewedDepartment} onChange={setViewedDepartment} actorName={activeFitter} canEditRates={permissions.accessLevel >= 4} />}
+          {showLens && viewDepartment === 'training' ? (
+            <section className="rounded-xl border border-indigo-300 bg-white p-4">
+              <CompetencyBoard crew={crew} assets={allAssets} onSave={updateOperatorCompetencies} readOnly hideDirectives actorName={activeFitter} />
+            </section>
+          ) : (
           <WorkboardTab
             shiftJobs={shiftJobs}
             workOrders={workOrders}
@@ -242,12 +261,14 @@ function Workboard() {
             openCrewPicker={(wo: MachineWorkOrder) => setTargetCrewWoId(wo.id)}
             releaseMachineToProduction={releaseMachineToProduction}
             onRefresh={refreshAfterSave}
-            permissions={permissions}
+            permissions={viewPermissions}
             historyAssets={allAssets}
             activeShiftId={activeShift?.id ?? null}
-            onUpdateLocation={permissions.canUpdateMachineLocation ? updateMachineLocation : undefined}
-            onUpdateCircuit={permissions.canUpdateMachineLocation ? updateMachineCircuit : undefined}
+            onUpdateLocation={viewPermissions.canUpdateMachineLocation ? updateMachineLocation : undefined}
+            onUpdateCircuit={viewPermissions.canUpdateMachineLocation ? updateMachineCircuit : undefined}
           />
+          )}
+          </div>
         )}
 
         {currentTab === 'management' && permissions.canViewManagementDashboard && (
@@ -257,6 +278,8 @@ function Workboard() {
             workOrders={workOrders}
             activeShift={activeShift}
             downAssetIds={shiftJobs.filter((asset) => !(asset.status === 'OPERATIONAL' && !asset.in_shift)).map((asset) => asset.id)}
+            actorName={activeFitter}
+            accessLevel={permissions.accessLevel}
           />
         )}
 
@@ -275,11 +298,11 @@ function Workboard() {
           />
         )}
 
-        {currentTab === 'handover' && permissions.canViewHandover && (permissions.isManagementLevel4 || permissions.department !== 'production') && (
+        {currentTab === 'handover' && permissions.canViewHandover && ((showLens && viewDepartment === 'workshop') || (!showLens && permissions.department !== 'production')) && (
           <div className="space-y-3">
-            {permissions.isManagementLevel4 && <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Workshop handover</h2>}
+            {showLens && <DepartmentLens surface="handover" department={viewedDepartment} onChange={setViewedDepartment} actorName={activeFitter} canEditRates={permissions.accessLevel >= 4} />}
           <HandoverReportTab
-            readOnly={permissions.isManagementLevel4}
+            readOnly={showLens}
             activeShift={activeShift}
             shiftJobs={shiftJobs}
             completedJobs={completedJobs}
@@ -355,11 +378,21 @@ function Workboard() {
           </div>
         )}
 
-        {currentTab === 'handover' && permissions.canViewHandover && (permissions.isManagementLevel4 || permissions.department === 'production') && (
+        {currentTab === 'handover' && permissions.canViewHandover && showLens && viewDepartment === 'training' && (
           <div className="space-y-3">
-            {permissions.isManagementLevel4 && <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Production handover</h2>}
+            <DepartmentLens surface="handover" department={viewedDepartment} onChange={setViewedDepartment} actorName={activeFitter} canEditRates={permissions.accessLevel >= 4} />
+            <section className="rounded-xl border border-indigo-300 bg-white p-4">
+              <CompetencyBoard crew={crew} assets={allAssets} onSave={updateOperatorCompetencies} readOnly hideDirectives actorName={activeFitter} />
+            </section>
+          </div>
+        )}
+
+        {currentTab === 'handover' && permissions.canViewHandover && ((showLens && viewDepartment === 'production') || (!showLens && permissions.department === 'production')) && (
+          <div className="space-y-3">
+            {showLens && <DepartmentLens surface="handover" department={viewedDepartment} onChange={setViewedDepartment} actorName={activeFitter} canEditRates={permissions.accessLevel >= 4} />}
           <ProductionShiftHandover
-            readOnly={permissions.isManagementLevel4}
+            readOnly={showLens}
+            accessLevel={permissions.accessLevel}
             activeShift={activeShift}
             shiftJobs={shiftJobs}
             assets={allAssets}
@@ -389,14 +422,18 @@ function Workboard() {
         )}
 
         {currentTab === 'crew' && permissions.canViewCrew && (
+          <div className="space-y-3">
+          {showLens && <DepartmentLens surface="crew" department={viewedDepartment} onChange={setViewedDepartment} actorName={activeFitter} canEditRates={permissions.accessLevel >= 4} />}
           <CrewTab
             activeShift={activeShift}
-            canManageCrew={permissions.canManageCrew}
-            crossDepartment={permissions.isManagementLevel4}
-            canManageCompetencies={permissions.canManageCompetencies}
+            canManageCrew={showLens ? false : permissions.canManageCrew}
+            crossDepartment={showLens ? false : permissions.isSiteExecutive}
+            canManageCompetencies={showLens ? false : permissions.canManageCompetencies}
             accessLevel={permissions.accessLevel}
             signerName={activeFitter}
-            department={permissions.department}
+            department={viewDepartment}
+            rosterTitle={showLens ? (viewDepartment === 'workshop' ? 'Trades Roster' : viewDepartment === 'production' ? 'Operator Allocations' : undefined) : undefined}
+            matrixOnly={showLens && viewDepartment === 'training'}
             saveCrewMember={saveCrewMember}
             setCrewMemberActive={setCrewMemberActive}
             setCrewMemberAway={setCrewMemberAway}
@@ -408,11 +445,12 @@ function Workboard() {
             assets={shiftJobs}
             fleetAssets={allAssets}
             downAssetIds={shiftJobs.filter((asset) => !(asset.status === 'OPERATIONAL' && !asset.in_shift)).map((asset) => asset.id)}
-            updateMachineLocation={permissions.canUpdateMachineLocation ? updateMachineLocation : undefined}
-            updateMachineCircuit={permissions.canUpdateMachineLocation ? updateMachineCircuit : undefined}
+            updateMachineLocation={viewPermissions.canUpdateMachineLocation ? updateMachineLocation : undefined}
+            updateMachineCircuit={viewPermissions.canUpdateMachineLocation ? updateMachineCircuit : undefined}
             workOrders={workOrders}
             updateOperatorCompetencies={updateOperatorCompetencies}
           />
+          </div>
         )}
       </section>
 

@@ -9,7 +9,8 @@ export const ACCESS_LEVELS = [
   { value: 1, label: 'Level 1 — Read-Only' },
   { value: 2, label: 'Level 2 — Crew' },
   { value: 3, label: 'Level 3 — Supervisor' },
-  { value: 4, label: 'Level 4 — Management / Superintendent' },
+  { value: 4, label: 'Level 4 — Departmental Superintendent' },
+  { value: 5, label: 'Level 5 — SSE / General Manager' },
 ] as const;
 
 export const CREW_PANELS = ['A Crew', 'B Crew', 'C Crew', 'D Crew'] as const;

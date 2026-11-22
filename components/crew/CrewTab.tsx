@@ -24,6 +24,8 @@ interface CrewTabProps {
   accessLevel?: number;
   signerName?: string;
   department: Department;
+  rosterTitle?: string;
+  matrixOnly?: boolean;
   saveCrewMember: (input: CrewMemberInput, id?: string) => Promise<boolean>;
   setCrewMemberActive: (member: CrewMember, active: boolean) => Promise<void>;
   setCrewMemberAway: (member: CrewMember, away: boolean) => Promise<void>;
@@ -59,7 +61,10 @@ export default function CrewTab({
   crossDepartment = false,
   canManageCompetencies = false,
   accessLevel = 2,
+  signerName = 'Training',
   department,
+  rosterTitle,
+  matrixOnly = false,
   saveCrewMember,
   setCrewMemberActive,
   setCrewMemberAway,
@@ -112,7 +117,7 @@ export default function CrewTab({
   const fleet = fleetAssets ?? assets;
   const production = department === 'production';
   const training = department === 'training';
-  const showPassouts = training && (accessLevel < 3 || trainingView === 'passouts');
+  const showPassouts = matrixOnly || (training && (accessLevel < 3 || trainingView === 'passouts'));
   const isAssigned = (member: CrewMember) => {
     if (member.allocated_machine_id || member.shift_duty) return true;
     return !production && memberAssignments(member.id, workOrders, assets).length > 0;
@@ -221,7 +226,7 @@ export default function CrewTab({
 
   return (
     <div className="space-y-4">
-      {training && accessLevel >= 3 && (
+      {training && accessLevel >= 3 && !matrixOnly && (
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Training views">
           {([['team', 'Training Team'], ['passouts', 'Production Operator Pass-Outs']] as const).map(([id, label]) => (
             <button
@@ -239,14 +244,14 @@ export default function CrewTab({
       )}
       {showPassouts && updateOperatorCompetencies ? (
         <section className="bg-white border border-slate-300 rounded-xl p-4 shadow-2xs">
-          <CompetencyBoard crew={crew} assets={fleet} onSave={updateOperatorCompetencies} />
+          <CompetencyBoard crew={crew} assets={fleet} onSave={updateOperatorCompetencies} actorName={signerName} readOnly={matrixOnly} hideDirectives={matrixOnly} />
         </section>
       ) : (
       <section className="bg-white border border-slate-300 rounded-xl p-4 shadow-2xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-lg font-black text-slate-900">{departmentLabel(department)} crew</h3>
-            <p className="text-sm text-slate-500">People due on the selected crew. Away stays on the list and off the sign-on sheet.</p>
+            <h3 className="text-lg font-black text-slate-900">{rosterTitle || `${departmentLabel(department)} crew`}</h3>
+            <p className="text-sm text-slate-500">{department === 'production' ? 'Operators and the machines they are allocated to.' : 'Trades due on the selected crew. Away stays on the list and off the sign-on sheet.'}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {canManageCrew && (
