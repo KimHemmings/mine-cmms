@@ -384,31 +384,16 @@ export default function HandoverReportTab({
       </div>
 
       {view === 'current' && !opened && (
-        <div className="sticky top-0 z-10 bg-white py-3 space-y-2">
+        <div className="sticky top-0 z-10 bg-white py-3 space-y-3">
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={saveHandover} disabled={saving} className={`${actionClass} bg-emerald-600 text-white`}>
               {saving ? 'Saving...' : 'Save handover'}
             </button>
-            <button
-              type="button"
-              disabled={isExporting}
-              onClick={() => exportBriefing({
-                shiftName: activeShift?.shift_name || 'Active shift',
-                shiftDate: activeShift?.shift_date ?? null,
-                crew: activeShift?.crew ?? null,
-                supervisor: supervisorName,
-                document: liveSnapshot,
-              })}
-              className={`${actionClass} bg-amber-600 text-white`}
-            >
-              <Presentation className="w-4 h-4" /> {isExporting ? 'Building...' : incomingPanel ? `Briefing for ${incomingPanel}` : 'Crew briefing'}
+            <button type="button" onClick={() => setShowRollover(true)} className={`${actionClass} border-2 border-slate-900 bg-white text-slate-900`}>
+              <RotateCw className="w-4 h-4" /> Finish shift
             </button>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => window.print()} className={`${actionClass} bg-white border border-slate-300 text-slate-700`}>
-              <Printer className="w-4 h-4" /> Save as PDF
-            </button>
-          </div>
+          <p className="text-sm text-slate-600">Save the handover, then finish the shift for the crew coming on.</p>
         </div>
       )}
       {opened && (
@@ -451,14 +436,36 @@ export default function HandoverReportTab({
 
       {view === 'current' && !opened && (
         <>
+          <details className="mt-4 rounded-xl border border-slate-200 px-4 py-3">
+            <summary className="text-sm font-black text-slate-800 cursor-pointer">Make the briefing</summary>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={isExporting}
+                onClick={() => exportBriefing({
+                  shiftName: activeShift?.shift_name || 'Active shift',
+                  shiftDate: activeShift?.shift_date ?? null,
+                  crew: activeShift?.crew ?? null,
+                  supervisor: supervisorName,
+                  document: liveSnapshot,
+                })}
+                className={`${actionClass} bg-amber-600 text-white`}
+              >
+                <Presentation className="w-4 h-4" /> {isExporting ? 'Building...' : incomingPanel ? `Briefing for ${incomingPanel}` : 'Crew briefing'}
+              </button>
+              <button type="button" onClick={() => window.print()} className={`${actionClass} bg-white border border-slate-300 text-slate-700`}>
+                <Printer className="w-4 h-4" /> Save as PDF
+              </button>
+            </div>
+            <div className="mt-4">
+              <BriefingSlides slides={slides} onChange={setSlides} />
+            </div>
+          </details>
           {shiftIsPast(activeShift?.shift_date) && (
             <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
               <p className="text-sm font-bold text-amber-950">
-                This shift is still {formatStartDay(activeShift?.shift_date ?? '')}. Finish it so the next crew can start.
+                This shift is still {formatStartDay(activeShift?.shift_date ?? '')}. Save the handover, then finish it so the next crew can start.
               </p>
-              <button type="button" onClick={() => setShowRollover(true)} className={`${actionClass} mt-3 border-2 border-slate-900 bg-white text-slate-900`}>
-                <RotateCw className="w-4 h-4" /> Finish shift
-              </button>
             </div>
           )}
           <IncomingCrewPicker
@@ -489,7 +496,7 @@ export default function HandoverReportTab({
           </div>
 
           <details className="mt-6 rounded-xl border border-slate-200 p-4">
-            <summary className="text-sm font-black text-slate-800 cursor-pointer">Add a note, an extra slide, or a written summary</summary>
+            <summary className="text-sm font-black text-slate-800 cursor-pointer">Add a note or a written summary</summary>
             <div className="mt-4">
               <ShiftHandoverLog
                 entries={handoverLog}
@@ -498,7 +505,6 @@ export default function HandoverReportTab({
                 onDeleteEntry={handleDeleteLogEntry}
               />
             </div>
-            <BriefingSlides slides={slides} onChange={setSlides} />
             <div className="mt-4">
               <AiHandoverDigest
                 activeShift={activeShift}
@@ -517,12 +523,6 @@ export default function HandoverReportTab({
             </div>
           </details>
 
-          <div className="mt-8 pt-6 border-t border-slate-200">
-            <p className="text-sm text-slate-600 mb-3">Finish shift hands the board to the crew coming on.</p>
-            <button type="button" onClick={() => setShowRollover(true)} className={`${actionClass} border-2 border-slate-900 bg-white text-slate-900`}>
-              <RotateCw className="w-4 h-4" /> Finish shift
-            </button>
-          </div>
         </>
       )}
 

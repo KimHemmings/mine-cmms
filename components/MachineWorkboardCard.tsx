@@ -165,7 +165,11 @@ export default function MachineWorkboardCard({
       {etu?.overdue && (
         <span className="shrink-0 px-1.5 py-0.5 rounded text-[11px] font-black uppercase bg-rose-100 text-rose-800">Overdue</span>
       )}
-      <span className="shrink-0 ml-auto px-2 py-0.5 rounded bg-slate-200 text-xs font-black text-slate-800">{jobCount} {jobCount === 1 ? 'Job' : 'Jobs'}</span>
+      {canRelease ? (
+        <span className="shrink-0 ml-auto px-2 py-0.5 rounded bg-emerald-600 text-[11px] font-black uppercase text-white">Ready to release</span>
+      ) : (
+        <span className="shrink-0 ml-auto px-2 py-0.5 rounded bg-slate-200 text-xs font-black text-slate-800">{jobCount} {jobCount === 1 ? 'Job' : 'Jobs'}</span>
+      )}
       {isDetailsExpanded ? <ChevronUp className="w-4 h-4 shrink-0 text-slate-500" /> : <ChevronDown className="w-4 h-4 shrink-0 text-slate-500" />}
     </button>
   ) : null;

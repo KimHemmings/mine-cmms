@@ -30,7 +30,7 @@ export const FleetDossierHeader: React.FC<FleetDossierHeaderProps> = ({
             <BookOpen className="w-5 h-5 text-amber-600" /> Complete Fleet Directory
           </h2>
           <p className="text-xs text-slate-500 mt-0.5 font-medium">
-            Open a machine for its history and details. Spot repeat failures stays on the row.
+            Open a machine for its history and repeat failures.
           </p>
         </div>
 

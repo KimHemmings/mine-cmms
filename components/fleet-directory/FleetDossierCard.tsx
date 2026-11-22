@@ -87,30 +87,7 @@ export const FleetDossierCard: React.FC<FleetDossierCardProps> = ({
             <ChevronDown className="w-4 h-4 shrink-0 ml-auto text-slate-500" />
           )}
         </div>
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onSpotRepeats(asset);
-          }}
-          disabled={scanningRepeats}
-          className="shrink-0 min-h-10 px-3 inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 text-white text-xs font-bold disabled:opacity-70"
-        >
-          <AlertTriangle className="w-4 h-4" />
-          {scanningRepeats ? 'Scanning 12-Mo History...' : 'Spot Repeat Failures'}
-        </button>
       </div>
-
-      {repeatResult && (
-        <div className="px-3 pb-3" onClick={(event) => event.stopPropagation()}>
-          <RepeatFailureCallout
-            result={repeatResult}
-            refreshing={scanningRepeats}
-            onHide={onHideRepeats}
-            onRefresh={() => onRefreshRepeats(asset)}
-          />
-        </div>
-      )}
 
       {expanded && (
         <div className="px-4 pb-4">
@@ -137,38 +114,45 @@ export const FleetDossierCard: React.FC<FleetDossierCardProps> = ({
             </div>
           </div>
 
-          <div className="mt-3">
-            {isDown ? (
+          <div className="mt-3 flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={() => openHistory(asset)}
+              className="h-11 px-3.5 flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold uppercase tracking-wider transition-colors border border-slate-300 cursor-pointer"
+            >
+              <History className="w-4 h-4 text-slate-600" />
+              <span>History</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSpotRepeats(asset)}
+              disabled={scanningRepeats}
+              className="h-11 px-3.5 flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 text-white text-xs font-bold uppercase tracking-wider disabled:opacity-70"
+            >
+              <AlertTriangle className="w-4 h-4" />
+              {scanningRepeats ? 'Scanning 12-Mo History...' : 'Spot Repeat Failures'}
+            </button>
+            {!isDown && (
               <button
                 type="button"
-                onClick={() => openHistory(asset)}
-                className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold uppercase tracking-wider transition-colors border border-slate-300 cursor-pointer"
+                onClick={() => onAssignJob?.(asset)}
+                className="h-11 px-3.5 flex-1 flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-xs cursor-pointer"
               >
-                <History className="w-4 h-4 text-slate-600" />
-                <span>Inspect History / Notes</span>
+                <Wrench className="w-4 h-4" />
+                <span>+ Assign</span>
               </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => openHistory(asset)}
-                  className="h-11 px-3.5 flex items-center justify-center gap-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold uppercase tracking-wider transition-colors border border-slate-300 cursor-pointer"
-                  title="Inspect History / Notes"
-                >
-                  <History className="w-4 h-4 text-slate-600" />
-                  <span>History</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onAssignJob?.(asset)}
-                  className="flex-1 h-11 flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-xs cursor-pointer"
-                >
-                  <Wrench className="w-4 h-4" />
-                  <span>+ Assign</span>
-                </button>
-              </div>
             )}
           </div>
+          {repeatResult && (
+            <div className="mt-3">
+              <RepeatFailureCallout
+                result={repeatResult}
+                refreshing={scanningRepeats}
+                onHide={onHideRepeats}
+                onRefresh={() => onRefreshRepeats(asset)}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
