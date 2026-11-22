@@ -39,7 +39,7 @@ export interface CrewMember {
   away: boolean;
   shift_duty: string | null;
   allocated_machine_id: string | null;
-  allocated_role: 'Primary' | 'Hot Seat' | 'Trainee (Buddy Seat)' | null;
+  allocated_role: 'Primary' | 'Hot Seat' | 'Trainee (Buddy Seat)' | 'Crib Floater' | null;
   hot_seat_assignments: { assetId: string }[];
   passed_out_equipment: string[];
   in_training_equipment: string[];
@@ -48,7 +48,14 @@ export interface CrewMember {
   is_contractor: boolean;
   contractor_company: string | null;
   overtime_crew_group: string | null;
+  overtime_reason?: string | null;
   shift_expires_at: string | null;
+  last_shift_ended_at?: string | null;
+  voc_expiries?: Record<string, string> | null;
+  medical_expiry?: string | null;
+  standard11_expiry?: string | null;
+  fatigue_override_by?: string | null;
+  fatigue_override_at?: string | null;
   active: boolean;
   created_at: string;
 }

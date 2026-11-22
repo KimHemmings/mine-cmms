@@ -31,6 +31,9 @@ export default function QuickEditAssetModal({
   const [woNumber, setWoNumber] = useState('');
   const [mainWoId, setMainWoId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [currentSmu, setCurrentSmu] = useState('');
+  const [nextServiceSmu, setNextServiceSmu] = useState('');
+  const [statutoryDue, setStatutoryDue] = useState('');
 
   const supabase = createClient();
 
@@ -58,6 +61,9 @@ export default function QuickEditAssetModal({
       }
 
       setMachineOwner(asset.machine_owner || 'Central');
+      setCurrentSmu(asset.current_smu == null ? '' : String(asset.current_smu));
+      setNextServiceSmu(asset.next_service_smu == null ? '' : String(asset.next_service_smu));
+      setStatutoryDue((asset.statutory_inspection_due ?? '').slice(0, 10));
 setPriority(asset.priority || '');
 setOrderType(asset.status === 'DOWN_PLANNED' ? 'PLANNED' : 'UNPLANNED');
 
@@ -116,6 +122,9 @@ setOrderType(asset.status === 'DOWN_PLANNED' ? 'PLANNED' : 'UNPLANNED');
         priority: priority || null,
         down_since: downSinceInput ? new Date(downSinceInput).toISOString() : asset.down_since,
         expected_up: expectedUpInput ? new Date(expectedUpInput).toISOString() : asset.expected_up,
+        current_smu: currentSmu === '' ? null : Number(currentSmu),
+        next_service_smu: nextServiceSmu === '' ? null : Number(nextServiceSmu),
+        statutory_inspection_due: statutoryDue || null,
       })
       .eq('id', asset.id);
 
@@ -148,7 +157,7 @@ setOrderType(asset.status === 'DOWN_PLANNED' ? 'PLANNED' : 'UNPLANNED');
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white border border-slate-300 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+      <div className="bg-white border border-slate-300 rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl">
         <div className="flex items-center justify-between pb-3 border-b border-slate-200">
           <div>
             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -182,6 +191,18 @@ setOrderType(asset.status === 'DOWN_PLANNED' ? 'PLANNED' : 'UNPLANNED');
   woNumber={woNumber}
   setWoNumber={setWoNumber}
 />
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            <label className="font-bold text-slate-700">Current SMU
+              <input value={currentSmu} onChange={(event) => setCurrentSmu(event.target.value)} inputMode="decimal" className="mt-1 w-full min-h-10 rounded-lg border border-slate-300 px-2 font-normal" />
+            </label>
+            <label className="font-bold text-slate-700">Next service SMU
+              <input value={nextServiceSmu} onChange={(event) => setNextServiceSmu(event.target.value)} inputMode="decimal" className="mt-1 w-full min-h-10 rounded-lg border border-slate-300 px-2 font-normal" />
+            </label>
+            <label className="font-bold text-slate-700">Statutory inspection due
+              <input type="date" value={statutoryDue} onChange={(event) => setStatutoryDue(event.target.value)} className="mt-1 w-full min-h-10 rounded-lg border border-slate-300 px-2 font-normal" />
+            </label>
+          </div>
 
           <EtuTimeSection
             downSinceInput={downSinceInput}

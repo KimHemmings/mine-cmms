@@ -56,6 +56,7 @@ function departmentPeople(crew: CrewMember[], letter: CrewLetter, department: De
 }
 
 function isAllocated(member: CrewMember, workOrders: MachineWorkOrder[], assets: Asset[]) {
+  if (member.allocated_role === 'Crib Floater') return true;
   if (member.allocated_machine_id || member.shift_duty?.trim()) return true;
   if (normalizeDepartment(member.department) === 'production') return false;
   return memberAssignments(member.id, workOrders, assets).length > 0;

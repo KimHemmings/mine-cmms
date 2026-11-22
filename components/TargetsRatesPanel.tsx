@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { BOWEN_TARGETS, SiteTargets, TARGET_FIELDS, targetsFromRow } from '@/utils/managementRates';
+import { useSiteBrand } from '@/components/SiteBrand';
 
 export default function TargetsRatesPanel({
   actorName,
@@ -15,10 +16,16 @@ export default function TargetsRatesPanel({
   onSaved?: (targets: SiteTargets) => void;
   onClose?: () => void;
 }) {
+  const brand = useSiteBrand();
+  const [siteName, setSiteName] = useState(brand.name);
   const [rates, setRates] = useState<SiteTargets>(BOWEN_TARGETS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setSiteName(brand.name);
+  }, [brand.name]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -34,6 +41,12 @@ export default function TargetsRatesPanel({
     setSaving(true);
     setSaved(false);
     const supabase = createClient();
+    const named = await brand.save(siteName);
+    if (!named) {
+      setSaving(false);
+      setError('The site name did not save.');
+      return;
+    }
     const { error: saveError } = await supabase.from('site_targets_rates').upsert({
       id: 1,
       ...rates,
@@ -62,7 +75,16 @@ export default function TargetsRatesPanel({
         )}
       </div>
       {error && <p className="text-sm font-bold text-rose-700">{error}</p>}
-      {saved && <p className="text-sm font-bold text-emerald-800">Targets saved.</p>}
+      {saved && <p className="text-sm font-bold text-emerald-800">Saved.</p>}
+      <label className="text-xs font-bold text-slate-600">
+        Site Name
+        <input
+          value={siteName}
+          disabled={readOnly}
+          onChange={(event) => setSiteName(event.target.value)}
+          className="mt-1 w-full min-h-10 rounded-lg border border-slate-300 px-2 text-sm font-bold text-slate-900 disabled:bg-slate-100"
+        />
+      </label>
       <div className="grid gap-3 md:grid-cols-2">
         {TARGET_FIELDS.map((field) => (
           <label key={field.key} className="text-xs font-bold text-slate-600">
@@ -95,7 +117,7 @@ export default function TargetsRatesPanel({
   if (!onClose) return <div className="rounded-xl border border-slate-300 bg-white p-4">{form}</div>;
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" role="dialog" aria-modal="true" aria-label="Targets and rates">
-      <div className="mt-8 w-full max-w-3xl rounded-xl bg-white p-4 shadow-xl">{form}</div>
+      <div className="mt-8 w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-4 shadow-xl">{form}</div>
     </div>
   );
 }

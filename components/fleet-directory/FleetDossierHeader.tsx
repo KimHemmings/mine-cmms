@@ -12,6 +12,7 @@ interface FleetDossierHeaderProps {
   counts: { all: number; down: number; running: number };
   canManageFleet?: boolean;
   onAddMachine?: () => void;
+  onBulkImport?: () => void;
 }
 
 export const FleetDossierHeader: React.FC<FleetDossierHeaderProps> = ({
@@ -25,6 +26,7 @@ export const FleetDossierHeader: React.FC<FleetDossierHeaderProps> = ({
   counts,
   canManageFleet = false,
   onAddMachine,
+  onBulkImport,
 }) => {
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-5 shadow-xs">
@@ -43,6 +45,15 @@ export const FleetDossierHeader: React.FC<FleetDossierHeaderProps> = ({
               className="mt-3 min-h-11 px-4 rounded-lg bg-slate-900 text-white text-sm font-black"
             >
               Add machine
+            </button>
+          )}
+          {canManageFleet && onBulkImport && (
+            <button
+              type="button"
+              onClick={onBulkImport}
+              className="mt-2 min-h-11 px-4 rounded-lg border-2 border-slate-300 bg-white text-sm font-black text-slate-800"
+            >
+              Bulk Import (CSV / Paste)
             </button>
           )}
         </div>

@@ -1,20 +1,23 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ManagementSnapshot } from '@/utils/managementGaps';
+import { DEFAULT_SITE_NAME } from '@/utils/siteBrand';
 
-export function generateManagementSummary(snapshot: ManagementSnapshot, crewLabel: string) {
+export function generateManagementSummary(snapshot: ManagementSnapshot, crewLabel: string, siteName = DEFAULT_SITE_NAME) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
+  doc.setFontSize(11);
   doc.setTextColor(15, 23, 42);
-  doc.text('Management Gap Snapshot', pageWidth / 2, 12, { align: 'center' });
+  doc.text(siteName, pageWidth / 2, 8, { align: 'center' });
+  doc.setFontSize(16);
+  doc.text('Superintendent Briefing', pageWidth / 2, 15, { align: 'center' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
-  doc.text(`${crewLabel} · ${new Date().toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`, pageWidth / 2, 18, { align: 'center' });
+  doc.text(`${crewLabel} · ${new Date().toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`, pageWidth / 2, 21, { align: 'center' });
 
   autoTable(doc, {
-    startY: 22,
+    startY: 25,
     head: [['Fleet availability', 'Manning gap', 'Training bottlenecks', 'Statutory risk']],
     body: [[
       `${snapshot.availabilityPct}% · ${snapshot.ready} ready / ${snapshot.total} total · ${snapshot.down} down`,

@@ -11,6 +11,9 @@ import { Permissions, isProductionDepartment, isWorkshopRoster } from '@/utils/p
 import { seatLabel } from '@/utils/crewAllocation';
 import LocationPill, { parkUpNeedsConfirm } from '@/components/production/LocationPill';
 import CircuitPill from '@/components/production/CircuitPill';
+import BulkPasteModal from '@/components/BulkPasteModal';
+import StatutoryDueBadge from '@/components/StatutoryDueBadge';
+import { serviceDue } from '@/utils/statutoryCompliance';
 
 interface WorkboardTabProps {
   shiftJobs: Asset[];
@@ -86,6 +89,7 @@ export default function WorkboardTab({
   const [sortMode, setSortMode] = useState<SortMode>('urgent');
   const [gearFilter, setGearFilter] = useState<'all' | 'critical'>('all');
   const [fleetView, setFleetView] = useState<'all' | 'down' | 'spare'>('all');
+  const [bulkImport, setBulkImport] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const productionBoard = permissions.isReadOnlyWorkshop;
 
@@ -331,6 +335,11 @@ export default function WorkboardTab({
               ))}
             </div>
           )}
+          {permissions.canManageFleet && (
+            <button type="button" onClick={() => setBulkImport(true)} className="min-h-12 px-4 rounded-lg border-2 border-slate-300 bg-white text-sm font-black text-slate-800">
+              Bulk Import (CSV / Paste)
+            </button>
+          )}
           {permissions.canManageSiteDictionary && (
           <label className="flex items-center gap-2 text-sm font-bold text-slate-600">
             Sort
@@ -419,6 +428,7 @@ export default function WorkboardTab({
                 return (
                   <li key={asset.id} className="px-3 py-2 flex flex-wrap items-center gap-2">
                     <span className="text-base font-black text-slate-900">{asset.fleet_id}</span>
+                    {serviceDue(asset) && <StatutoryDueBadge />}
                     <span className="text-sm font-bold text-slate-500">{asset.make_model}</span>
                     {manned ? (
                       <span className="px-2 py-0.5 rounded-full bg-slate-900 text-white text-[11px] font-black">MANNED · {manned}</span>
@@ -457,6 +467,9 @@ export default function WorkboardTab({
           </div>
           <div className="space-y-4">{releasedFleet.map(renderCard)}</div>
         </div>
+      )}
+      {bulkImport && (
+        <BulkPasteModal kind="fleet" onClose={() => setBulkImport(false)} onImported={onRefresh} />
       )}
     </div>
   );

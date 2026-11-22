@@ -9,18 +9,20 @@ export const PRODUCTION_DUTIES = ['Floating Hot Seat / Relief', 'Standby / Pit U
 export type ProductionDuty = (typeof PRODUCTION_DUTIES)[number];
 export type AnyDuty = ShiftDuty | ProductionDuty;
 
-export type AllocationRole = 'Primary' | 'Hot Seat' | 'Trainee (Buddy Seat)';
+export type AllocationRole = 'Primary' | 'Hot Seat' | 'Trainee (Buddy Seat)' | 'Crib Floater';
 
 export function seatLabel(role: AllocationRole | null | undefined) {
   if (role === 'Hot Seat') return 'Hot Seat';
   if (role === 'Trainee (Buddy Seat)') return 'Trainee';
+  if (role === 'Crib Floater') return 'Crib Floater';
   return 'Primary';
 }
 
 export type AllocationChoice =
-  | { type: 'machine'; assetId: string; role?: AllocationRole }
+  | { type: 'machine'; assetId: string; role?: AllocationRole; fatigueOverride?: boolean }
   | { type: 'duty'; duty: AnyDuty }
   | { type: 'role'; role: AllocationRole }
+  | { type: 'floater'; assetIds: string[]; fatigueOverride?: boolean }
   | { type: 'clear' };
 
 export interface WhiteboardMachine {
@@ -169,6 +171,7 @@ export function defaultAllocationRole(assetId: string, memberId: string, roster:
     person.id !== memberId
     && person.active
     && !person.away
+    && person.allocated_role !== 'Crib Floater'
     && person.allocated_machine_id === assetId,
   );
   return taken ? 'Hot Seat' : 'Primary';
@@ -176,18 +179,22 @@ export function defaultAllocationRole(assetId: string, memberId: string, roster:
 
 export function namesOnMachine(assetId: string, roster: CrewMember[], exceptId?: string) {
   return roster
-    .filter((person) => person.active && !person.away && person.id !== exceptId && person.allocated_machine_id === assetId)
+    .filter((person) => person.active && !person.away && person.id !== exceptId && person.allocated_role !== 'Crib Floater' && person.allocated_machine_id === assetId)
     .map((person) => person.display_name);
 }
 
 export function preStartUnit(
-  member: Pick<CrewMember, 'id' | 'shift_duty' | 'allocated_machine_id' | 'allocated_role' | 'department'>,
+  member: Pick<CrewMember, 'id' | 'shift_duty' | 'allocated_machine_id' | 'allocated_role' | 'hot_seat_assignments' | 'department'>,
   workOrders: MachineWorkOrder[],
   assets: Asset[],
 ) {
   const production = (member.department || '').toLowerCase() === 'production';
   const fleet = fleetLabel(member.allocated_machine_id, assets);
   if (production) {
+    if (member.allocated_role === 'Crib Floater') {
+      const names = (member.hot_seat_assignments ?? []).map((seat) => assets.find((asset) => asset.id === seat.assetId)?.fleet_id).filter(Boolean);
+      return names.length > 0 ? `Crib Floater · ${names.join(', ')}` : 'Crib Floater';
+    }
     if (!fleet) return member.shift_duty?.trim() || '';
     if (member.allocated_role === 'Hot Seat') return `${fleet} (Hot Seat)`;
     if (member.allocated_role === 'Trainee (Buddy Seat)') return `${fleet} (Trainee)`;
@@ -234,6 +241,12 @@ export function productionSeatLines(operators: CrewMember[], assets: Asset[], do
   const duties = new Map<string, CrewMember[]>();
   const open: CrewMember[] = [];
   for (const member of operators) {
+    if (member.allocated_role === 'Crib Floater') {
+      const ids = (member.hot_seat_assignments ?? []).map((seat) => seat.assetId).filter(Boolean);
+      const names = ids.map((id) => assets.find((asset) => asset.id === id)?.fleet_id || 'unit').join(', ');
+      duties.set(`Crib Floater · ${names || 'no units'}`, [...(duties.get(`Crib Floater · ${names || 'no units'}`) ?? []), member]);
+      continue;
+    }
     if (member.allocated_machine_id) {
       const list = machines.get(member.allocated_machine_id) ?? [];
       list.push(member);

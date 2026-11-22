@@ -168,7 +168,7 @@ export default function DefectsModal({ asset, defects, notes = [], onClose, onRe
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white border border-slate-300 rounded-2xl max-w-3xl w-full p-6 shadow-2xl my-8">
+      <div className="bg-white border border-slate-300 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl my-8">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-200">
           <div>

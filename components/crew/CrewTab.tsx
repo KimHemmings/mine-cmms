@@ -2,11 +2,14 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Pencil, Printer, UserPlus } from 'lucide-react';
+import { useSiteBrand } from '@/components/SiteBrand';
+import BulkPasteModal from '@/components/BulkPasteModal';
 import { CREW_PANELS, CrewMember, CrewMemberInput, ShiftRecord, Asset, MachineWorkOrder } from '@/types';
 import { Department, departmentLabel, normalizeDepartment } from '@/utils/permissions';
 import { getShiftClock } from '@/utils/shiftClock';
 import { AllocationChoice, defaultAllocationRole, memberAssignments, operatorEquipmentModels, preStartLocation, preStartUnit } from '@/utils/crewAllocation';
 import { crewLetter, coveringLetter, rosterRoleNote, visibleOnCrewTab } from '@/utils/shiftRoster';
+import { OvertimeReason, fatigueGate } from '@/utils/statutoryCompliance';
 import { createClient } from '@/utils/supabase/client';
 import { latestSafetyAwareness } from '@/utils/productionHandoverRecord';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
@@ -30,9 +33,9 @@ interface CrewTabProps {
   setCrewMemberActive: (member: CrewMember, active: boolean) => Promise<void>;
   setCrewMemberAway: (member: CrewMember, away: boolean) => Promise<void>;
   setCrewAllocation: (member: CrewMember, choice: AllocationChoice, workOrders: MachineWorkOrder[], assets: Asset[]) => Promise<void>;
-  addOvertimeCover: (member: CrewMember, letter: string, shiftEndsAt: string) => Promise<boolean>;
-  addContractor: (input: { name: string; company: string; trade: string; department: string; panel: string; shiftEndsAt: string; passedOut?: string[] }) => Promise<CrewMember | null>;
-  updateOperatorCompetencies?: (member: CrewMember, passed: string[], training: string[]) => Promise<boolean>;
+  addOvertimeCover: (member: CrewMember, letter: string, shiftEndsAt: string, reason: string, fatigueOverride?: boolean) => Promise<boolean>;
+  addContractor: (input: { name: string; company: string; trade: string; department: string; panel: string; shiftEndsAt: string; passedOut?: string[]; overtimeReason?: string }) => Promise<CrewMember | null>;
+  updateOperatorCompetencies?: (member: CrewMember, passed: string[], training: string[], extras?: { voc?: Record<string, string>; medical?: string; standard11?: string }) => Promise<boolean>;
   endShiftExtra: (member: CrewMember, workOrders: MachineWorkOrder[]) => Promise<void>;
   clearExpiredShiftExtras: (members: CrewMember[]) => Promise<void>;
   assets: Asset[];
@@ -41,6 +44,7 @@ interface CrewTabProps {
   updateMachineLocation?: (assetId: string, location: string) => Promise<boolean>;
   updateMachineCircuit?: (assetId: string, circuit: string) => Promise<boolean>;
   workOrders: MachineWorkOrder[];
+  onRefresh?: () => void;
 }
 
 type CrewPanel = (typeof CREW_PANELS)[number];
@@ -77,8 +81,11 @@ export default function CrewTab({
   fleetAssets,
   downAssetIds = [],
   workOrders,
+  onRefresh,
 }: CrewTabProps) {
   const { crew } = useCrewData();
+  const { name: siteName } = useSiteBrand();
+  const [showImport, setShowImport] = useState(false);
   const { confirm, showToast } = useFeedback();
   const [pinged, setPinged] = useState<Record<string, true>>({});
   const [pingingId, setPingingId] = useState<string | null>(null);
@@ -161,20 +168,39 @@ export default function CrewTab({
         crew: selected === 'all' ? 'All crews' : selected,
         safetyAwareness,
       },
+      siteName,
     );
   };
 
   const saveForDepartment = (input: CrewMemberInput, id?: string) =>
     saveCrewMember({ ...input, department }, id);
 
-  const placeOnOvertime = async (member: CrewMember) => {
+  const fatigueDecision = async (member: CrewMember) => {
+    const gate = fatigueGate(member.last_shift_ended_at);
+    if (!gate) return 'clear' as const;
+    if (accessLevel <= 3) {
+      showToast({ message: `FATIGUE BREACH (< 10h Break) — ${member.display_name} cannot be allocated.`, tone: 'error', durationMs: 8000 });
+      return 'blocked' as const;
+    }
+    const ok = await confirm({
+      title: 'FATIGUE BREACH (< 10h Break)',
+      message: `${member.display_name} has had ${gate.breakHours.toFixed(1)} hours off. Record a fatigue management override?`,
+      confirmLabel: 'Record override',
+      tone: 'danger',
+    });
+    return ok ? 'override' as const : 'blocked' as const;
+  };
+
+  const placeOnOvertime = async (member: CrewMember, reason: OvertimeReason) => {
     const letter = crewLetter(extraPanel);
     if (!letter) return;
-    const ok = await addOvertimeCover(member, letter, getShiftClock().shiftEnd.toISOString());
+    const fatigue = await fatigueDecision(member);
+    if (fatigue === 'blocked') return;
+    const ok = await addOvertimeCover(member, letter, getShiftClock().shiftEnd.toISOString(), reason, fatigue === 'override');
     if (ok) setShowExtra(false);
   };
 
-  const placeContractor = async (input: { name: string; company: string; trade: string; allocation: AllocationChoice | null; passedOut: string[] }) => {
+  const placeContractor = async (input: { name: string; company: string; trade: string; allocation: AllocationChoice | null; passedOut: string[]; overtimeReason: OvertimeReason }) => {
     const panel = selected === 'all' ? (onShiftPanel ?? 'A Crew') : selected;
     const created = await addContractor({
       ...input,
@@ -182,6 +208,7 @@ export default function CrewTab({
       panel,
       shiftEndsAt: getShiftClock().shiftEnd.toISOString(),
       passedOut: input.passedOut,
+      overtimeReason: input.overtimeReason,
     });
     if (created && input.allocation) {
       const choice = input.allocation.type === 'machine' && production
@@ -207,8 +234,14 @@ export default function CrewTab({
   };
 
   const assign = async (member: CrewMember, choice: AllocationChoice) => {
+    let next = choice;
+    if (choice.type === 'machine' || choice.type === 'floater') {
+      const fatigue = await fatigueDecision(member);
+      if (fatigue === 'blocked') return;
+      if (fatigue === 'override') next = { ...choice, fatigueOverride: true };
+    }
     setSavingAllocation(member.id);
-    await setCrewAllocation(member, choice, workOrders, fleet);
+    await setCrewAllocation(member, next, workOrders, fleet);
     setSavingAllocation(null);
   };
 
@@ -254,6 +287,15 @@ export default function CrewTab({
             <p className="text-sm text-slate-500">{department === 'production' ? 'Operators and the machines they are allocated to.' : 'Trades due on the selected crew. Away stays on the list and off the sign-on sheet.'}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {canManageCrew && (
+              <button
+                type="button"
+                onClick={() => setShowImport(true)}
+                className="min-h-11 px-4 rounded-lg border-2 border-slate-300 bg-white text-sm font-bold text-slate-800 hover:bg-slate-50"
+              >
+                Bulk Import (CSV / Paste)
+              </button>
+            )}
             {canManageCrew && (
             <button
               type="button"
@@ -343,7 +385,8 @@ export default function CrewTab({
             No one from {departmentLabel(department)} is on {selected === 'all' ? 'the roster' : selected}.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-200 border border-slate-200 rounded-lg">
+          <div className="overflow-x-auto">
+          <ul className="min-w-[720px] divide-y divide-slate-200 border border-slate-200 rounded-lg">
             {shown.map((member) => {
               const covering = coveringLetter(member);
               return (
@@ -414,6 +457,7 @@ export default function CrewTab({
               );
             })}
           </ul>
+          </div>
         )}
 
         {canManageCrew && removedCrew.length > 0 && (
@@ -457,6 +501,14 @@ export default function CrewTab({
           onSave={saveForDepartment}
           onClose={() => setEditor(null)}
           onRemove={editor === 'new' ? undefined : () => void handleRemove(editor)}
+        />
+      )}
+      {showImport && (
+        <BulkPasteModal
+          kind="crew"
+          department={department}
+          onClose={() => setShowImport(false)}
+          onImported={() => onRefresh?.()}
         />
       )}
       {showExtra && (

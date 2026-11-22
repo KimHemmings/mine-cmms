@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { Asset, CrewMember, MachineWorkOrder } from '@/types';
 import { AllocationChoice } from '@/utils/crewAllocation';
+import { OvertimeReason } from '@/utils/statutoryCompliance';
 import OvertimeCrewModal from './OvertimeCrewModal';
 import ContractorModal from './ContractorModal';
 
@@ -13,8 +14,8 @@ interface ShiftExtraModalProps {
   assets: Asset[];
   workOrders: MachineWorkOrder[];
   variant: 'workshop' | 'production';
-  onAddOvertime: (member: CrewMember) => Promise<void>;
-  onAddContractor: (input: { name: string; company: string; trade: string; allocation: AllocationChoice | null; passedOut: string[] }) => Promise<void>;
+  onAddOvertime: (member: CrewMember, reason: OvertimeReason) => Promise<void>;
+  onAddContractor: (input: { name: string; company: string; trade: string; allocation: AllocationChoice | null; passedOut: string[]; overtimeReason: OvertimeReason }) => Promise<void>;
   onClose: () => void;
 }
 
@@ -23,7 +24,7 @@ export default function ShiftExtraModal(props: ShiftExtraModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-      <div className="w-full max-w-lg my-8 space-y-3">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto my-8 space-y-3">
         <div className="flex rounded-full border border-slate-300 bg-white p-1" role="tablist" aria-label="Who to add">
           {([['overtime', 'Overtime (From Another Crew)'], ['contractor', 'External Contractor']] as const).map(([id, label]) => (
             <button

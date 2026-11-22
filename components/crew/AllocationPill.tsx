@@ -17,6 +17,7 @@ import {
   namesOnMachine,
   whiteboardMachines,
 } from '@/utils/crewAllocation';
+import { operatorBlockReason } from '@/utils/statutoryCompliance';
 
 interface AllocationPillProps {
   member: CrewMember;
@@ -50,23 +51,30 @@ export default function AllocationPill({
   pingSent = false,
 }: AllocationPillProps) {
   const [open, setOpen] = useState(false);
+  const [floaterIds, setFloaterIds] = useState<string[]>([]);
   const rootRef = useRef<HTMLDivElement>(null);
   const production = variant === 'production';
   const machines = whiteboardMachines(assets, workOrders);
   const fleet = [...(fleetAssets ?? assets)].sort((a, b) => a.fleet_id.localeCompare(b.fleet_id, undefined, { numeric: true }));
   const operatorFleet = fleet.filter(isOperatorEquipment);
   const tickets = member.passed_out_equipment ?? [];
+  const personBlock = operatorBlockReason(member);
   const down = new Set(downAssetIds);
-  const eligible = operatorFleet.filter((asset) => asset.status === 'OPERATIONAL' && !down.has(asset.id) && machineMatchesTickets(asset, tickets));
+  const eligible = operatorFleet.filter((asset) => asset.status === 'OPERATIONAL' && !down.has(asset.id) && machineMatchesTickets(asset, tickets) && !operatorBlockReason(member, asset.make_model));
   const assigned = memberAssignments(member.id, workOrders, assets);
   const duty = member.shift_duty && (SHIFT_DUTIES as readonly string[]).includes(member.shift_duty)
     ? (member.shift_duty as ShiftDuty)
     : null;
   const productionFleet = fleetLabel(member.allocated_machine_id, fleet);
-  const allocated = production ? !!productionFleet || !!member.shift_duty : assigned.length > 0 || !!duty;
-  const seatMark = member.allocated_role === 'Hot Seat' ? ' (Hot Seat)' : member.allocated_role === 'Trainee (Buddy Seat)' ? ' (Trainee)' : '';
+  const allocated = production ? member.allocated_role === 'Crib Floater' || !!productionFleet || !!member.shift_duty : assigned.length > 0 || !!duty;
+  const floaterNames = member.allocated_role === 'Crib Floater'
+    ? (member.hot_seat_assignments ?? []).map((seat) => fleet.find((asset) => asset.id === seat.assetId)?.fleet_id).filter(Boolean)
+    : [];
+  const seatMark = member.allocated_role === 'Hot Seat' ? ' (Hot Seat)' : member.allocated_role === 'Trainee (Buddy Seat)' ? ' (Trainee)' : member.allocated_role === 'Crib Floater' ? '' : '';
   const label = production
-    ? productionFleet ? `${productionFleet}${seatMark}` : member.shift_duty?.trim() || 'Unassigned'
+    ? member.allocated_role === 'Crib Floater'
+      ? `Crib Floater${floaterNames.length ? ` · ${floaterNames.join(', ')}` : ''}`
+      : productionFleet ? `${productionFleet}${seatMark}` : member.shift_duty?.trim() || 'Unassigned'
     : assigned.length > 0
       ? assigned.length > 1 ? `${assigned[0].fleetId} +${assigned.length - 1}` : assigned[0].fleetId
       : duty
@@ -123,6 +131,9 @@ export default function AllocationPill({
         <div className={`absolute right-0 top-11 z-30 ${production ? 'w-96' : 'w-80'} max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl py-1`} role="listbox">
           {production ? (
             <>
+              {personBlock && (
+                <p className="mx-2 my-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-black text-rose-800">{personBlock}. Allocation is blocked.</p>
+              )}
               {tickets.length === 0 ? (
                 <div className="mx-2 my-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
                   <p className="text-sm font-black text-amber-950">No Training pass-outs verified</p>
@@ -139,7 +150,7 @@ export default function AllocationPill({
                     </button>
                   )}
                 </div>
-              ) : eligible.length === 0 ? (
+              ) : personBlock ? null : eligible.length === 0 ? (
                 <p className="px-3 py-2 text-sm font-bold text-slate-500">Ticketed for: {tickets.join(', ')} — all units currently down in Workshop</p>
               ) : (
                 <>
@@ -171,6 +182,33 @@ export default function AllocationPill({
                   </button>
                 );
               })}
+              {tickets.length > 0 && !personBlock && eligible.length > 0 && (
+                <div className="mx-2 my-2 rounded-lg border border-slate-200 p-2">
+                  <p className="text-[11px] font-black uppercase text-slate-500">Crib Floater (Multi-Unit)</p>
+                  <p className="text-[11px] text-slate-500">Up to 4 ticketed units. This does not take a primary seat.</p>
+                  {eligible.map((asset) => {
+                    const on = floaterIds.includes(asset.id);
+                    return (
+                      <label key={`float-${asset.id}`} className="mt-1 flex items-center gap-2 text-sm font-bold text-slate-800">
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => setFloaterIds((current) => on ? current.filter((id) => id !== asset.id) : current.length >= 4 ? current : [...current, asset.id])}
+                        />
+                        {asset.fleet_id}
+                      </label>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    disabled={floaterIds.length === 0}
+                    onClick={() => choose({ type: 'floater', assetIds: floaterIds.slice(0, 4) })}
+                    className="mt-2 min-h-9 rounded-lg bg-slate-900 px-3 text-xs font-black text-white disabled:opacity-50"
+                  >
+                    Assign crib floater
+                  </button>
+                </div>
+              )}
               <div className="mt-1 border-t border-slate-100">
               {PRODUCTION_DUTIES.map((item) => (
                 <button

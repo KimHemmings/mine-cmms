@@ -265,10 +265,20 @@ export function useWorkboardActions({
     return true;
   }
 
-  async function updateOperatorCompetencies(member: CrewMember, passed: string[], training: string[]) {
+  async function updateOperatorCompetencies(
+    member: CrewMember,
+    passed: string[],
+    training: string[],
+    extras?: { voc?: Record<string, string>; medical?: string; standard11?: string },
+  ) {
     const { error } = await supabase.from('crew_members').update({
       passed_out_equipment: passed,
       in_training_equipment: training,
+      ...(extras ? {
+        voc_expiries: extras.voc ?? member.voc_expiries ?? {},
+        medical_expiry: extras.medical || null,
+        standard11_expiry: extras.standard11 || null,
+      } : {}),
     }).eq('id', member.id);
     if (error) {
       showToast({ message: 'Those competencies did not save. Check the signal and try again.', tone: 'error' });
@@ -308,24 +318,35 @@ export function useWorkboardActions({
         }
         return;
       }
-      const role = choice.type === 'machine' ? (choice.role ?? 'Primary') : null;
+      const floater = choice.type === 'floater';
+      const role = floater ? 'Crib Floater' : choice.type === 'machine' ? (choice.role ?? 'Primary') : null;
+      const override = (choice.type === 'machine' || choice.type === 'floater') && choice.fatigueOverride;
       const { error: dutyError } = await supabase.from('crew_members').update({
         allocated_machine_id: choice.type === 'machine' ? choice.assetId : null,
         shift_duty: choice.type === 'duty' ? choice.duty : null,
         allocated_role: role,
-        hot_seat_assignments: role === 'Hot Seat' && choice.type === 'machine' ? [{ assetId: choice.assetId }] : [],
+        hot_seat_assignments: floater
+          ? choice.assetIds.slice(0, 4).map((assetId) => ({ assetId }))
+          : role === 'Hot Seat' && choice.type === 'machine' ? [{ assetId: choice.assetId }] : [],
+        ...(override ? { fatigue_override_by: fitter, fatigue_override_at: new Date().toISOString() } : {}),
       }).eq('id', member.id);
       if (dutyError) {
         alert(`Error saving the allocation: ${dutyError.message}`);
         return;
       }
       await fetchAllData();
-      const fleetId = choice.type === 'machine' ? assets.find((asset) => asset.id === choice.assetId)?.fleet_id : null;
+      const fleetId = choice.type === 'machine'
+        ? assets.find((asset) => asset.id === choice.assetId)?.fleet_id
+        : choice.type === 'floater'
+          ? choice.assetIds.map((id) => assets.find((asset) => asset.id === id)?.fleet_id).filter(Boolean).join(', ')
+          : null;
       const message = choice.type === 'clear'
         ? `${member.display_name} is unassigned`
         : choice.type === 'duty'
           ? `${member.display_name} is on ${choice.duty}`
-          : `${member.display_name} is ${seatLabel(choice.type === 'machine' ? choice.role : null)} on ${fleetId ?? 'that machine'}`;
+          : choice.type === 'floater'
+            ? `${member.display_name} is the crib floater on ${fleetId || 'the selected units'}`
+            : `${member.display_name} is ${seatLabel(choice.type === 'machine' ? choice.role : null)} on ${fleetId ?? 'that machine'}`;
       showToast({ message });
       return;
     }
@@ -380,10 +401,12 @@ export function useWorkboardActions({
     showToast({ message });
   }
 
-  async function addOvertimeCover(member: CrewMember, letter: string, shiftEndsAt: string) {
+  async function addOvertimeCover(member: CrewMember, letter: string, shiftEndsAt: string, reason: string, fatigueOverride = false) {
     const { error } = await supabase.from('crew_members').update({
       overtime_crew_group: letter,
       shift_expires_at: shiftEndsAt,
+      overtime_reason: reason,
+      ...(fatigueOverride ? { fatigue_override_by: fitter, fatigue_override_at: new Date().toISOString() } : {}),
     }).eq('id', member.id);
     if (error) {
       alert(`Error adding ${member.display_name} to overtime: ${error.message}`);
@@ -402,6 +425,7 @@ export function useWorkboardActions({
     panel: string;
     shiftEndsAt: string;
     passedOut?: string[];
+    overtimeReason?: string;
   }) {
     const { data, error } = await supabase.from('crew_members').insert({
       display_name: input.name.trim(),
@@ -415,6 +439,7 @@ export function useWorkboardActions({
       active: true,
       away: false,
       passed_out_equipment: input.passedOut ?? [],
+      overtime_reason: input.overtimeReason || null,
     }).select('*').single();
     if (error || !data) {
       alert(`Error adding contractor: ${error?.message ?? 'No record returned'}`);

@@ -3,6 +3,7 @@ import { Asset, DefectItem, HistoryNote } from '@/types';
 import { FleetDossierHeader } from './fleet-directory/FleetDossierHeader';
 import { FleetDossierGroup } from './fleet-directory/FleetDossierGroup';
 import FleetUnitForm from './fleet-directory/FleetUnitForm';
+import BulkPasteModal from '@/components/BulkPasteModal';
 import { RepeatScan } from './fleet-directory/RepeatFailureCallout';
 
 interface FleetDossierTabProps {
@@ -33,6 +34,7 @@ export default function FleetDossierTab({
   const [scanningRepeatId, setScanningRepeatId] = useState<string | null>(null);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
   const [addingMachine, setAddingMachine] = useState(false);
+  const [bulkImport, setBulkImport] = useState(false);
 
   async function scanRepeats(asset: Asset, force = false) {
     setOpenRepeatId(asset.id);
@@ -179,6 +181,7 @@ export default function FleetDossierTab({
           setEditingAsset(null);
           setAddingMachine(true);
         }}
+        onBulkImport={() => setBulkImport(true)}
       />
 
       {canManageFleet && (addingMachine || editingAsset) && (
@@ -251,6 +254,13 @@ export default function FleetDossierTab({
               }}
             />
           ))
+      )}
+      {bulkImport && (
+        <BulkPasteModal
+          kind="fleet"
+          onClose={() => setBulkImport(false)}
+          onImported={() => onChanged?.()}
+        />
       )}
     </div>
   );

@@ -5,6 +5,8 @@ import { Pencil, History, MapPin, AlertTriangle, ChevronUp } from 'lucide-react'
 import { Asset } from '@/types';
 import { formatDateTime, getElapsedDown } from '@/utils/helpers';
 import { EventClassBadge } from './workboardTheme';
+import StatutoryDueBadge from '@/components/StatutoryDueBadge';
+import { serviceDue } from '@/utils/statutoryCompliance';
 
 interface MachineCardHeaderProps {
   asset: Asset;
@@ -45,6 +47,7 @@ export default function MachineCardHeader({
             {priorityLabel}
           </span>
           {eventConfig && <EventClassBadge config={eventConfig} />}
+          {serviceDue(asset) && <StatutoryDueBadge />}
           {yours && (
             <span className="text-[11px] font-black uppercase px-2 py-0.5 rounded bg-slate-900 text-white">Your job</span>
           )}

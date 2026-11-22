@@ -86,7 +86,7 @@ export default function CrewMemberForm({ editing, department, defaultPanel, equi
       <form
         onSubmit={handleSubmit}
         onClick={(event) => event.stopPropagation()}
-        className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl my-8 space-y-4"
+        className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl my-8 space-y-4"
         role="dialog"
         aria-modal="true"
         aria-labelledby="crew-member-title"

@@ -110,6 +110,9 @@ export interface Asset {
   shift_task?: string | null;
   fitter_assigned?: string | null;
   shift_stage?: string;
+  current_smu?: number | null;
+  next_service_smu?: number | null;
+  statutory_inspection_due?: string | null;
 }
 
 // AFTER:

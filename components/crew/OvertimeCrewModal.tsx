@@ -4,17 +4,19 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { CREW_PANELS, CrewMember } from '@/types';
 import { crewLetter } from '@/utils/shiftRoster';
+import { OT_REASONS, OvertimeReason } from '@/utils/statutoryCompliance';
 
 interface OvertimeCrewModalProps {
   crew: CrewMember[];
   targetPanel: string;
-  onAdd: (member: CrewMember) => Promise<void>;
+  onAdd: (member: CrewMember, reason: OvertimeReason) => Promise<void>;
   onClose: () => void;
   embedded?: boolean;
 }
 
 export default function OvertimeCrewModal({ crew, targetPanel, onAdd, onClose, embedded = false }: OvertimeCrewModalProps) {
   const [query, setQuery] = useState('');
+  const [reason, setReason] = useState<OvertimeReason | ''>('');
   const [savingId, setSavingId] = useState<string | null>(null);
   const letter = crewLetter(targetPanel);
 
@@ -36,15 +38,16 @@ export default function OvertimeCrewModal({ crew, targetPanel, onAdd, onClose, e
   }, [crew, query, targetPanel]);
 
   const add = async (member: CrewMember) => {
+    if (!reason) return;
     setSavingId(member.id);
-    await onAdd(member);
+    await onAdd(member, reason);
     setSavingId(null);
   };
 
   const card = (
       <div
         onClick={(event) => event.stopPropagation()}
-        className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4"
+        className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-4"
         role="dialog"
         aria-modal="true"
         aria-labelledby="overtime-title"
@@ -60,6 +63,13 @@ export default function OvertimeCrewModal({ crew, targetPanel, onAdd, onClose, e
             </button>
           )}
         </div>
+        <label className="block space-y-1">
+          <span className="text-xs font-bold text-slate-600">Reason *</span>
+          <select value={reason} onChange={(event) => setReason(event.target.value as OvertimeReason)} required className="w-full min-h-11 rounded-lg border-2 border-slate-300 bg-white px-3 text-base">
+            <option value="">Choose a reason</option>
+            {OT_REASONS.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -78,7 +88,7 @@ export default function OvertimeCrewModal({ crew, targetPanel, onAdd, onClose, e
               </div>
               <button
                 type="button"
-                disabled={savingId === member.id}
+                disabled={!reason || savingId === member.id}
                 onClick={() => void add(member)}
                 className="ml-auto shrink-0 min-h-10 px-3 rounded-lg bg-indigo-600 text-white text-xs font-black hover:bg-indigo-500 disabled:opacity-50"
               >

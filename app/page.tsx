@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { useWorkboardData } from '@/hooks/useWorkboardData';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { Asset, MachineWorkOrder, UserRole, personLight } from '@/types';
+import { Asset, MachineWorkOrder, UserRole } from '@/types';
 import { PRODUCTION_PLANT } from '@/types/production';
 import TicketRegister from '@/components/training/TicketRegister';
 import PassoutRegister from '@/components/training/PassoutRegister';
@@ -18,7 +18,10 @@ import WorkboardTab from '@/components/WorkboardTab';
 import FleetDossierTab from '@/components/FleetDossierTab';
 import HandoverReportTab from '@/components/HandoverReportTab';
 import WorkboardModals from '@/components/WorkboardModals';
-import { getPermissions, operationalLens, type Department } from '@/utils/permissions';
+import { getPermissions, operationalLens, roleForAccess, type Department } from '@/utils/permissions';
+import { demoModeRequested, demoPersona, type DemoPersonaId } from '@/utils/demoPersonas';
+import { SiteBrandProvider } from '@/components/SiteBrand';
+import { crewTabAttention } from '@/utils/shiftRoster';
 import { TopHeader } from '@/components/TopHeader';
 import { FeedbackProvider, useFeedback } from '@/components/ui/FeedbackProvider';
 import CrewTab from '@/components/crew/CrewTab';
@@ -31,7 +34,9 @@ import { getOpenJobsByCrew } from '@/utils/crew';
 export default function Home() {
   return (
     <FeedbackProvider>
-      <Workboard />
+      <SiteBrandProvider>
+        <Workboard />
+      </SiteBrandProvider>
     </FeedbackProvider>
   );
 }
@@ -40,13 +45,25 @@ function Workboard() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const { profile, displayName: activeFitter, loading: profileLoading, reload } = useCurrentUser();
-  const userRole: UserRole = profile?.role ?? 'fitter';
-  const permissions = getPermissions(profile);
+  const [demoOn, setDemoOn] = useState(false);
+  const [demoPersonaId, setDemoPersonaId] = useState<DemoPersonaId | null>(null);
+  useEffect(() => {
+    setDemoOn(demoModeRequested());
+    const saved = demoPersona(window.sessionStorage.getItem('mine-cmms-demo-persona'));
+    if (saved) setDemoPersonaId(saved.id);
+  }, []);
+  const persona = demoOn ? demoPersona(demoPersonaId) : null;
+  const sessionUser = profile && persona
+    ? { ...profile, department: persona.department, access_level: persona.accessLevel, role: roleForAccess(persona.department, persona.accessLevel) }
+    : profile;
+  const userRole: UserRole = sessionUser?.role ?? 'fitter';
+  const permissions = getPermissions(sessionUser);
   const showLens = permissions.accessLevel >= 4;
   const [viewedDepartment, setViewedDepartment] = useState<Department>(permissions.accessLevel >= 5 ? 'production' : permissions.department);
   const [lensProfileId, setLensProfileId] = useState<string | null>(null);
-  if (profile && showLens && lensProfileId !== profile.id) {
-    setLensProfileId(profile.id);
+  const routeKey = profile ? `${profile.id}:${persona?.id ?? 'self'}` : null;
+  if (profile && showLens && lensProfileId !== routeKey) {
+    setLensProfileId(routeKey);
     setViewedDepartment(permissions.accessLevel >= 5 ? 'production' : permissions.department);
   }
   const viewDepartment = showLens ? viewedDepartment : permissions.department;
@@ -55,10 +72,26 @@ function Workboard() {
   const [trainingSection, setTrainingSection] = useState<'tickets' | 'passouts' | 'supervision'>('tickets');
   const [routedProfile, setRoutedProfile] = useState<string | null>(null);
   const homeTab = permissions.canViewManagementDashboard ? 'management' : permissions.department === 'training' ? 'training' : 'board';
-  if (profile && routedProfile !== profile.id) {
-    setRoutedProfile(profile.id);
+  if (routeKey && routedProfile !== routeKey) {
+    setRoutedProfile(routeKey);
     setCurrentTab(homeTab);
   }
+  const toggleDemo = () => {
+    setDemoOn((on) => {
+      const next = !on;
+      window.sessionStorage.setItem('mine-cmms-demo', next ? '1' : '0');
+      if (!next) {
+        setDemoPersonaId(null);
+        window.sessionStorage.removeItem('mine-cmms-demo-persona');
+      }
+      return next;
+    });
+  };
+  const pickDemo = (id: DemoPersonaId | null) => {
+    setDemoPersonaId(id);
+    if (id) window.sessionStorage.setItem('mine-cmms-demo-persona', id);
+    else window.sessionStorage.removeItem('mine-cmms-demo-persona');
+  };
 
   useEffect(() => {
     if (!profile) return;
@@ -144,15 +177,10 @@ function Workboard() {
     };
   }, [crew, onShiftCrewIds, workOrders, allAssets, authorisations, holdings, supervision, permissions.accessLevel]);
 
-  const crewAttention = useMemo(() => {
-    let count = 0;
-    for (const person of crew) {
-      if (!onShiftCrewIds.has(person.id)) continue;
-      const dates = holdings.filter((row) => row.crew_member_id === person.id).map((row) => row.expires_on);
-      if (personLight(dates)) count += 1;
-    }
-    return count;
-  }, [crew, onShiftCrewIds, holdings]);
+  const crewAttention = useMemo(
+    () => crewTabAttention(crew, permissions.department, permissions.accessLevel, activeShift?.crew),
+    [crew, permissions.department, permissions.accessLevel, activeShift?.crew],
+  );
 
   const fleetChoices = useMemo(
     () => allAssets
@@ -229,6 +257,10 @@ function Workboard() {
         onLinkCrew={permissions.department === 'workshop' && permissions.accessLevel === 2 ? linkMyCrew : undefined}
         onSetShiftCrew={setShiftPanel}
         profileId={profile?.id ?? null}
+        demoOn={demoOn}
+        demoPersonaId={demoPersonaId}
+        onToggleDemo={toggleDemo}
+        onPickDemo={pickDemo}
         lensDepartment={showLens ? viewedDepartment : null}
       />
 
@@ -449,6 +481,7 @@ function Workboard() {
             updateMachineCircuit={viewPermissions.canUpdateMachineLocation ? updateMachineCircuit : undefined}
             workOrders={workOrders}
             updateOperatorCompetencies={updateOperatorCompetencies}
+            onRefresh={fetchAllData}
           />
           </div>
         )}

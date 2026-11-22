@@ -20,6 +20,8 @@ import { FileText, Presentation } from 'lucide-react';
 import { generateProductionShiftPptx } from '@/utils/productionShiftPptx';
 import TidyNotesButton from '@/components/ui/TidyNotesButton';
 import ManagementDirectives from '@/components/ManagementDirectives';
+import StatutoryDueBadge from '@/components/StatutoryDueBadge';
+import { serviceDue } from '@/utils/statutoryCompliance';
 import HandoverAddendum from '@/components/production/HandoverAddendum';
 import { handoverDraftKey, readHandoverDraft, updateHandoverDraft } from '@/utils/handoverDraft';
 
@@ -391,6 +393,7 @@ export default function ProductionShiftHandover({
                     <tr key={asset.id}>
                       <td className="px-4 py-3 font-black text-slate-900">
                         {asset.fleet_id}
+                        {serviceDue(asset) ? <span className="ml-2"><StatutoryDueBadge /></span> : null}
                         <span className="block text-xs font-bold text-slate-500">{event}</span>
                       </td>
                       <td className="px-4 py-3 text-slate-800">

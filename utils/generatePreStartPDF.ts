@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { DEFAULT_SITE_NAME } from '@/utils/siteBrand';
 
 export interface PreStartPerson {
   display_name: string;
@@ -33,43 +34,45 @@ function shiftWord(shiftName: string) {
   return shiftName.toLowerCase().includes('night') ? 'Night' : 'Day';
 }
 
-export function generatePreStartSheet(crewList: PreStartPerson[], shiftDetails: PreStartShiftDetails) {
+export function generatePreStartSheet(crewList: PreStartPerson[], shiftDetails: PreStartShiftDetails, siteName = DEFAULT_SITE_NAME) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const crew = shiftDetails.crew?.trim() || 'Crew not set';
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(20);
+  doc.setFontSize(11);
   doc.setTextColor(15, 23, 42);
-  doc.text('Pre-Start Sign-On Sheet', pageWidth / 2, 16, { align: 'center' });
+  doc.text(siteName, pageWidth / 2, 10, { align: 'center' });
+  doc.setFontSize(20);
+  doc.text('Pre-Start Sign-On Sheet', pageWidth / 2, 18, { align: 'center' });
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(11);
   doc.text(
     `Date: ${displayDate(shiftDetails.date)}    Shift: ${shiftWord(shiftDetails.shiftName)}    Crew: ${crew}`,
     pageWidth / 2,
-    24,
+    26,
     { align: 'center' },
   );
-  doc.text('Supervisor: ______________', pageWidth / 2, 31, { align: 'center' });
+  doc.text('Supervisor: ______________', pageWidth / 2, 33, { align: 'center' });
 
-  let startY = 36;
+  let startY = 38;
   const focus = shiftDetails.safetyAwareness?.trim();
   if (focus) {
     const lines = doc.splitTextToSize(focus, pageWidth - 32).slice(0, 8);
     const boxHeight = 14 + lines.length * 5;
     doc.setDrawColor(180, 83, 9);
     doc.setFillColor(255, 251, 235);
-    doc.rect(12, 34, pageWidth - 24, boxHeight, 'FD');
+    doc.rect(12, 36, pageWidth - 24, boxHeight, 'FD');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(146, 64, 14);
-    doc.text('SAFETY AWARENESS / PRE-START FOCUS', 16, 40);
+    doc.text('SAFETY AWARENESS / PRE-START FOCUS', 16, 42);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(15, 23, 42);
-    doc.text(lines, 16, 46);
-    startY = 34 + boxHeight + 4;
+    doc.text(lines, 16, 48);
+    startY = 36 + boxHeight + 4;
   }
 
   const people = crewList.filter((person) => !person.away).sort((a, b) => a.display_name.localeCompare(b.display_name));

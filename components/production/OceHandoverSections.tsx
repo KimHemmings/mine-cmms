@@ -56,6 +56,10 @@ export default function OceHandoverSections({
   const [category, setCategory] = useState<IncidentCategory>('Near Miss');
   const [location, setLocation] = useState('');
   const [openInvestigation, setOpenInvestigation] = useState(false);
+  const [notifiable, setNotifiable] = useState(false);
+  const [investigator, setInvestigator] = useState('');
+  const [icamDue, setIcamDue] = useState('');
+  const [hpiLock, setHpiLock] = useState('');
   const [uploading, setUploading] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
@@ -78,17 +82,29 @@ export default function OceHandoverSections({
       summary,
       openInvestigation,
       carried: false,
+      notifiable,
+      icamInvestigator: investigator.trim(),
+      icamDue,
     };
     const saved = await onSave({ incidents: [...record.incidents, entry] });
     if (!saved) return;
     setLocation('');
     setOpenInvestigation(false);
+    setNotifiable(false);
+    setInvestigator('');
+    setIcamDue('');
     setCategory('Near Miss');
     incidentNote.setValue('');
     setShowForm(false);
   };
 
   const setIncident = (id: string, patch: Partial<HandoverIncident>) => {
+    const current = record.incidents.find((item) => item.id === id);
+    if (current?.notifiable && patch.openInvestigation === false && accessLevel < 4) {
+      setHpiLock('Only a superintendent or the SSE can close a Notifiable HPI.');
+      return;
+    }
+    setHpiLock('');
     const incidents = record.incidents.map((item) => {
       if (item.id !== id) return item;
       const next = { ...item, ...patch };
@@ -195,10 +211,17 @@ export default function OceHandoverSections({
                 <input type="checkbox" checked={openInvestigation} onChange={(event) => setOpenInvestigation(event.target.checked)} className="h-4 w-4" />
                 Open Investigation / Scene Preserved
               </label>
+              <label className="inline-flex items-center gap-2 text-sm font-bold text-rose-800">
+                <input type="checkbox" checked={notifiable} onChange={(event) => setNotifiable(event.target.checked)} className="h-4 w-4" />
+                Notifiable HPI (RSHQ)
+              </label>
+              <input value={investigator} onChange={(event) => setInvestigator(event.target.value)} placeholder="ICAM Investigator" className="min-h-11 rounded-lg border-2 border-slate-300 px-3 text-sm" />
+              <input type="date" value={icamDue} onChange={(event) => setIcamDue(event.target.value)} aria-label="ICAM due date" className="min-h-11 rounded-lg border-2 border-slate-300 px-3 text-sm" />
               <button type="button" onClick={() => void addIncident()} className="min-h-11 px-4 rounded-lg bg-slate-900 text-white text-sm font-black">Add to handover</button>
             </div>
           </div>
         )}
+        {hpiLock && <p className="text-sm font-black text-rose-700">{hpiLock}</p>}
         {record.incidents.length === 0 ? <p className="text-sm text-slate-500">No incidents logged for this shift.</p> : (
           <ul className="space-y-2">
             {record.incidents.map((item) => {
@@ -212,7 +235,15 @@ export default function OceHandoverSections({
                   </div>
                   <p className="mt-2 text-sm font-black text-slate-900">{item.location || 'Location not set'}</p>
                   <p className="text-sm text-slate-800 whitespace-pre-wrap">{item.summary}</p>
-                  <button type="button" disabled={locked} onClick={() => setIncident(item.id, { openInvestigation: !item.openInvestigation })} className="mt-2 min-h-10 px-3 rounded-lg border border-slate-300 bg-white text-xs font-black text-slate-800 disabled:opacity-50">
+                  {item.notifiable && <span className="rounded-full bg-rose-700 px-2 py-0.5 text-[10px] font-black uppercase text-white">Notifiable HPI (RSHQ)</span>}
+                  {item.icamInvestigator && <p className="mt-1 text-xs font-bold text-slate-600">ICAM: {item.icamInvestigator}{item.icamDue ? ` · due ${item.icamDue}` : ''}</p>}
+                  {!locked && item.notifiable && (
+                    <div className="mt-2 grid gap-2 md:grid-cols-2">
+                      <input defaultValue={item.icamInvestigator} onBlur={(event) => setIncident(item.id, { icamInvestigator: event.target.value })} placeholder="ICAM Investigator" className="min-h-10 rounded-lg border border-slate-300 px-2 text-sm" />
+                      <input type="date" defaultValue={item.icamDue} onBlur={(event) => setIncident(item.id, { icamDue: event.target.value })} aria-label="ICAM due date" className="min-h-10 rounded-lg border border-slate-300 px-2 text-sm" />
+                    </div>
+                  )}
+                  <button type="button" disabled={locked || (item.notifiable && item.openInvestigation && accessLevel < 4)} onClick={() => setIncident(item.id, { openInvestigation: !item.openInvestigation })} className="mt-2 min-h-10 px-3 rounded-lg border border-slate-300 bg-white text-xs font-black text-slate-800 disabled:opacity-50">
                     {item.openInvestigation ? 'Mark investigation closed' : 'Reopen investigation'}
                   </button>
                 </li>
@@ -303,6 +334,14 @@ export default function OceHandoverSections({
             <select value={record.services_status} disabled={locked} onChange={(event) => void onSave({ services_status: event.target.value })} className="w-full min-h-11 rounded-lg border-2 border-slate-300 bg-white px-2 text-sm font-bold">
               {SERVICE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
             </select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold text-slate-600">CHPP / Plant Delay (hrs)</span>
+            <input type="number" min={0} step="0.1" value={record.plant_delay_hours || ''} disabled={locked} onChange={(event) => onEdit({ plant_delay_hours: Number(event.target.value) || 0 })} onBlur={() => void onSave()} className="w-full min-h-11 rounded-lg border-2 border-slate-300 px-3 text-sm" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold text-slate-600">Blasted Inventory (shifts remaining)</span>
+            <input type="number" min={0} step="0.1" value={record.blasted_inventory_shifts ?? ''} disabled={locked} onChange={(event) => onEdit({ blasted_inventory_shifts: event.target.value === '' ? null : Number(event.target.value) })} onBlur={() => void onSave()} className="w-full min-h-11 rounded-lg border-2 border-slate-300 px-3 text-sm" />
           </label>
           <label className="space-y-1">
             <span className="text-xs font-bold text-slate-600">Services notes</span>

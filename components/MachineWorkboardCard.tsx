@@ -15,6 +15,8 @@ import MachineCardHeader from './workboard/MachineCardHeader';
 import MainEventSection from './workboard/MainEventSection';
 import AdditionalWorkOrdersSection from './workboard/AdditionalWorkOrdersSection';
 import MachineReleaseFooter from './workboard/MachineReleaseFooter';
+import StatutoryDueBadge from '@/components/StatutoryDueBadge';
+import { serviceDue } from '@/utils/statutoryCompliance';
 
 const PRIORITY_FILLS = {
   P1: {
@@ -164,6 +166,7 @@ export default function MachineWorkboardCard({
       </span>
       <span className="shrink-0 text-sm text-slate-800">
         <strong className="text-base font-black text-slate-900">{asset.fleet_id}</strong>
+        {serviceDue(asset) ? <span className="ml-2"><StatutoryDueBadge /></span> : null}
         <span className="text-slate-400"> • </span>
         <span className="font-bold text-slate-600">{asset.make_model}</span>
       </span>

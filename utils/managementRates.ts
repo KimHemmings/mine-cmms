@@ -1,7 +1,7 @@
 import { Asset, CrewMember } from '@/types';
 import { normalizeDepartment } from '@/utils/permissions';
 import { getShiftClock } from '@/utils/shiftClock';
-import { CrewLetter, panelForLetter, visibleOnCrewTab } from '@/utils/shiftRoster';
+import { CrewLetter, coveringLetter, panelForLetter, visibleOnCrewTab } from '@/utils/shiftRoster';
 
 export interface SiteTargets {
   show_financials: boolean;
@@ -18,6 +18,7 @@ export interface SiteTargets {
   overburden_rate_per_bcm: number;
   operator_contractor_shift_cost: number;
   trades_contractor_shift_cost: number;
+  budgeted_ot_contractor_shift: number;
 }
 
 export const BOWEN_TARGETS: SiteTargets = {
@@ -35,6 +36,7 @@ export const BOWEN_TARGETS: SiteTargets = {
   overburden_rate_per_bcm: 5.5,
   operator_contractor_shift_cost: 1380,
   trades_contractor_shift_cost: 1680,
+  budgeted_ot_contractor_shift: 0,
 };
 
 const NUMERIC_KEYS = [
@@ -51,6 +53,7 @@ const NUMERIC_KEYS = [
   'overburden_rate_per_bcm',
   'operator_contractor_shift_cost',
   'trades_contractor_shift_cost',
+  'budgeted_ot_contractor_shift',
 ] as const satisfies readonly (keyof SiteTargets)[];
 
 export const TARGET_FIELDS: { key: (typeof NUMERIC_KEYS)[number]; label: string; suffix: string; max?: number }[] = [
@@ -66,6 +69,7 @@ export const TARGET_FIELDS: { key: (typeof NUMERIC_KEYS)[number]; label: string;
   { key: 'overtime_shift_cost', label: 'Overtime cost', suffix: '$ / person / shift' },
   { key: 'operator_contractor_shift_cost', label: 'Production contractor', suffix: '$ / person / shift' },
   { key: 'trades_contractor_shift_cost', label: 'Workshop contractor', suffix: '$ / person / shift' },
+  { key: 'budgeted_ot_contractor_shift', label: 'Budgeted OT & Contractor Allowance', suffix: '$ / shift' },
 ];
 
 export function targetsFromRow(row: Record<string, unknown> | null): SiteTargets {
@@ -82,6 +86,7 @@ export function targetsFromRow(row: Record<string, unknown> | null): SiteTargets
 }
 
 export function formatAudExact(value: number) {
+  if (!Number.isFinite(value)) return '—';
   const sign = value < 0 ? '-' : '';
   return `${sign}$${Math.round(Math.abs(value)).toLocaleString('en-AU')}`;
 }
@@ -98,7 +103,12 @@ export function exposureHorizon(now = new Date()) {
   return { hours: 12, label: '12h shift equivalent' };
 }
 
+function priced(value: number) {
+  return Number.isFinite(value) ? value : 0;
+}
+
 export function formatAud(value: number) {
+  if (!Number.isFinite(value)) return '—';
   const sign = value < 0 ? '-' : '';
   const abs = Math.abs(value);
   if (abs >= 1_000_000) {
@@ -158,11 +168,11 @@ export function primaryFleetCount(assets: Asset[], crew: CrewMember[], letter: C
 }
 
 export function mechanicalLoss(counts: ReturnType<typeof primaryFleetCount>, targets: SiteTargets, hours: number) {
-  return (counts.downDiggers * targets.primary_digger_hr_cost + counts.downTrucks * targets.primary_truck_hr_cost) * hours;
+  return priced((counts.downDiggers * targets.primary_digger_hr_cost + counts.downTrucks * targets.primary_truck_hr_cost) * hours);
 }
 
 export function manningLoss(counts: ReturnType<typeof primaryFleetCount>, targets: SiteTargets, hours: number) {
-  return (counts.unmannedDiggers * targets.primary_digger_hr_cost + counts.unmannedTrucks * targets.primary_truck_hr_cost) * hours;
+  return priced((counts.unmannedDiggers * targets.primary_digger_hr_cost + counts.unmannedTrucks * targets.primary_truck_hr_cost) * hours);
 }
 
 export function lostMachineHours(counts: ReturnType<typeof primaryFleetCount>, hours: number) {
@@ -176,8 +186,9 @@ export function unmannedHours(counts: ReturnType<typeof primaryFleetCount>, hour
 export function useOfAvailability(counts: ReturnType<typeof primaryFleetCount>) {
   const healthy = counts.healthyDiggers + counts.healthyTrucks;
   const unmanned = counts.unmannedDiggers + counts.unmannedTrucks;
-  if (healthy === 0) return 0;
-  return Math.round(((healthy - unmanned) / healthy) * 100);
+  if (healthy <= 0) return 0;
+  const pct = Math.round(((healthy - unmanned) / healthy) * 100);
+  return Number.isFinite(pct) ? pct : 0;
 }
 
 export function contractorRate(department: 'workshop' | 'production', targets: SiteTargets) {
@@ -210,10 +221,28 @@ export function forwardExposureFormula(
   targets: SiteTargets,
   hours: number,
   label: string,
+  manningHours = hours,
 ) {
   const down = mechanicalLoss(counts, targets, hours);
-  const open = manningLoss(counts, targets, hours);
-  return `Primary dig and haul only, ${label}. Down: ${counts.downDiggers} × ${formatAudExact(targets.primary_digger_hr_cost)} × ${hours} + ${counts.downTrucks} × ${formatAudExact(targets.primary_truck_hr_cost)} × ${hours} = ${formatAudExact(down)}. Unmanned ready: ${counts.unmannedDiggers} × ${formatAudExact(targets.primary_digger_hr_cost)} × ${hours} + ${counts.unmannedTrucks} × ${formatAudExact(targets.primary_truck_hr_cost)} × ${hours} = ${formatAudExact(open)}. Forward shift exposure ${formatAudExact(down + open)}. Not added to ROM or BCM variance.`;
+  const open = manningLoss(counts, targets, manningHours);
+  const plant = hours - manningHours;
+  const plantNote = plant > 0 ? ` Unmanned hours exclude ${plant}h CHPP / plant delay.` : '';
+  return `Primary dig and haul only, ${label}. Down: ${counts.downDiggers} × ${formatAudExact(targets.primary_digger_hr_cost)} × ${hours} + ${counts.downTrucks} × ${formatAudExact(targets.primary_truck_hr_cost)} × ${hours} = ${formatAudExact(down)}. Unmanned ready: ${counts.unmannedDiggers} × ${formatAudExact(targets.primary_digger_hr_cost)} × ${manningHours} + ${counts.unmannedTrucks} × ${formatAudExact(targets.primary_truck_hr_cost)} × ${manningHours} = ${formatAudExact(open)}.${plantNote} Forward shift exposure ${formatAudExact(down + open)}. Not added to ROM or BCM variance.`;
+}
+
+export function overtimeReasonSpend(crew: CrewMember[], letter: CrewLetter, targets: SiteTargets) {
+  const totals = new Map<string, number>();
+  for (const member of crew) {
+    if (!member.active || member.away || !visibleOnCrewTab(member, panelForLetter(letter))) continue;
+    const contractor = member.is_contractor;
+    const overtime = coveringLetter(member) === letter;
+    if (!contractor && !overtime) continue;
+    const side = normalizeDepartment(member.department) === 'workshop' ? 'workshop' : 'production';
+    const cost = contractor ? contractorRate(side, targets) : targets.overtime_shift_cost;
+    const reason = member.overtime_reason?.trim() || 'Not tagged';
+    totals.set(reason, (totals.get(reason) ?? 0) + cost);
+  }
+  return [...totals.entries()];
 }
 
 export function unmannedByModel(assets: Asset[], crew: CrewMember[], letter: CrewLetter, downAssetIds: string[]) {
@@ -260,21 +289,21 @@ export function coalMargin(rows: { rom: string; bcm: string }[], targets: SiteTa
   const saleableTarget = romTarget * yieldRatio;
   const saleableVariance = tonneVariance * yieldRatio;
   const bcmVariance = bcm - bcmTarget;
-  const marginVariance = tonneVariance * yieldRatio * targets.coal_margin_per_tonne;
-  const bcmDollars = bcmVariance * targets.overburden_rate_per_bcm;
+  const marginVariance = priced(tonneVariance * yieldRatio * targets.coal_margin_per_tonne);
+  const bcmDollars = priced(bcmVariance * targets.overburden_rate_per_bcm);
   return {
     shifts,
-    rom,
-    bcm,
-    romTarget,
-    bcmTarget,
-    tonneVariance,
-    bcmVariance,
-    saleable,
-    saleableTarget,
-    saleableVariance,
+    rom: priced(rom),
+    bcm: priced(bcm),
+    romTarget: priced(romTarget),
+    bcmTarget: priced(bcmTarget),
+    tonneVariance: priced(tonneVariance),
+    bcmVariance: priced(bcmVariance),
+    saleable: priced(saleable),
+    saleableTarget: priced(saleableTarget),
+    saleableVariance: priced(saleableVariance),
     marginVariance,
     bcmDollars,
-    outputVariance: marginVariance + bcmDollars,
+    outputVariance: priced(marginVariance + bcmDollars),
   };
 }

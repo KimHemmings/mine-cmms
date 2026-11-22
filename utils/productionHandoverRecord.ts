@@ -39,6 +39,9 @@ export interface HandoverIncident {
   summary: string;
   openInvestigation: boolean;
   carried: boolean;
+  notifiable: boolean;
+  icamInvestigator: string;
+  icamDue: string;
 }
 
 export const TARP_NAMES = ['Wet Weather', 'Lightning', 'Spon Com', 'Geotech / Highwall', 'Dust'] as const;
@@ -73,6 +76,8 @@ export interface HandoverRecord extends PitCheckValues {
   shift_production: ShiftProductionActuals;
   services_status: string;
   services_notes: string;
+  plant_delay_hours: number;
+  blasted_inventory_shifts: number | null;
   outgoing_signed_by: string;
   outgoing_signed_at: string;
   oncoming_signed_by: string;
@@ -99,6 +104,8 @@ export function emptyHandoverRecord(): HandoverRecord {
     shift_production: { romCoal: '', primeOverburden: '', delays: '' },
     services_status: 'Normal',
     services_notes: '',
+    plant_delay_hours: 0,
+    blasted_inventory_shifts: null,
     outgoing_signed_by: '',
     outgoing_signed_at: '',
     oncoming_signed_by: '',
@@ -157,6 +164,9 @@ export function normalizeIncidents(value: unknown, fromPrevious = false): Handov
       summary: text(row.summary),
       openInvestigation,
       carried: fromPrevious ? true : Boolean(row.carried) && openInvestigation,
+      notifiable: Boolean(row.notifiable),
+      icamInvestigator: text(row.icamInvestigator),
+      icamDue: text(row.icamDue).slice(0, 10),
     }];
   });
 }
@@ -239,6 +249,10 @@ export function recordFromRow(row: HandoverCheckRow, fromPrevious = false): Hand
     shift_production: fromPrevious ? { romCoal: '', primeOverburden: '', delays: '' } : normalizeProduction(row.shift_production),
     services_status: fromPrevious ? 'Normal' : text(row.services_status) || 'Normal',
     services_notes: fromPrevious ? '' : text(row.services_notes),
+    plant_delay_hours: fromPrevious ? 0 : Number(row.plant_delay_hours) || 0,
+    blasted_inventory_shifts: row.blasted_inventory_shifts == null || !Number.isFinite(Number(row.blasted_inventory_shifts))
+      ? null
+      : Number(row.blasted_inventory_shifts),
     outgoing_signed_by: '',
     outgoing_signed_at: '',
     oncoming_signed_by: '',
@@ -288,7 +302,7 @@ export const HANDOVER_CHECK_COLUMNS = [
   'dewatering_status', 'dewatering_notes', 'ramps_lighting_status', 'ramps_lighting_notes',
   'oce_report_url', 'oce_report_filename', 'oce_report_uploaded_at', 'oce_inspection_status',
   'incidents', 'safety_awareness', 'active_tarps', 'shift_production',
-  'services_status', 'services_notes',
+  'services_status', 'services_notes', 'plant_delay_hours', 'blasted_inventory_shifts',
   'outgoing_signed_by', 'outgoing_signed_at', 'oncoming_signed_by', 'oncoming_signed_at',
 ].join(', ');
 
@@ -319,6 +333,8 @@ export function toHandoverWrite(
     shift_production: record.shift_production,
     services_status: record.services_status || 'Normal',
     services_notes: record.services_notes || null,
+    plant_delay_hours: Number(record.plant_delay_hours) || 0,
+    blasted_inventory_shifts: record.blasted_inventory_shifts,
     outgoing_signed_by: record.outgoing_signed_by || null,
     outgoing_signed_at: record.outgoing_signed_at || null,
     oncoming_signed_by: record.oncoming_signed_by || null,

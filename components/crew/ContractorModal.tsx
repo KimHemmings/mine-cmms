@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { Asset, MachineWorkOrder } from '@/types';
 import { AllocationChoice, PRODUCTION_DUTIES, SHIFT_DUTIES, isOperatorEquipment, machineMatchesTickets, operatorEquipmentModels, whiteboardMachines } from '@/utils/crewAllocation';
+import { OT_REASONS, OvertimeReason } from '@/utils/statutoryCompliance';
 
 const WORKSHOP_TRADES = ['Field Fitter', 'Fitter', 'Boilermaker', 'Auto Sparky', 'Auto Electrician', 'Other'];
 const PRODUCTION_TRADES = ['Operator', 'Multi-Skilled Operator', 'Leading Hand', 'OCE / Supervisor'];
@@ -13,7 +14,7 @@ interface ContractorModalProps {
   assets: Asset[];
   workOrders: MachineWorkOrder[];
   variant?: 'workshop' | 'production';
-  onSave: (input: { name: string; company: string; trade: string; allocation: AllocationChoice | null; passedOut: string[] }) => Promise<void>;
+  onSave: (input: { name: string; company: string; trade: string; allocation: AllocationChoice | null; passedOut: string[]; overtimeReason: OvertimeReason }) => Promise<void>;
   onClose: () => void;
   embedded?: boolean;
 }
@@ -34,6 +35,7 @@ export default function ContractorModal({
   const [trade, setTrade] = useState(trades[0]);
   const [allocation, setAllocation] = useState('');
   const [tickets, setTickets] = useState<string[]>([]);
+  const [reason, setReason] = useState<OvertimeReason | ''>('');
   const [saving, setSaving] = useState(false);
   const machines = whiteboardMachines(assets, workOrders);
   const models = operatorEquipmentModels(assets);
@@ -50,7 +52,7 @@ export default function ContractorModal({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!name.trim() || !company.trim()) return;
+    if (!name.trim() || !company.trim() || !reason) return;
     const duty = [...SHIFT_DUTIES, ...PRODUCTION_DUTIES].find((item) => item === allocation);
     const choice: AllocationChoice | null = allocation.startsWith('asset:')
       ? { type: 'machine', assetId: allocation.slice(6) }
@@ -58,7 +60,7 @@ export default function ContractorModal({
         ? { type: 'duty', duty }
         : null;
     setSaving(true);
-    await onSave({ name: name.trim(), company: company.trim(), trade, allocation: choice, passedOut: tickets });
+    await onSave({ name: name.trim(), company: company.trim(), trade, allocation: choice, passedOut: tickets, overtimeReason: reason });
     setSaving(false);
   };
 
@@ -66,7 +68,7 @@ export default function ContractorModal({
       <form
         onSubmit={(event) => void submit(event)}
         onClick={(event) => event.stopPropagation()}
-        className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl my-8 space-y-4"
+        className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl my-8 space-y-4"
         role="dialog"
         aria-modal="true"
         aria-labelledby="contractor-title"
@@ -125,6 +127,13 @@ export default function ContractorModal({
           </fieldset>
         )}
         <label className="block space-y-1">
+          <span className="text-xs font-bold text-slate-600">Reason *</span>
+          <select value={reason} onChange={(event) => setReason(event.target.value as OvertimeReason)} required className="w-full min-h-11 rounded-lg border-2 border-slate-300 bg-white px-3 text-base">
+            <option value="">Choose a reason</option>
+            {OT_REASONS.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>
+        <label className="block space-y-1">
           <span className="text-xs font-bold text-slate-600">Allocate now (optional)</span>
           <select value={allocation} onChange={(event) => setAllocation(event.target.value)} className="w-full min-h-11 rounded-lg border-2 border-slate-300 px-3 text-base bg-white focus:outline-none focus:border-amber-500">
             <option value="">Unassigned</option>
@@ -146,7 +155,7 @@ export default function ContractorModal({
         </label>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="min-h-11 px-4 rounded-lg border-2 border-slate-300 text-sm font-bold text-slate-700">Cancel</button>
-          <button type="submit" disabled={saving || !name.trim() || !company.trim()} className="min-h-11 px-4 rounded-lg bg-violet-700 text-white text-sm font-black hover:bg-violet-600 disabled:opacity-50">
+          <button type="submit" disabled={saving || !name.trim() || !company.trim() || !reason} className="min-h-11 px-4 rounded-lg bg-violet-700 text-white text-sm font-black hover:bg-violet-600 disabled:opacity-50">
             {saving ? 'Saving...' : 'Add contractor'}
           </button>
         </div>

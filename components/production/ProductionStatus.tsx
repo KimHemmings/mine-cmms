@@ -20,6 +20,8 @@ import {
   personLight,
 } from '@/types';
 import { isProductionDepartment } from '@/utils/permissions';
+import StatutoryDueBadge from '@/components/StatutoryDueBadge';
+import { serviceDue } from '@/utils/statutoryCompliance';
 import { formatDateTime } from '@/utils/helpers';
 import { generatePrestartPptx } from '@/utils/prestartPptx';
 import { formatStartDay, seatChangeLines, shiftIsPast, siteCover, supervisionFor, supervisionIsLive } from '@/utils/crewStanding';
@@ -283,7 +285,7 @@ export default function ProductionStatus({
                 const stage = STAGE_OPTIONS.find((option) => option.value === main?.stage)?.label;
                 return (
                   <tr key={asset.id} className="border-t border-slate-200">
-                    <td className="py-2 pr-3 font-bold">{asset.fleet_id}<span className="block text-xs font-medium text-slate-500">{asset.make_model}{asset.in_shift ? '' : ' · Not in the workshop'}</span></td>
+                    <td className="py-2 pr-3 font-bold">{asset.fleet_id}{serviceDue(asset) ? <span className="ml-2"><StatutoryDueBadge /></span> : null}<span className="block text-xs font-medium text-slate-500">{asset.make_model}{asset.in_shift ? '' : ' · Not in the workshop'}</span></td>
                     <td className="py-2 pr-3">{main?.task_description || 'No open job'}</td>
                     <td className="py-2 pr-3">{stage || 'No open job'}</td>
                     <td className="py-2">{formatDateTime(asset.expected_up)}</td>
@@ -451,6 +453,7 @@ function AllocationTable({
               <tr key={asset.id} className="border-t border-slate-200">
                 <td className="py-2 pr-3 font-bold whitespace-nowrap align-top">
                   {asset.fleet_id}
+                  {serviceDue(asset) ? <span className="ml-2"><StatutoryDueBadge /></span> : null}
                   <span className="block text-xs font-medium text-slate-500">{asset.make_model}</span>
                   {trainees.length > 0 && (
                     <span className="mt-1 flex flex-col gap-1">

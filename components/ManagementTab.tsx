@@ -19,6 +19,7 @@ import {
   mechanicalLoss,
   modelForwardExposure,
   outputVarianceFormula,
+  overtimeReasonSpend,
   primaryClass,
   primaryFleetCount,
   shiftLabour,
@@ -27,7 +28,9 @@ import {
   unmannedHours,
   useOfAvailability,
 } from '@/utils/managementRates';
-import { HandoverCheckRow, recordFromRow, shiftRank } from '@/utils/productionHandoverRecord';
+import { HandoverCheckRow, HandoverIncident, normalizeIncidents, recordFromRow, shiftRank } from '@/utils/productionHandoverRecord';
+import { expiryState, serviceDue } from '@/utils/statutoryCompliance';
+import { useSiteBrand } from '@/components/SiteBrand';
 import { Department, departmentLabel } from '@/utils/permissions';
 import { CrewLetter, crewLetter } from '@/utils/shiftRoster';
 import AccountabilitySplit, { ShiftBooks } from '@/components/AccountabilitySplit';
@@ -67,6 +70,9 @@ export default function ManagementTab({
   const [rateStamp, setRateStamp] = useState<{ by: string | null; at: string | null }>({ by: null, at: null });
   const [now, setNow] = useState(() => Date.now());
   const [weekActuals, setWeekActuals] = useState<{ rom: string; bcm: string }[]>([]);
+  const [plantDelay, setPlantDelay] = useState(0);
+  const [blastedShifts, setBlastedShifts] = useState<number | null>(null);
+  const [openHpis, setOpenHpis] = useState<HandoverIncident[]>([]);
   const [action, setAction] = useState<'directive' | 'rates' | null>(null);
   const [statutory, setStatutory] = useState<ReturnType<typeof statutoryRollup> | null>(null);
   const letter = choice === 'active' ? activeLetter : choice;
@@ -79,8 +85,8 @@ export default function ManagementTab({
   const unmannedModels = useMemo(() => unmannedByModel(assets, crew, letter, downAssetIds), [assets, crew, letter, downAssetIds]);
   const horizon = useMemo(() => exposureHorizon(new Date(now)), [now]);
   const books = useMemo(
-    () => buildBooks(snapshot, assets, crew, letter, downAssetIds, targets, weekActuals, horizon),
-    [snapshot, assets, crew, letter, downAssetIds, targets, weekActuals, horizon],
+    () => buildBooks(snapshot, assets, crew, letter, downAssetIds, targets, weekActuals, horizon, plantDelay),
+    [snapshot, assets, crew, letter, downAssetIds, targets, weekActuals, horizon, plantDelay],
   );
 
   useEffect(() => {
@@ -102,6 +108,9 @@ export default function ManagementTab({
         const rows = (data ?? []) as HandoverCheckRow[];
         const latest = [...rows].sort((a, b) => shiftRank(b.shift_date ?? '', b.shift_name ?? '').localeCompare(shiftRank(a.shift_date ?? '', a.shift_name ?? '')))[0];
         setStatutory(statutoryRollup(latest ? recordFromRow(latest) : null));
+        setPlantDelay(Number(latest?.plant_delay_hours) || 0);
+        setBlastedShifts(latest?.blasted_inventory_shifts == null ? null : Number(latest.blasted_inventory_shifts));
+        setOpenHpis(rows.flatMap((row) => normalizeIncidents((row as { incidents?: unknown }).incidents)).filter((item) => item.notifiable && item.openInvestigation));
         setWeekActuals(rows.filter((row) => String(row.shift_date ?? '') >= sinceDate).map((row) => {
           const production = row.shift_production && typeof row.shift_production === 'object' ? row.shift_production as { romCoal?: string; primeOverburden?: string } : {};
           return { rom: production.romCoal ?? '', bcm: production.primeOverburden ?? '' };
@@ -131,9 +140,10 @@ export default function ManagementTab({
     });
   };
 
+  const { name: siteName } = useSiteBrand();
   const print = async () => {
     const { generateManagementSummary } = await import('@/utils/managementSummaryPdf');
-    generateManagementSummary({ ...snapshot, manning: snapshot.manning, models: snapshot.models.filter((row) => row.risk !== 'COVERED') }, crewLabel);
+    generateManagementSummary({ ...snapshot, manning: snapshot.manning, models: snapshot.models.filter((row) => row.risk !== 'COVERED') }, crewLabel, siteName);
   };
 
   return (
@@ -178,7 +188,9 @@ export default function ManagementTab({
         ))}
       </div>
 
-      <KpiStrip snapshot={snapshot} targets={targets} books={books} showMoney={showMoney} exposureFormula={forwardExposureFormula(primaryFleetCount(assets, crew, letter, downAssetIds), targets, horizon.hours, horizon.label)} />
+      <KpiStrip snapshot={snapshot} targets={targets} books={books} showMoney={showMoney} exposureFormula={forwardExposureFormula(primaryFleetCount(assets, crew, letter, downAssetIds), targets, horizon.hours, horizon.label, Math.max(0, horizon.hours - plantDelay))} />
+      <BudgetVariance books={books} targets={targets} reasons={overtimeReasonSpend(crew, letter, targets)} showMoney={showMoney} lowBlasted={blastedShifts != null && blastedShifts < 2} />
+      <ComplianceWatchlist crew={crew} assets={assets} hpis={openHpis} />
       <SevenDayRollup books={books} targets={targets} showMoney={showMoney} />
       {scope === 'all' && <AccountabilitySplit snapshot={snapshot} targets={targets} books={books} showMoney={showMoney} />}
       <ManningTable rows={snapshot.manning} targets={targets} showMoney={showMoney} />
@@ -200,10 +212,12 @@ function buildBooks(
   targets: SiteTargets,
   weekActuals: { rom: string; bcm: string }[],
   horizon: { hours: number; label: string },
+  plantDelay: number,
 ): ShiftBooks {
   const counts = primaryFleetCount(assets, crew, letter, downAssetIds);
   const coal = coalMargin(weekActuals, targets);
   const hours = horizon.hours;
+  const manningHours = Math.max(0, hours - plantDelay);
   const labour = (department: 'workshop' | 'production', crewLetter: CrewLetter) => {
     const row = snapshot.manning.find((item) => item.letter === crewLetter && item.department === department);
     return shiftLabour(department, row?.overtime ?? 0, row?.contractors ?? 0, targets);
@@ -215,8 +229,8 @@ function buildBooks(
   return {
     mechanical: mechanicalLoss(counts, targets, hours),
     mechanicalHours: lostMachineHours(counts, hours),
-    manning: manningLoss(counts, targets, hours),
-    manningHours: unmannedHours(counts, hours),
+    manning: manningLoss(counts, targets, manningHours),
+    manningHours: unmannedHours(counts, manningHours),
     exposureHours: hours,
     exposureLabel: horizon.label,
     downDiggers: counts.downDiggers,
@@ -244,7 +258,7 @@ function buildBooks(
     bcmVariance: coal.bcmVariance,
     bcmDollars: coal.bcmDollars,
     outputVariance: coal.outputVariance,
-    forwardExposure: mechanicalLoss(counts, targets, hours) + manningLoss(counts, targets, hours),
+    forwardExposure: mechanicalLoss(counts, targets, hours) + manningLoss(counts, targets, manningHours),
   };
 }
 
@@ -271,6 +285,58 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
     <button type="button" role="tab" aria-selected={active} onClick={onClick} className={`min-h-10 px-3 rounded-full border text-sm font-black ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300'}`}>
       {children}
     </button>
+  );
+}
+
+function BudgetVariance({ books, targets, reasons, showMoney, lowBlasted }: { books: ShiftBooks; targets: SiteTargets; reasons: [string, number][]; showMoney: boolean; lowBlasted: boolean }) {
+  const shiftActual = books.workshopShift + books.productionShift;
+  const weekActual = books.workshopWeek + books.productionWeek;
+  const shiftBudget = targets.budgeted_ot_contractor_shift;
+  const weekBudget = shiftBudget * 4;
+  return (
+    <section className="rounded-xl border border-slate-300 bg-white p-4 space-y-3">
+      <h2 className="text-sm font-black uppercase tracking-wide text-slate-800">OT & contractor spend vs budget</h2>
+      {lowBlasted && <p className="rounded-lg bg-amber-400 px-3 py-2 text-sm font-black text-amber-950">LOW BLASTED INVENTORY (&lt; 2 Shifts)</p>}
+      <div className="grid gap-3 md:grid-cols-2">
+        <p className="text-sm"><span className="block text-[11px] font-black uppercase text-slate-500">This shift · Actual $ vs Budget $</span><span className="font-black">{showMoney ? `${formatAud(shiftActual)} vs ${formatAud(shiftBudget)} · ${formatAud(shiftActual - shiftBudget)}` : `${books.workshopOt + books.productionOt} OT · ${books.workshopContractors + books.productionContractors} contractors`}</span></p>
+        <p className="text-sm"><span className="block text-[11px] font-black uppercase text-slate-500">7-day · Actual $ vs Budget $</span><span className="font-black">{showMoney ? `${formatAud(weekActual)} vs ${formatAud(weekBudget)} · ${formatAud(weekActual - weekBudget)}` : 'A–D crew letters'}</span></p>
+      </div>
+      <ul className="text-sm font-bold text-slate-800">
+        {reasons.length === 0 ? <li className="text-slate-500">No overtime or contractor spend tagged on this crew.</li> : reasons.map(([reason, amount]) => (
+          <li key={reason}>{reason}: {showMoney ? formatAud(amount) : 'tagged'}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ComplianceWatchlist({ crew, assets, hpis }: { crew: CrewMember[]; assets: Asset[]; hpis: HandoverIncident[] }) {
+  const people = crew.filter((member) => member.active).flatMap((member) => {
+    const notes: string[] = [];
+    if (expiryState(member.medical_expiry) === 'expired') notes.push('Coal Board Medical expired');
+    if (expiryState(member.standard11_expiry) === 'expired') notes.push('Standard 11 expired');
+    for (const [model, date] of Object.entries(member.voc_expiries ?? {})) {
+      if (expiryState(date) === 'expired') notes.push(`${model} VOC expired`);
+    }
+    return notes.map((note) => `${member.display_name}: ${note}`);
+  });
+  const machines = assets.filter((asset) => serviceDue(asset)).map((asset) => `${asset.fleet_id}: STATUTORY / SERVICE DUE`);
+  return (
+    <section className="rounded-xl border border-rose-300 bg-rose-50 p-4 space-y-3">
+      <h2 className="text-sm font-black uppercase tracking-wide text-rose-900">Statutory compliance watchlist</h2>
+      <WatchColumn title="Expired VOCs / Medicals" rows={people} empty="No expired tickets." />
+      <WatchColumn title="Overdue statutory machine inspections" rows={machines} empty="No overdue statutory inspections." />
+      <WatchColumn title="Open notifiable HPIs" rows={hpis.map((item) => `${item.location || 'Pit'}: ${item.summary || item.category}`)} empty="No open notifiable HPIs." />
+    </section>
+  );
+}
+
+function WatchColumn({ title, rows, empty }: { title: string; rows: string[]; empty: string }) {
+  return (
+    <div>
+      <p className="text-[11px] font-black uppercase text-rose-800">{title}</p>
+      {rows.length === 0 ? <p className="text-sm text-slate-600">{empty}</p> : <ul className="text-sm font-bold text-slate-900">{rows.map((row) => <li key={row}>{row}</li>)}</ul>}
+    </div>
   );
 }
 
@@ -309,8 +375,8 @@ function KpiStrip({ snapshot, targets, books, showMoney, exposureFormula }: { sn
     },
     {
       title: 'Primary availability',
-      value: `${snapshot.availabilityPct}% vs ${targets.target_primary_pa_pct}%`,
-      detail: `Use of availability ${books.usePct}% vs ${targets.target_primary_uoa_pct}%`,
+      value: formatPct(snapshot.availabilityPct, targets.target_primary_pa_pct),
+      detail: `Use of availability ${formatPct(books.usePct, targets.target_primary_uoa_pct)}`,
       formula: 'Physical availability is ready units / fleet. Use of availability is manned healthy diggers and trucks / healthy diggers and trucks. Neither percent is turned into a second dollar on top of forward exposure.',
       tone: 'bg-slate-800 text-white',
     },
@@ -330,12 +396,12 @@ function KpiStrip({ snapshot, targets, books, showMoney, exposureFormula }: { sn
 
 function SevenDayRollup({ books, targets, showMoney }: { books: ShiftBooks; targets: SiteTargets; showMoney: boolean }) {
   return (
-    <section className="rounded-xl border border-slate-300 bg-white p-4">
+    <section className="overflow-x-auto rounded-xl border border-slate-300 bg-white p-4">
       <h2 className="text-sm font-black uppercase tracking-wide text-slate-800">7-day production rollup</h2>
       {books.coalShifts === 0 ? (
         <p className="mt-3 text-sm text-slate-500">No pit actuals in the last 7 days. Each logged shift is measured against {formatQty(targets.target_rom_tonnes_shift)} t ROM and {formatQty(targets.target_prime_bcm_shift)} BCM.</p>
       ) : (
-        <div className="mt-3 grid gap-3 md:grid-cols-4">
+        <div className="mt-3 grid min-w-[720px] gap-3 md:grid-cols-4">
           <p className="text-sm"><span className="block text-[11px] font-black uppercase text-slate-500">Logged shifts</span><span className="font-black">{books.coalShifts}</span></p>
           <p className="text-sm"><span className="block text-[11px] font-black uppercase text-slate-500">Saleable coal</span><span className="cursor-help font-black underline decoration-dotted" title={outputVarianceFormula(books, targets)}>{formatQty(books.saleable)} t vs {formatQty(books.saleableTarget)} t{showMoney ? ` · ${formatAud(books.marginVariance)}` : ''}</span></p>
           <p className="text-sm"><span className="block text-[11px] font-black uppercase text-slate-500">Prime BCM</span><span className="cursor-help font-black underline decoration-dotted" title={outputVarianceFormula(books, targets)}>{formatQty(books.bcm)} vs {formatQty(books.bcmTarget)} · {formatSigned(books.bcmVariance)} BCM{showMoney ? ` · ${formatAud(books.bcmDollars)}` : ''}</span></p>
@@ -350,7 +416,7 @@ function ManningTable({ rows, targets, showMoney }: { rows: ManagementSnapshot['
   return (
     <section className="rounded-xl border border-slate-300 bg-white overflow-x-auto">
       <h2 className="px-4 py-3 text-sm font-black uppercase tracking-wide text-slate-800">Crew comparison · A–D</h2>
-      <table className="w-full text-left text-sm">
+      <table className="w-full min-w-[880px] text-left text-sm">
         <thead className="text-[11px] font-black uppercase text-slate-500">
           <tr>
             {['Crew', 'Side', 'Permanent on roster', 'Away / leave', 'Overtime cover', 'Contractors', 'Contractor/OT %', 'Unallocated personnel', showMoney ? 'Shift labour spend ($)' : 'Shift labour'].map((heading) => (
@@ -371,7 +437,7 @@ function ManningTable({ rows, targets, showMoney }: { rows: ManagementSnapshot['
                 <td className="px-3 py-2">{row.away}</td>
                 <td className="px-3 py-2">{row.overtime}</td>
                 <td className="px-3 py-2">{row.contractors}</td>
-                <td className="px-3 py-2 font-black">{row.reliancePct}%</td>
+                <td className="px-3 py-2 font-black">{Number.isFinite(row.reliancePct) ? `${row.reliancePct}%` : '—'}</td>
                 <td className="px-3 py-2">{row.unallocated}</td>
                 <td className="cursor-help px-3 py-2 font-black underline decoration-dotted" title={formula}>{showMoney ? formatAud(spend) : `${row.overtime} OT · ${row.contractors} contractors`}</td>
               </tr>
@@ -388,7 +454,7 @@ function CompetencyMatrix({ rows, letter, targets, showMoney, unmannedModels, ho
     <section className="rounded-xl border border-slate-300 bg-white overflow-x-auto">
       <h2 className="px-4 py-3 text-sm font-black uppercase tracking-wide text-slate-800">Training shortfalls · {letter} Crew</h2>
       {rows.length === 0 ? <p className="px-4 pb-4 text-sm text-slate-500">No shortfall or missing crib relief on this crew.</p> : (
-      <table className="w-full text-left text-sm">
+      <table className="w-full min-w-[960px] text-left text-sm">
         <thead className="text-[11px] font-black uppercase text-slate-500">
           <tr>
             {['Model', 'Fleet total', 'Healthy', 'A', 'B', 'C', 'D', 'In training', 'Gap', showMoney ? `Est. exposure (${horizon.label})` : 'Lost machine hours'].map((heading) => (
@@ -472,7 +538,14 @@ function StatutoryCard({ statutory }: { statutory: ReturnType<typeof statutoryRo
 }
 
 function formatQty(value: number) {
+  if (!Number.isFinite(value)) return '—';
   return new Intl.NumberFormat('en-AU', { maximumFractionDigits: 0 }).format(value);
+}
+
+function formatPct(value: number, target?: number) {
+  if (!Number.isFinite(value)) return '—';
+  if (target == null || !Number.isFinite(target)) return `${Math.round(value)}%`;
+  return `${Math.round(value)}% vs ${Math.round(target)}%`;
 }
 
 function formatSigned(value: number) {
