@@ -1,27 +1,27 @@
 'use client';
 
-import { CREW_PANELS, CrewMember } from '@/types';
+import { CREW_PANELS } from '@/types';
 
 export function IncomingCrewPicker({
   panel,
-  crew,
+  counts,
   onChange,
 }: {
   panel: string | null;
-  crew: CrewMember[];
+  counts: { panel: string; count: number }[];
   onChange: (panel: string) => void;
 }) {
-  const people = crew.filter((member) => member.active && member.panel === panel);
+  const countFor = (item: string) => counts.find((row) => row.panel === item)?.count ?? 0;
 
   return (
     <section className="mt-4 rounded-xl border border-slate-200 p-4">
       <h3 className="text-base font-black text-slate-900">Who is coming on</h3>
       <p className="text-sm text-slate-600 mt-1">
-        The briefing is written for this crew. Open jobs stay with the people already named on them.
+        Counts are workshop trades only. Open jobs stay with the people already named on them.
       </p>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
         {CREW_PANELS.map((item) => {
-          const count = crew.filter((member) => member.active && member.panel === item).length;
+          const count = countFor(item);
           const selected = panel === item;
           return (
             <button
@@ -34,18 +34,11 @@ export function IncomingCrewPicker({
               }`}
             >
               <span className="block text-sm font-black">{item}</span>
-              <span className={`block text-xs ${selected ? 'text-slate-300' : 'text-slate-500'}`}>{count} on the roster</span>
+              <span className={`block text-xs ${selected ? 'text-slate-300' : 'text-slate-500'}`}>{count} workshop on shift</span>
             </button>
           );
         })}
       </div>
-      {panel && (
-        <p className="text-sm text-slate-700 mt-3">
-          {people.length === 0
-            ? `No one is rostered on ${panel}.`
-            : people.map((member) => member.display_name).join(', ')}
-        </p>
-      )}
     </section>
   );
 }

@@ -25,7 +25,7 @@ import { formatDateTime } from '@/utils/helpers';
 import { formatStartDay, shiftIsPast } from '@/utils/crewStanding';
 import { generateHandoverPptx } from '@/utils/handoverPptx';
 import { buildHandoverSnapshot, normalizeHandoverDocument } from '@/utils/handoverDocument';
-import { HandoverMachineNote, HandoverSlide, OceReport, SafetyIncident, SavedHandover } from '@/types';
+import { CREW_PANELS, HandoverMachineNote, HandoverManning, HandoverSlide, OceReport, SafetyIncident, SavedHandover } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import IncomingCrewDialog from './crew/IncomingCrewDialog';
@@ -33,9 +33,7 @@ import { useCrewData } from './crew/CrewDataContext';
 import { siteCover } from '@/utils/crewStanding';
 import { IncomingCrewPicker } from './handover/IncomingCrewPicker';
 import { inWindow, windowFor } from '@/utils/shiftClock';
-import { allocationSummary } from '@/utils/crewAllocation';
-import { normalizeDepartment } from '@/utils/permissions';
-import { rosterRoleNote, visibleOnCrewTab } from '@/utils/shiftRoster';
+import { isWorkshopHandoverMember, workshopHandoverManning, workshopSigners } from '@/utils/workshopHandover';
 
 const LOG_CATEGORIES: HandoverLogCategory[] = [
   'SAFETY', 'WEATHER', 'MANNING', 'WATCHLIST', 'BRAKE_TEST', 'TOOLING', 'PRIORITY',
@@ -119,14 +117,17 @@ export default function HandoverReportTab({
   const supabase = React.useMemo(() => createClient(), []);
   const { showToast } = useFeedback();
   const { crew, onShiftIds, authorisations, holdings, supervision } = useCrewData();
+  const workshopCrew = crew.filter((member) => isWorkshopHandoverMember(member));
   const cover = siteCover(
-    crew.filter((member) => onShiftIds.has(member.id)),
+    workshopCrew.filter((member) => onShiftIds.has(member.id)),
     supervision,
     authorisations,
     holdings,
-    crew,
+    workshopCrew,
   );
   const [incomingPanel, setIncomingPanel] = useState<string | null>(null);
+  const [outgoingId, setOutgoingId] = useState('');
+  const [oncomingId, setOncomingId] = useState('');
   const [choiceShiftId, setChoiceShiftId] = useState<string | null>(null);
   const supervisorName = activeShift?.supervisor || 'Workshop Management';
   const handedOver = shiftJobs.filter((asset) => asset.in_shift && asset.status !== 'OPERATIONAL');
@@ -136,30 +137,28 @@ export default function HandoverReportTab({
   const inReport = (iso?: string | null) => inWindow(iso, bounds.start, bounds.end);
   const windowedOrders = workOrders.filter((order) => inReport(order.created_at) || inReport(order.completed_at));
   const windowedNotes = notes.filter((note) => inReport(note.created_at));
-  const windowedLog = handoverLog.filter((entry) => inReport(entry.logged_at) && entry.department !== 'production');
+  const windowedLog = handoverLog.filter((entry) => inReport(entry.logged_at) && entry.department !== 'production' && entry.department !== 'training');
   const windowedReleased = completedJobs.filter((asset) => inReport(asset.actual_up));
-  const shiftAllocations = useMemo(() => {
-    const panel = activeShift?.crew;
-    return crew
-      .filter((member) => member.active && !member.away)
-      .filter((member) => {
-        const department = normalizeDepartment(member.department);
-        return department === 'workshop' || department === 'training';
-      })
-      .filter((member) => visibleOnCrewTab(member, panel || 'all'))
-      .sort((a, b) => a.display_name.localeCompare(b.display_name))
-      .map((member) => {
-        const detail = allocationSummary(member, workOrders, assets);
-        const note = rosterRoleNote(member);
-        return {
-          id: member.id,
-          name: note ? `${member.display_name} (${note})` : member.display_name,
-          detail,
-          assigned: detail !== 'Unassigned',
-          hotSeat: member.allocated_role === 'Hot Seat',
-        };
-      });
-  }, [crew, activeShift?.crew, workOrders, assets]);
+  const viewedPanel = incomingPanel ?? activeShift?.crew ?? null;
+  const manning = useMemo(
+    () => workshopHandoverManning(crew, viewedPanel, workOrders, assets),
+    [crew, viewedPanel, workOrders, assets],
+  );
+  const crewCounts = useMemo(
+    () => CREW_PANELS.map((panel) => ({ panel, count: workshopHandoverManning(crew, panel, workOrders, assets).onShift.length })),
+    [crew, workOrders, assets],
+  );
+  const signers = useMemo(() => workshopSigners(crew), [crew]);
+  const manningRecord: HandoverManning = {
+    panel: manning.panel,
+    onShift: manning.onShift.map((person) => person.name),
+    away: manning.away.map((person) => person.name),
+    overtime: manning.overtime.map((person) => person.name),
+    unallocated: manning.unallocated.map((person) => person.name),
+    assigned: manning.assigned.map((person) => `${person.name} — ${person.detail}`),
+    outgoing: signers.find((person) => person.id === outgoingId)?.name ?? null,
+    oncoming: signers.find((person) => person.id === oncomingId)?.name ?? null,
+  };
   const liveSnapshot = buildHandoverSnapshot({
     assets,
     handedOver,
@@ -171,8 +170,9 @@ export default function HandoverReportTab({
     summary,
     machineNotes,
     customSlides: slides,
-    crew,
+    crew: workshopCrew,
     incomingPanel,
+    manning: manningRecord,
     safetyIncidents: incidents,
     safetyFocus,
     oce: oceReport ? { fileName: oceReport.file_name, briefing: oceReport.briefing } : null,
@@ -227,6 +227,8 @@ export default function HandoverReportTab({
     setTrackedShiftId(shiftId);
     setChoiceShiftId(null);
     setIncomingPanel(null);
+    setOutgoingId('');
+    setOncomingId('');
   }
 
   useEffect(() => {
@@ -520,7 +522,7 @@ export default function HandoverReportTab({
           )}
           <IncomingCrewPicker
             panel={incomingPanel}
-            crew={crew}
+            counts={crewCounts}
             onChange={(panel) => {
               setChoiceShiftId(shiftId);
               setIncomingPanel(panel);
@@ -555,7 +557,12 @@ export default function HandoverReportTab({
               onAddEntry={handleAddLogEntry}
               onUpdateCategory={handleUpdateCategory}
               onDeleteEntry={handleDeleteLogEntry}
-              allocations={reportWindow === '12h' ? shiftAllocations : undefined}
+              manning={manningRecord}
+              signers={signers}
+              outgoingId={outgoingId}
+              oncomingId={oncomingId}
+              onOutgoing={setOutgoingId}
+              onOncoming={setOncomingId}
               actorName={supervisorName}
             />
           </div>

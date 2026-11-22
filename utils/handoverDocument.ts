@@ -1,5 +1,7 @@
-import { Asset, CrewMember, DefectItem, HandoverLogEntry, HandoverSnapshot, MachineWorkOrder, STAGE_OPTIONS } from '@/types';
+import { Asset, CrewMember, DefectItem, HandoverLogEntry, HandoverManning, HandoverSnapshot, MachineWorkOrder, STAGE_OPTIONS } from '@/types';
 import { normalizeOceBriefing } from '@/utils/oce';
+import { visibleOnCrewTab } from '@/utils/shiftRoster';
+import { isWorkshopHandoverMember } from '@/utils/workshopHandover';
 
 interface BuildHandoverInput {
   assets: Asset[];
@@ -14,6 +16,7 @@ interface BuildHandoverInput {
   customSlides: HandoverSnapshot['customSlides'];
   crew?: CrewMember[];
   incomingPanel?: string | null;
+  manning?: HandoverManning | null;
   safetyIncidents?: HandoverSnapshot['safetyIncidents'];
   safetyFocus?: string | null;
   oce?: HandoverSnapshot['oce'];
@@ -41,7 +44,8 @@ function openOrders(asset: Asset, workOrders: MachineWorkOrder[]) {
 }
 
 function peopleOnJob(order: MachineWorkOrder, crew: CrewMember[]) {
-  const byId = new Map(crew.map((member) => [member.id, member]));
+  const trades = crew.filter((member) => isWorkshopHandoverMember(member));
+  const byId = new Map(trades.map((member) => [member.id, member]));
   const linked = (order.crew ?? [])
     .map((row) => byId.get(row.crew_member_id))
     .filter((member): member is CrewMember => Boolean(member));
@@ -49,17 +53,17 @@ function peopleOnJob(order: MachineWorkOrder, crew: CrewMember[]) {
 
   const text = (order.fitter_assigned || '').trim();
   if (!text || text.toLowerCase() === 'unassigned') return [];
-  const named = crew.filter((member) => member.active && text.toLowerCase().includes(member.display_name.toLowerCase()));
+  const named = trades.filter((member) => member.active && text.toLowerCase().includes(member.display_name.toLowerCase()));
   if (named.length > 0) return named;
   return [{ id: '', display_name: text, department: 'workshop', access_level: 2, trade: '', panel: null, email: null, away: false, shift_duty: null, allocated_machine_id: null, allocated_role: null, hot_seat_assignments: [], passed_out_equipment: [], in_training_equipment: [], competency_updated_by: null, competency_updated_at: null, is_contractor: false, contractor_company: null, overtime_crew_group: null, shift_expires_at: null, active: true, created_at: '' }];
 }
 
-function ordersFor(asset: Asset, workOrders: MachineWorkOrder[]): HandoverSnapshot['handedOver'][number]['orders'] {
+function ordersFor(asset: Asset, workOrders: MachineWorkOrder[], crew: CrewMember[]): HandoverSnapshot['handedOver'][number]['orders'] {
   return openOrders(asset, workOrders).map((order) => ({
     woNumber: order.wo_number,
     task: order.task_description,
     stage: order.stage,
-    fitter: order.fitter_assigned,
+    fitter: peopleOnJob(order, crew).map((member) => member.display_name).join(', ') || null,
     hotshots: (order.parts ?? [])
       .filter((part) => part.is_special_run)
       .map((part) => ({ description: part.description || part.part_number || 'Hotshot part', eta: part.eta ?? null })),
@@ -79,6 +83,7 @@ export function buildHandoverSnapshot({
   customSlides,
   crew = [],
   incomingPanel = null,
+  manning = null,
   safetyIncidents = [],
   safetyFocus = null,
   oce = null,
@@ -110,7 +115,10 @@ export function buildHandoverSnapshot({
   );
   parts.sort((a, b) => Number(b.hotshot) - Number(a.hotshot) || a.fleetId.localeCompare(b.fleetId));
 
-  const incoming = crew.filter((member) => member.active && member.panel === incomingPanel);
+  const trades = crew.filter((member) => member.active && !member.away && isWorkshopHandoverMember(member));
+  const incoming = incomingPanel
+    ? trades.filter((member) => visibleOnCrewTab(member, incomingPanel))
+    : [];
   const people = incoming.map((member) => ({ name: member.display_name, trade: member.trade, jobs: [] as HandoverSnapshot['allocation']['people'][number]['jobs'] }));
   const withOutgoing: HandoverSnapshot['allocation']['withOutgoing'] = [];
   const needsName: HandoverSnapshot['allocation']['needsName'] = [];
@@ -147,10 +155,11 @@ export function buildHandoverSnapshot({
       location: asset.location || 'Workshop',
       priority: asset.priority,
       expectedUp: asset.expected_up,
-      orders: ordersFor(asset, workOrders),
+      orders: ordersFor(asset, workOrders, crew),
     })),
     parts,
     allocation: { panel: incomingPanel, people, withOutgoing, needsName },
+    manning,
     released: released.map((asset) => ({ fleetId: asset.fleet_id, makeModel: asset.make_model })),
     defectsFixed: defects.filter((defect) => {
       if (defect.status !== 'FIXED_THIS_SHIFT' || !defect.rectified_at || !shiftStartedAt) return false;
@@ -175,6 +184,7 @@ export function normalizeHandoverDocument(document: Partial<HandoverSnapshot> | 
     handedOver: document?.handedOver ?? [],
     parts: document?.parts ?? [],
     allocation: document?.allocation ?? { panel: null, people: [], withOutgoing: [], needsName: [] },
+    manning: document?.manning ?? null,
     released: document?.released ?? [],
     defectsFixed: document?.defectsFixed ?? [],
     defectsOpen: document?.defectsOpen ?? [],

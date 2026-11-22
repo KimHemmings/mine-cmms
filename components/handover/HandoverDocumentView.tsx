@@ -150,6 +150,20 @@ export default function HandoverDocumentView({
         </Section>
       )}
 
+      {document.manning && (
+        <Section title={document.manning.panel ? `Workshop crew · ${document.manning.panel}` : 'Workshop crew'}>
+          <ul className="text-sm space-y-1">
+            <li><strong>On-shift trades ({document.manning.onShift.length}). </strong>{document.manning.onShift.join(', ') || 'None.'}</li>
+            <li><strong>Away / sick / leave. </strong>{document.manning.away.join(', ') || 'None.'}</li>
+            <li><strong>Overtime and labour hire. </strong>{document.manning.overtime.join(', ') || 'None.'}</li>
+            <li><strong>Unallocated. </strong>{document.manning.unallocated.join(', ') || 'None.'}</li>
+            <li><strong>Bay-assigned. </strong>{document.manning.assigned.join(', ') || 'None.'}</li>
+            <li><strong>Outgoing. </strong>{document.manning.outgoing || 'Not signed.'}</li>
+            <li><strong>Oncoming. </strong>{document.manning.oncoming || 'Not signed.'}</li>
+          </ul>
+        </Section>
+      )}
+
       <Section title={allocation.panel ? `Jobs for ${allocation.panel}` : 'Jobs for the crew coming on'}>
         {!allocation.panel ? (
           <p className="text-sm text-slate-500">{emptyCrewMessage}</p>

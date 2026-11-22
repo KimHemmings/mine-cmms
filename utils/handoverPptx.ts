@@ -92,6 +92,20 @@ export async function generateHandoverPptx(input: CrewBriefingInput) {
       (parts.length ? ` · ${parts.length} part${parts.length === 1 ? '' : 's'} outstanding` : '')
     : `${document.handedOver.length} machine${document.handedOver.length === 1 ? '' : 's'} still down`;
   cover.addText(coverLine, { x: 0.6, y: 1.45, w: 12, h: 0.4, fontSize: 18, color: TEXT });
+  const crewManning = document.manning;
+  if (crewManning) {
+    const manningSlide = pptx.addSlide();
+    addTitle(manningSlide, crewManning.panel ? `Workshop crew · ${crewManning.panel}` : 'Workshop crew', subtitle);
+    manningSlide.addText([
+      `On-shift trades (${crewManning.onShift.length}): ${crewManning.onShift.join(', ') || 'None'}`,
+      `Away / sick / leave: ${crewManning.away.join(', ') || 'None'}`,
+      `Overtime and labour hire: ${crewManning.overtime.join(', ') || 'None'}`,
+      `Unallocated: ${crewManning.unallocated.join(', ') || 'None'}`,
+      `Bay-assigned: ${crewManning.assigned.join(', ') || 'None'}`,
+      `Outgoing: ${crewManning.outgoing || 'Not signed'}`,
+      `Oncoming: ${crewManning.oncoming || 'Not signed'}`,
+    ].join('\n\n'), { x: 0.6, y: 1.5, w: 12, h: 5.2, fontSize: 16, color: TEXT, valign: 'top' });
+  }
   if (document.released.length) {
     cover.addText(`Released this shift: ${document.released.map((machine) => machine.fleetId).join(', ')}`, {
       x: 0.6, y: 1.95, w: 12, h: 0.35, fontSize: 14, color: MUTED,

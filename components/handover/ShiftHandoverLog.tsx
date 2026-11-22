@@ -25,7 +25,19 @@ interface ShiftHandoverLogProps {
   onAddEntry: (entry: Omit<HandoverLogEntry, 'id' | 'logged_at'>) => void | Promise<boolean | void>;
   onUpdateCategory: (id: string, category: HandoverLogCategory) => void;
   onDeleteEntry: (id: string) => void;
-  allocations?: { id: string; name: string; detail: string; assigned: boolean; hotSeat?: boolean }[];
+  manning?: {
+    panel: string | null;
+    onShift: string[];
+    away: string[];
+    overtime: string[];
+    unallocated: string[];
+    assigned: string[];
+  } | null;
+  signers?: { id: string; name: string }[];
+  outgoingId?: string;
+  oncomingId?: string;
+  onOutgoing?: (id: string) => void;
+  onOncoming?: (id: string) => void;
   readOnly?: boolean;
   actorName?: string;
   shiftDate?: string | null;
@@ -38,7 +50,12 @@ export default function ShiftHandoverLog({
   onAddEntry,
   onUpdateCategory,
   onDeleteEntry,
-  allocations,
+  manning = null,
+  signers = [],
+  outgoingId = '',
+  oncomingId = '',
+  onOutgoing,
+  onOncoming,
   readOnly = false,
   actorName = 'Supervisor',
   shiftDate = null,
@@ -81,15 +98,6 @@ export default function ShiftHandoverLog({
     writeHandoverDraft(draftKey, { category, fleetId, details, actionRequired, isAdding: true });
   }, [draftKey, category, fleetId, details, actionRequired]);
 
-  const allocationGroups = (allocations ?? []).reduce<{ key: string; names: string[] }[]>((groups, person) => {
-    const key = person.assigned ? person.detail : 'Unassigned';
-    const name = person.hotSeat && !person.name.includes('(Hot Seat)') ? `${person.name} (Hot Seat)` : person.name;
-    const existing = groups.find((group) => group.key === key);
-    if (existing) existing.names.push(name);
-    else groups.push({ key, names: [name] });
-    return groups;
-  }, []);
-
   const handleSave = async () => {
     if (!details.trim()) return;
     const saved = await onAddEntry({
@@ -112,21 +120,20 @@ export default function ShiftHandoverLog({
       <div className="p-3 border-b border-slate-200">
         <ManagementDirectives actorName={actorName} department="workshop" />
       </div>
-      {allocations && (
-        <div className="p-3 border-b border-slate-200 bg-white">
-          <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">Shift Crew Allocations</h3>
-          {allocationGroups.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">No one from this crew is on the roster.</p>
-          ) : (
-            <ul className="mt-2 space-y-1 text-sm text-slate-800">
-              {allocationGroups.map((group) => (
-                <li key={group.key}>
-                  <span className="font-black">{group.key}</span>
-                  <span> — {group.names.join(', ')}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+      {manning && (
+        <div className="p-3 border-b border-slate-200 bg-white space-y-3">
+          <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">
+            Workshop crew{manning.panel ? ` · ${manning.panel}` : ''}
+          </h3>
+          <ManningLine title={`On-shift trades (${manning.onShift.length})`} names={manning.onShift} empty="No workshop trades are on this crew." />
+          <ManningLine title="Away / sick / leave" names={manning.away} empty="No one from the workshop is away." />
+          <ManningLine title="Overtime and labour hire" names={manning.overtime} empty="No workshop overtime or labour hire on this crew." />
+          <ManningLine title="Unallocated" names={manning.unallocated} empty="Every workshop trade on this crew is on a job." />
+          <ManningLine title="Bay-assigned" names={manning.assigned} empty="No workshop trade is on a job yet." />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SignOffSelect label="Outgoing" people={signers} value={outgoingId} disabled={readOnly} onChange={onOutgoing} />
+            <SignOffSelect label="Oncoming" people={signers} value={oncomingId} disabled={readOnly} onChange={onOncoming} />
+          </div>
         </div>
       )}
       <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between print:bg-white print:border-black">
@@ -272,5 +279,45 @@ export default function ShiftHandoverLog({
         )}
       </div>
     </div>
+  );
+}
+
+function ManningLine({ title, names, empty }: { title: string; names: string[]; empty: string }) {
+  return (
+    <p className="text-sm text-slate-800">
+      <span className="font-black">{title}. </span>
+      {names.length === 0 ? empty : names.join(', ')}
+    </p>
+  );
+}
+
+function SignOffSelect({
+  label,
+  people,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  people: { id: string; name: string }[];
+  value: string;
+  disabled?: boolean;
+  onChange?: (id: string) => void;
+}) {
+  return (
+    <label className="block text-xs font-black uppercase tracking-wide text-slate-600">
+      {label}
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange?.(event.target.value)}
+        className="mt-1 block w-full min-h-11 rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold normal-case text-slate-900 disabled:bg-slate-100"
+      >
+        <option value="">Workshop supervisor, leading hand, or tradesperson</option>
+        {people.map((person) => (
+          <option key={person.id} value={person.id}>{person.name}</option>
+        ))}
+      </select>
+    </label>
   );
 }

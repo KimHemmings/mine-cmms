@@ -72,6 +72,17 @@ export interface HandoverAllocation {
   needsName: HandoverCarryJob[];
 }
 
+export interface HandoverManning {
+  panel: string | null;
+  onShift: string[];
+  away: string[];
+  overtime: string[];
+  unallocated: string[];
+  assigned: string[];
+  outgoing: string | null;
+  oncoming: string | null;
+}
+
 export interface HandoverMachineLine {
   fleetId: string;
   makeModel: string;
@@ -106,6 +117,7 @@ export interface HandoverSnapshot {
   handedOver: HandoverMachineLine[];
   parts: HandoverPartLine[];
   allocation: HandoverAllocation;
+  manning: HandoverManning | null;
   released: { fleetId: string; makeModel: string }[];
   defectsFixed: HandoverDefectLine[];
   defectsOpen: HandoverDefectLine[];
