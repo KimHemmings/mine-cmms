@@ -15,8 +15,8 @@ import MachineCardHeader from './workboard/MachineCardHeader';
 import MainEventSection from './workboard/MainEventSection';
 import AdditionalWorkOrdersSection from './workboard/AdditionalWorkOrdersSection';
 import MachineReleaseFooter from './workboard/MachineReleaseFooter';
-import StatutoryDueBadge from '@/components/StatutoryDueBadge';
-import { serviceDue } from '@/utils/statutoryCompliance';
+import ServiceAlertPills from '@/components/StatutoryDueBadge';
+import { isOpenPlannedService } from '@/utils/statutoryCompliance';
 
 const PRIORITY_FILLS = {
   P1: {
@@ -145,6 +145,7 @@ export default function MachineWorkboardCard({
   const jobCount = openOrders.length;
   const solidBadge = isReleased ? 'bg-slate-200 text-slate-700' : fill.badge;
   const productionView = permissions.isReadOnlyWorkshop;
+  const suppressSmu = openOrders.some((order) => isOpenPlannedService(order));
 
   const summaryRow = compact ? (
     <button
@@ -166,7 +167,6 @@ export default function MachineWorkboardCard({
       </span>
       <span className="shrink-0 text-sm text-slate-800">
         <strong className="text-base font-black text-slate-900">{asset.fleet_id}</strong>
-        {serviceDue(asset) ? <span className="ml-2"><StatutoryDueBadge /></span> : null}
         <span className="text-slate-400"> • </span>
         <span className="font-bold text-slate-600">{asset.make_model}</span>
       </span>
@@ -189,12 +189,15 @@ export default function MachineWorkboardCard({
       {etu && !etu.overdue && (
         <span className="shrink-0 px-1.5 py-0.5 rounded text-[11px] font-black uppercase bg-emerald-100 text-emerald-800">{etu.label}</span>
       )}
-      {!productionView && (canRelease ? (
-        <span className="shrink-0 ml-auto px-2 py-0.5 rounded bg-emerald-600 text-[11px] font-black uppercase text-white">Ready to release</span>
-      ) : (
-        <span className="shrink-0 ml-auto px-2 py-0.5 rounded bg-slate-200 text-xs font-black text-slate-800">{jobCount} {jobCount === 1 ? 'Job' : 'Jobs'}</span>
-      ))}
-      {isDetailsExpanded ? <ChevronUp className={`w-4 h-4 shrink-0 text-slate-500 ${productionView ? 'ml-auto' : ''}`} /> : <ChevronDown className={`w-4 h-4 shrink-0 text-slate-500 ${productionView ? 'ml-auto' : ''}`} />}
+      <span className="shrink-0 ml-auto inline-flex items-center gap-2">
+        <ServiceAlertPills asset={asset} suppressSmu={suppressSmu} />
+        {!productionView && (canRelease ? (
+          <span className="px-2 py-0.5 rounded bg-emerald-600 text-[11px] font-black uppercase text-white">Ready to release</span>
+        ) : (
+          <span className="px-2 py-0.5 rounded bg-slate-200 text-xs font-black text-slate-800">{jobCount} {jobCount === 1 ? 'Job' : 'Jobs'}</span>
+        ))}
+      </span>
+      {isDetailsExpanded ? <ChevronUp className="w-4 h-4 shrink-0 text-slate-500" /> : <ChevronDown className="w-4 h-4 shrink-0 text-slate-500" />}
     </button>
   ) : null;
 
@@ -291,6 +294,7 @@ export default function MachineWorkboardCard({
         etu={etu}
         showOverdue={showOverdue}
         canEditDetails={permissions.canEditWorkshopJobs}
+        suppressSmu={suppressSmu}
         openQuickEdit={openQuickEdit}
         openHistory={openHistory}
         openDefects={openDefects}

@@ -12,8 +12,7 @@ import { seatLabel } from '@/utils/crewAllocation';
 import LocationPill, { parkUpNeedsConfirm } from '@/components/production/LocationPill';
 import CircuitPill from '@/components/production/CircuitPill';
 import BulkPasteModal from '@/components/BulkPasteModal';
-import StatutoryDueBadge from '@/components/StatutoryDueBadge';
-import { serviceDue } from '@/utils/statutoryCompliance';
+import ServiceAlertPills from '@/components/StatutoryDueBadge';
 
 interface WorkboardTabProps {
   shiftJobs: Asset[];
@@ -428,7 +427,6 @@ export default function WorkboardTab({
                 return (
                   <li key={asset.id} className="px-3 py-2 flex flex-wrap items-center gap-2">
                     <span className="text-base font-black text-slate-900">{asset.fleet_id}</span>
-                    {serviceDue(asset) && <StatutoryDueBadge />}
                     <span className="text-sm font-bold text-slate-500">{asset.make_model}</span>
                     {manned ? (
                       <span className="px-2 py-0.5 rounded-full bg-slate-900 text-white text-[11px] font-black">MANNED · {manned}</span>
@@ -444,6 +442,7 @@ export default function WorkboardTab({
                         <span className="text-[10px] font-black uppercase tracking-wide">Verify Park-Up</span>
                       </span>
                     )}
+                    <span className="ml-auto inline-flex"><ServiceAlertPills asset={asset} /></span>
                     {manned && permissions.canUpdateMachineLocation && onUpdateCircuit && (
                       <CircuitPill
                         circuit={asset.circuit || ''}

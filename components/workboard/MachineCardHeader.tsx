@@ -5,8 +5,7 @@ import { Pencil, History, MapPin, AlertTriangle, ChevronUp } from 'lucide-react'
 import { Asset } from '@/types';
 import { formatDateTime, getElapsedDown } from '@/utils/helpers';
 import { EventClassBadge } from './workboardTheme';
-import StatutoryDueBadge from '@/components/StatutoryDueBadge';
-import { serviceDue } from '@/utils/statutoryCompliance';
+import ServiceAlertPills from '@/components/StatutoryDueBadge';
 
 interface MachineCardHeaderProps {
   asset: Asset;
@@ -18,6 +17,7 @@ interface MachineCardHeaderProps {
   etu?: { overdue: boolean; label: string } | null;
   showOverdue?: boolean;
   canEditDetails?: boolean;
+  suppressSmu?: boolean;
   openQuickEdit: (asset: Asset) => void;
   openHistory: (asset: Asset) => void;
   openDefects: (asset: Asset) => void;
@@ -34,6 +34,7 @@ export default function MachineCardHeader({
   etu = null,
   showOverdue = false,
   canEditDetails = true,
+  suppressSmu = false,
   openQuickEdit,
   openHistory,
   openDefects,
@@ -47,7 +48,6 @@ export default function MachineCardHeader({
             {priorityLabel}
           </span>
           {eventConfig && <EventClassBadge config={eventConfig} />}
-          {serviceDue(asset) && <StatutoryDueBadge />}
           {yours && (
             <span className="text-[11px] font-black uppercase px-2 py-0.5 rounded bg-slate-900 text-white">Your job</span>
           )}
@@ -91,6 +91,7 @@ export default function MachineCardHeader({
           </>
         )}
 
+        <ServiceAlertPills asset={asset} suppressSmu={suppressSmu} />
         <div className="flex gap-2">
           {canEditDetails && (
           <button

@@ -29,7 +29,7 @@ import {
   useOfAvailability,
 } from '@/utils/managementRates';
 import { HandoverCheckRow, HandoverIncident, normalizeIncidents, recordFromRow, shiftRank } from '@/utils/productionHandoverRecord';
-import { expiryState, serviceDue } from '@/utils/statutoryCompliance';
+import { expiryState, serviceAlerts } from '@/utils/statutoryCompliance';
 import { useSiteBrand } from '@/components/SiteBrand';
 import { Department, departmentLabel } from '@/utils/permissions';
 import { CrewLetter, crewLetter } from '@/utils/shiftRoster';
@@ -320,7 +320,7 @@ function ComplianceWatchlist({ crew, assets, hpis }: { crew: CrewMember[]; asset
     }
     return notes.map((note) => `${member.display_name}: ${note}`);
   });
-  const machines = assets.filter((asset) => serviceDue(asset)).map((asset) => `${asset.fleet_id}: STATUTORY / SERVICE DUE`);
+  const machines = assets.flatMap((asset) => serviceAlerts(asset).map((alert) => `${asset.fleet_id}: ${alert.label}`));
   return (
     <section className="rounded-xl border border-rose-300 bg-rose-50 p-4 space-y-3">
       <h2 className="text-sm font-black uppercase tracking-wide text-rose-900">Statutory compliance watchlist</h2>

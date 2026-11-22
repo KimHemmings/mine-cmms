@@ -39,10 +39,85 @@ export function operatorBlockReason(member: Pick<CrewMember, 'medical_expiry' | 
   return null;
 }
 
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** A stored SMU counts only when it is a real positive number. Null and 0 do not. */
+function positiveSmu(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : null;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+}
+
+function shortDate(iso: string) {
+  const [, month, day] = iso.split('-');
+  return `${SHORT_MONTHS[Number(month) - 1]} ${Number(day)}`;
+}
+
+export interface ServiceAlert {
+  kind: 'statutory' | 'smu';
+  label: string;
+  title: string;
+}
+
+export function statutoryInspectionDue(asset: Pick<Asset, 'statutory_inspection_due'>, today = todayIso()) {
+  const raw = asset.statutory_inspection_due;
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const due = raw.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return null;
+  if (Number.isNaN(new Date(`${due}T00:00:00`).getTime())) return null;
+  return due <= today ? due : null;
+}
+
+export function smuHoursToService(asset: Pick<Asset, 'current_smu' | 'next_service_smu'>) {
+  const current = positiveSmu(asset.current_smu);
+  const next = positiveSmu(asset.next_service_smu);
+  if (current == null || next == null) return null;
+  const remaining = next - current;
+  return remaining <= 25 ? remaining : null;
+}
+
+export function isOpenPlannedService(order: { status?: string | null; order_type?: string | null }) {
+  if (order.status === 'COMPLETED') return false;
+  const raw = (order.order_type || '').toUpperCase();
+  if (!raw) return false;
+  if (raw.includes('INSPECT')) return true;
+  return raw === 'PLANNED' || raw === 'PM02';
+}
+
+export function serviceAlerts(
+  asset: Pick<Asset, 'current_smu' | 'next_service_smu' | 'statutory_inspection_due'>,
+  options?: { suppressSmu?: boolean },
+  today = todayIso(),
+): ServiceAlert[] {
+  const alerts: ServiceAlert[] = [];
+  const due = statutoryInspectionDue(asset, today);
+  if (due) {
+    alerts.push({
+      kind: 'statutory',
+      label: `Stat Due • ${shortDate(due)}`,
+      title: `Statutory inspection due ${shortDate(due)}`,
+    });
+  }
+  if (!options?.suppressSmu) {
+    const remaining = smuHoursToService(asset);
+    if (remaining != null) {
+      const current = positiveSmu(asset.current_smu);
+      const next = positiveSmu(asset.next_service_smu);
+      const rounded = Math.round(remaining);
+      const hours = remaining <= 0 ? 'overdue' : `${rounded === 0 ? remaining.toFixed(1) : rounded}h remaining`;
+      alerts.push({
+        kind: 'smu',
+        label: remaining <= 0 ? 'PM Overdue' : `PM in ${rounded === 0 ? remaining.toFixed(1) : rounded}h`,
+        title: `Current SMU ${current}. Next service ${next}. ${hours}.`,
+      });
+    }
+  }
+  return alerts;
+}
+
 export function serviceDue(asset: Pick<Asset, 'current_smu' | 'next_service_smu' | 'statutory_inspection_due'>, today = todayIso()) {
-  const due = (asset.statutory_inspection_due ?? '').slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(due) && due <= today) return true;
-  const current = Number(asset.current_smu);
-  const next = Number(asset.next_service_smu);
-  return Number.isFinite(current) && Number.isFinite(next) && next - current <= 25;
+  return serviceAlerts(asset, undefined, today).length > 0;
 }

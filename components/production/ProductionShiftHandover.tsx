@@ -20,8 +20,8 @@ import { FileText, Presentation } from 'lucide-react';
 import { generateProductionShiftPptx } from '@/utils/productionShiftPptx';
 import TidyNotesButton from '@/components/ui/TidyNotesButton';
 import ManagementDirectives from '@/components/ManagementDirectives';
-import StatutoryDueBadge from '@/components/StatutoryDueBadge';
-import { serviceDue } from '@/utils/statutoryCompliance';
+import ServiceAlertPills from '@/components/StatutoryDueBadge';
+import { isOpenPlannedService } from '@/utils/statutoryCompliance';
 import HandoverAddendum from '@/components/production/HandoverAddendum';
 import { handoverDraftKey, readHandoverDraft, updateHandoverDraft } from '@/utils/handoverDraft';
 
@@ -393,7 +393,6 @@ export default function ProductionShiftHandover({
                     <tr key={asset.id}>
                       <td className="px-4 py-3 font-black text-slate-900">
                         {asset.fleet_id}
-                        {serviceDue(asset) ? <span className="ml-2"><StatutoryDueBadge /></span> : null}
                         <span className="block text-xs font-bold text-slate-500">{event}</span>
                       </td>
                       <td className="px-4 py-3 text-slate-800">
@@ -402,7 +401,7 @@ export default function ProductionShiftHandover({
                       </td>
                       <td className="px-4 py-3 font-bold text-amber-800">{hold || '—'}</td>
                       <td className="px-4 py-3">
-                        <span className="font-black text-slate-900">{formatDateTime(asset.expected_up)}</span>
+                        <span className="inline-flex items-center gap-2 font-black text-slate-900">{formatDateTime(asset.expected_up)}<ServiceAlertPills asset={asset} suppressSmu={orders.some((order) => isOpenPlannedService(order))} /></span>
                         {overdue && (
                           <span className="ml-2 inline-flex rounded bg-red-600 px-2 py-0.5 text-[11px] font-black uppercase text-white">OVERDUE</span>
                         )}
