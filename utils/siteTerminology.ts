@@ -115,14 +115,21 @@ function replacePhrase(text: string, alias: string, term: string) {
   return text.replace(new RegExp(`(?<![A-Za-z0-9])${pattern}(?![A-Za-z0-9])`, 'gi'), term);
 }
 
+function positionNumber(raw: string) {
+  const word = raw.toLowerCase();
+  if (word === 'to' || word === 'too') return '2';
+  return POSITION_WORDS[word] ?? raw;
+}
+
 /** Fix speech-to-text misses and keep fleet numbers hyphenated. */
 export function correctSiteSpeech(text: string, entries: GlossaryEntry[] = BASE_SITE_GLOSSARY) {
   let next = text;
-  next = next.replace(/\bposition\s+(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\b/gi, (_, raw: string) => {
-    const number = POSITION_WORDS[raw.toLowerCase()] ?? raw;
-    return `POS ${number}`;
-  });
-  next = next.replace(/\bposse\s+(\d+)\b/gi, 'POS $1');
+  next = next.replace(
+    /\b(?:position|posse|pause|paws|poz|pos)\s+(one|two|three|four|five|six|seven|eight|nine|ten|\d{1,2})\b/gi,
+    (_, raw: string) => `POS ${positionNumber(raw)}`
+  );
+  next = next.replace(/\b(?:posse|poz|paws|pos)\s+(?:to|too)\b/gi, 'POS 2');
+  next = next.replace(/\bpos\s*(\d{1,2})\b/gi, 'POS $1');
 
   const replacements = entries
     .flatMap((entry) => entry.spokenAliases.map((alias) => ({ alias: alias.trim(), term: entry.term })))
@@ -162,6 +169,9 @@ export function termsToRemember(text: string, known: GlossaryEntry[]) {
   const corrected = correctSiteSpeech(text, known);
   for (const hit of corrected.matchAll(/\b(?:DT|DZ|EX|GD|WT|DR|LV)-\d{1,4}\b/gi)) {
     remember(hit[0].toUpperCase());
+  }
+  for (const hit of corrected.matchAll(/\bPOS\s+\d{1,2}\b/g)) {
+    remember(hit[0].replace(/\s+/, ' '));
   }
   for (const hit of text.match(/\b[A-Z]{3,6}\b/g) ?? []) {
     if (ACRONYM_STOP.has(hit) || FLEET_PREFIXES.includes(hit)) continue;

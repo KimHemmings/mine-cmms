@@ -25,7 +25,6 @@ import CrewTab from '@/components/crew/CrewTab';
 import AssignCrewModal from '@/components/crew/AssignCrewModal';
 import { CrewDataContext, CrewData } from '@/components/crew/CrewDataContext';
 import { getOpenJobsByCrew } from '@/utils/crew';
-
 export default function Home() {
   return (
     <FeedbackProvider>
@@ -201,6 +200,7 @@ function Workboard() {
         myCrewMemberId={profile?.crew_member_id ?? null}
         crew={crew}
         onLinkCrew={userRole === 'fitter' ? linkMyCrew : undefined}
+        profileId={profile?.id ?? null}
       />
 
       <section className="mt-6">

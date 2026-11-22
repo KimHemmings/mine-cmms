@@ -19,6 +19,7 @@ import { HelpButton } from '@/components/help/HelpButton';
 import { ChangePasswordButton } from '@/components/auth/ChangePasswordButton';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import { CrewMember, ShiftRecord, UserRole } from '@/types';
+import ShiftChatDrawer from '@/components/ShiftChatDrawer';
 import { formatStartDay, shiftIsPast } from '@/utils/crewStanding';
 import type { SyncStatus } from '@/hooks/useRealtimeWorkboard';
 
@@ -47,6 +48,7 @@ interface TopHeaderProps {
   myCrewMemberId?: string | null;
   crew?: CrewMember[];
   onLinkCrew?: (crewMemberId: string) => void;
+  profileId?: string | null;
 }
 
 function screenTitle(role: UserRole, tab: Tab) {
@@ -78,6 +80,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   myCrewMemberId = null,
   crew = [],
   onLinkCrew,
+  profileId = null,
 }) => {
   const router = useRouter();
   const supabase = createClient();
@@ -162,6 +165,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {(userRole === 'fitter' || userRole === 'management') && profileId && (
+            <ShiftChatDrawer senderName={activeFitter} userRole={userRole} profileId={profileId} />
+          )}
           <ChangePasswordButton />
           <HelpButton userRole={userRole} shiftId={activeShift?.id ?? null} fleetChoices={fleetChoices} />
           <button

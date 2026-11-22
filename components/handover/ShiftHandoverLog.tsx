@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { HandoverLogEntry, HandoverLogCategory } from '@/types';
 import { Plus, Trash2, ClipboardList, AlertTriangle } from 'lucide-react';
-import DictationMicButton, { appendDictation } from '@/components/ui/DictationMicButton';
+import DictationMicButton, { useDictationTarget } from '@/components/ui/DictationMicButton';
 
 const CATEGORY_CONFIG: Record<
   HandoverLogCategory,
@@ -34,7 +34,8 @@ export default function ShiftHandoverLog({
   const [isAdding, setIsAdding] = useState(false);
   const [category, setCategory] = useState<HandoverLogCategory>('SAFETY');
   const [fleetId, setFleetId] = useState('');
-  const [details, setDetails] = useState('');
+  const detailsField = useDictationTarget();
+  const details = detailsField.value;
   const [actionRequired, setActionRequired] = useState('');
 
   const handleSave = () => {
@@ -46,7 +47,7 @@ export default function ShiftHandoverLog({
       action_required: actionRequired.trim() ? actionRequired : undefined,
     });
     setFleetId('');
-    setDetails('');
+    detailsField.setValue('');
     setActionRequired('');
     setIsAdding(false);
   };
@@ -98,13 +99,13 @@ export default function ShiftHandoverLog({
           <div className="flex-1 min-w-50">
             <div className="flex items-center justify-between gap-2 mb-1">
               <label className="text-[10px] font-bold uppercase text-slate-600">Details / Condition</label>
-              <DictationMicButton onTranscript={(spoken) => setDetails((current) => appendDictation(current, spoken))} />
+              <DictationMicButton {...detailsField.mic} />
             </div>
             <input
               type="text"
               placeholder="e.g. Pit 27 closed due to wet conditions, or strut weep observed"
               value={details}
-              onChange={(e) => setDetails(e.target.value)}
+              onChange={detailsField.onChange}
               className="w-full text-xs p-1.5 bg-white border border-slate-300 rounded focus:outline-none"
             />
           </div>

@@ -3,7 +3,7 @@ import { Send } from 'lucide-react';
 import { HistoryNote } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
 import { createClient } from '@/utils/supabase/client';
-import DictationMicButton, { appendDictation } from '@/components/ui/DictationMicButton';
+import DictationMicButton, { useDictationTarget } from '@/components/ui/DictationMicButton';
 import TidyNotesButton from '@/components/ui/TidyNotesButton';
 
 interface InlineNotesDrawerProps {
@@ -29,24 +29,24 @@ export default function InlineNotesDrawer({
   taskDescription = '',
   fleetId,
 }: InlineNotesDrawerProps) {
-  const [noteText, setNoteText] = useState('');
+  const note = useDictationTarget();
   const [fitterStamp, setFitterStamp] = useState(activeFitter);
   const supabase = createClient();
 
   const itemNotes = notes.filter((note) => note.work_order_id === itemId);
 
   async function handleAddNote() {
-    if (!noteText.trim()) return;
+    if (!note.value.trim()) return;
 
     await supabase.from('asset_history_notes').insert([{
       asset_id: assetId,
       work_order_id: itemId,
       fitter_name: (fitterStamp || activeFitter || 'Shift Fitter').trim(),
-      note: noteText.trim(),
+      note: note.value.trim(),
       stage: 'IN_REPAIR'
     }]);
 
-    setNoteText('');
+    note.setValue('');
     onRefresh();
   }
 
@@ -56,7 +56,7 @@ export default function InlineNotesDrawer({
         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
           {heading}
         </span>
-        <DictationMicButton onTranscript={(spoken) => setNoteText((current) => appendDictation(current, spoken))} />
+        <DictationMicButton {...note.mic} />
       </div>
 
       <div className="space-y-1.5 max-h-32 overflow-y-auto">
@@ -84,17 +84,18 @@ export default function InlineNotesDrawer({
         <input
           type="text"
           placeholder="Add progressive repair note..."
-          value={noteText}
-          onChange={(e) => setNoteText(e.target.value)}
+          value={note.value}
+          onChange={note.onChange}
           onKeyDown={(e) => { if (e.key === 'Enter') handleAddNote(); }}
           className="flex-1 min-h-[38px] bg-white border border-slate-300 rounded px-2 text-sm text-slate-900"
         />
         <TidyNotesButton
-          rawNotes={noteText}
+          rawNotes={note.value}
           fleetId={fleetId}
           taskDescription={taskDescription}
           isSingleNote
-          onTidied={setNoteText}
+          prepare={note.hold}
+          onTidied={note.setValue}
         />
         <button
           type="button"

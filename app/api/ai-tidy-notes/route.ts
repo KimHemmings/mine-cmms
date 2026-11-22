@@ -52,10 +52,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const rawNotes = typeof body.rawNotes === 'string' ? body.rawNotes.trim() : '';
-  if (!rawNotes) {
-    return NextResponse.json({ error: 'Nothing to tidy' }, { status: 400 });
-  }
   const fleetId = typeof body.fleetId === 'string' ? body.fleetId.trim() : '';
   const taskDescription = typeof body.taskDescription === 'string' ? body.taskDescription.trim() : '';
   const isSingleNote = body.isSingleNote === true;
@@ -66,6 +62,10 @@ export async function POST(req: Request) {
     .limit(300);
   if (glossaryError) console.error('[ai-tidy-notes] glossary:', glossaryError.message);
   const glossary = mergeGlossary(liveTerms ?? []);
+  const rawNotes = correctSiteSpeech(typeof body.rawNotes === 'string' ? body.rawNotes.trim() : '', glossary);
+  if (!rawNotes) {
+    return NextResponse.json({ error: 'Nothing to tidy' }, { status: 400 });
+  }
 
   let azure;
   try {

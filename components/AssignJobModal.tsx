@@ -10,7 +10,7 @@ import ComponentSystemsPicker from './assign-job/ComponentSystemsPicker';
 import StatusImpactSelector from './assign-job/StatusImpactSelector';
 import SapDetailsInputs from './assign-job/SapDetailsInputs';
 import CrewPicker from './crew/CrewPicker';
-import DictationMicButton, { appendDictation } from './ui/DictationMicButton';
+import DictationMicButton, { useDictationTarget } from './ui/DictationMicButton';
 import { useCrewData, crewNames } from './crew/CrewDataContext';
 
 interface AssignJobModalProps {
@@ -40,7 +40,8 @@ export default function AssignJobModal({
   const [workOrderNum, setWorkOrderNum] = useState('');
   const [sapNotification, setSapNotification] = useState('');
   const [location, setLocation] = useState('');
-  const [taskDesc, setTaskDesc] = useState('');
+  const task = useDictationTarget();
+  const taskDesc = task.value;
   const [crewIds, setCrewIds] = useState<string[]>([]);
   const [downSinceInput, setDownSinceInput] = useState('');
   const [expectedUpInput, setExpectedUpInput] = useState('');
@@ -239,11 +240,11 @@ export default function AssignJobModal({
           <div>
             <div className="flex items-center justify-between gap-2 mb-1">
               <label className="text-xs font-bold text-slate-700">MAIN EVENT SCOPE / REASON *</label>
-              <DictationMicButton onTranscript={(spoken) => setTaskDesc((current) => appendDictation(current, spoken))} />
+              <DictationMicButton {...task.mic} />
             </div>
             <textarea
               value={taskDesc}
-              onChange={(e) => setTaskDesc(e.target.value)}
+              onChange={task.onChange}
               rows={2}
               placeholder="e.g. 500hr PM Service Pack, check tyre pressure, front LH strut swap out..."
               className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"

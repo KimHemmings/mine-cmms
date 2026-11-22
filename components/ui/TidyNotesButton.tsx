@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { correctSiteSpeech } from '@/utils/siteTerminology';
 import { Sparkles } from 'lucide-react';
 
 interface TidyNotesButtonProps {
@@ -9,6 +10,8 @@ interface TidyNotesButtonProps {
   taskDescription?: string;
   isSingleNote?: boolean;
   onTidied: (text: string) => void;
+  /** Stop dictation and return the sentence currently in the box. */
+  prepare?: () => string;
   disabled?: boolean;
 }
 
@@ -18,15 +21,18 @@ export default function TidyNotesButton({
   taskDescription,
   isSingleNote = false,
   onTidied,
+  prepare,
   disabled = false,
 }: TidyNotesButtonProps) {
   const [previousNotes, setPreviousNotes] = useState<string | null>(null);
   const [tidying, setTidying] = useState(false);
   const [error, setError] = useState('');
+  const busy = useRef(false);
 
-  async function tidy() {
-    const raw = rawNotes.trim();
-    if (!raw || tidying) return;
+  async function tidy(source?: string) {
+    const raw = correctSiteSpeech((source ?? rawNotes).trim());
+    if (!raw || busy.current) return;
+    busy.current = true;
     setTidying(true);
     setError('');
     try {
@@ -40,11 +46,12 @@ export default function TidyNotesButton({
         setError('Could not tidy that note.');
         return;
       }
-      setPreviousNotes(rawNotes);
+      setPreviousNotes(raw);
       onTidied(data.text.trim());
     } catch {
       setError('Could not tidy that note.');
     } finally {
+      busy.current = false;
       setTidying(false);
     }
   }
@@ -60,7 +67,12 @@ export default function TidyNotesButton({
     <span className="inline-flex flex-wrap items-center gap-1.5">
       <button
         type="button"
-        onClick={() => void tidy()}
+        onClick={() => {
+          const raw = rawNotes.trim();
+          if (!raw) return;
+          prepare?.();
+          void tidy(raw);
+        }}
         disabled={disabled || tidying || !rawNotes.trim()}
         className="inline-flex items-center gap-1.5 min-h-[38px] px-3 rounded-lg border-2 border-slate-900 bg-slate-900 text-white text-sm font-bold disabled:opacity-50"
       >
@@ -76,7 +88,7 @@ export default function TidyNotesButton({
           Undo
         </button>
       )}
-      {error && <span className="text-sm font-bold text-rose-700">{error}</span>}
+      {error && <span className="w-full text-sm font-bold text-rose-700">{error}</span>}
     </span>
   );
 }
