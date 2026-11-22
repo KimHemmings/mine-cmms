@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { MessageCircle, Send, X } from 'lucide-react';
-import { UserRole } from '@/types';
+import { CrewMember, UserRole } from '@/types';
 import { ShiftMessage, fitterLabel, fitterOnMessage, useShiftChat } from '@/hooks/useShiftChat';
 import DictationMicButton, { useDictationTarget } from '@/components/ui/DictationMicButton';
 
@@ -54,16 +54,20 @@ export default function ShiftChatDrawer({
   senderName,
   userRole,
   profileId,
+  crew = [],
 }: {
   senderName: string;
   userRole: UserRole;
   profileId: string;
+  crew?: CrewMember[];
 }) {
   const isSupervisor = userRole === 'management';
   const { messages, fitters, loading, error, send } = useShiftChat(profileId, isSupervisor);
   const [open, setOpen] = useState(false);
   const draft = useDictationTarget();
   const [selectedId, setSelectedId] = useState('');
+  const [fitterQuery, setFitterQuery] = useState('');
+  const [fitterListOpen, setFitterListOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
@@ -127,6 +131,60 @@ export default function ShiftChatDrawer({
     if (list) list.scrollTop = list.scrollHeight;
   }, [visible, open]);
 
+  const people = useMemo(() => fitters.map((fitter) => {
+    const member = crew.find((person) => person.id === fitter.crew_member_id);
+    const name = member?.display_name?.trim() || fitter.display_name;
+    const employeeId = member?.employee_id || fitter.employee_id;
+    return {
+      id: fitter.id,
+      name,
+      employeeId,
+      label: fitterLabel({ display_name: name, employee_id: employeeId }),
+    };
+  }), [fitters, crew]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const person = people.find((item) => item.id === selectedId);
+    if (person) setFitterQuery(person.label);
+  }, [selectedId, people]);
+
+  function chooseFitter(id: string) {
+    setSelectedId(id);
+    setFitterListOpen(false);
+    const person = people.find((item) => item.id === id);
+    if (person) setFitterQuery(person.label);
+  }
+
+  function onFitterQuery(value: string) {
+    setFitterQuery(value);
+    setFitterListOpen(true);
+    const term = value.trim().toLowerCase();
+    const exact = people.filter((person) => {
+      return person.label.toLowerCase() === term || person.name.trim().toLowerCase() === term;
+    });
+    setSelectedId(exact.length === 1 ? exact[0].id : '');
+  }
+
+  const fitterTerm = fitterQuery.trim().toLowerCase();
+  const selected = people.find((person) => person.id === selectedId);
+  const fitterMatches = people.filter((person) => {
+    if (!fitterTerm) return true;
+    return [person.name, person.employeeId ?? '', person.label].join(' ').toLowerCase().includes(fitterTerm);
+  });
+  const linkedCrewIds = new Set(fitters.map((fitter) => fitter.crew_member_id).filter((id): id is string => Boolean(id)));
+  const unsigned = fitterTerm
+    ? crew.filter((member) => (
+      member.active
+      && member.department !== 'Production'
+      && member.trade !== 'Operator'
+      && !linkedCrewIds.has(member.id)
+      && `${member.display_name} ${member.employee_id ?? ''}`.toLowerCase().includes(fitterTerm)
+    ))
+    : [];
+  const selectedLabel = selected ? selected.label.toLowerCase() : '';
+  const showFitterMatches = fitterListOpen && (!selectedId || fitterTerm !== selectedLabel);
+
   function openChat(fitterId?: string) {
     if (isSupervisor) {
       const latest = unread[unread.length - 1];
@@ -163,8 +221,6 @@ export default function ShiftChatDrawer({
       : alertNames.length === 2
         ? `New messages from ${alertNames[0]} and ${alertNames[1]}`
         : `New messages from ${alertNames.length} fitters`;
-
-  const selected = fitters.find((person) => person.id === selectedId);
 
   return (
     <>
@@ -209,36 +265,60 @@ export default function ShiftChatDrawer({
             <div className="border-b border-slate-200 px-3 py-2 space-y-2">
               <label className="block text-[11px] font-black uppercase tracking-wide text-slate-500">
                 Send to
-                <select
-                  value={selectedId}
-                  onChange={(event) => setSelectedId(event.target.value)}
-                  className="mt-1 w-full min-h-11 rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold normal-case tracking-normal text-slate-900"
-                >
-                  <option value="">Choose a fitter</option>
-                  {fitters.map((person) => {
+                <input
+                  value={fitterQuery}
+                  onChange={(event) => onFitterQuery(event.target.value)}
+                  onFocus={(event) => {
+                    setFitterListOpen(true);
+                    event.currentTarget.select();
+                  }}
+                  onBlur={() => setFitterListOpen(false)}
+                  placeholder="Type a fitter's name"
+                  autoComplete="off"
+                  className="mt-1 w-full min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold normal-case tracking-normal text-slate-900 focus:border-amber-500 focus:outline-none"
+                />
+              </label>
+              {showFitterMatches && (
+                <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white">
+                  {fitterMatches.length === 0 && unsigned.length === 0 && (
+                    <p className="px-3 py-2 text-sm font-bold normal-case text-slate-500">No signed-in fitter with that name.</p>
+                  )}
+                  {unsigned.map((member) => (
+                    <p key={member.id} className="px-3 py-2 text-sm font-bold normal-case text-slate-500">
+                      {member.display_name} is on the crew list, but has no sign-in yet.
+                    </p>
+                  ))}
+                  {fitterMatches.map((person) => {
                     const waiting = unreadByFitter.get(person.id) ?? 0;
                     return (
-                      <option key={person.id} value={person.id}>
-                        {fitterLabel(person)}{waiting > 0 ? ` · ${waiting} new` : ''}
-                      </option>
+                      <button
+                        key={person.id}
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => chooseFitter(person.id)}
+                        className="flex min-h-11 w-full items-center justify-between gap-2 px-3 text-left text-sm font-bold normal-case text-slate-900 hover:bg-amber-50"
+                      >
+                        <span>{person.label}</span>
+                        {waiting > 0 && <span className="text-xs font-black text-amber-800">{waiting} new</span>}
+                      </button>
                     );
                   })}
-                </select>
-              </label>
+                </div>
+              )}
               {unreadByFitter.size > 0 && (
                 <div className="flex flex-wrap gap-1.5">
-                  {fitters.filter((person) => unreadByFitter.has(person.id)).map((person) => (
+                  {people.filter((person) => unreadByFitter.has(person.id)).map((person) => (
                     <button
                       key={person.id}
                       type="button"
-                      onClick={() => setSelectedId(person.id)}
+                      onClick={() => chooseFitter(person.id)}
                       className={`min-h-9 rounded-full px-3 text-xs font-black ${
                         person.id === selectedId
                           ? 'bg-amber-400 text-amber-950'
                           : 'bg-amber-100 text-amber-950'
                       }`}
                     >
-                      {person.display_name} · {unreadByFitter.get(person.id)} new
+                      {person.name} · {unreadByFitter.get(person.id)} new
                     </button>
                   ))}
                 </div>
@@ -258,7 +338,7 @@ export default function ShiftChatDrawer({
             {!loading && !error && (!isSupervisor || selectedId) && visible.length === 0 && (
               <p className="text-sm text-slate-500">
                 {isSupervisor && selected
-                  ? `No messages with ${selected.display_name} in the last day.`
+                  ? `No messages with ${selected.name} in the last day.`
                   : 'No messages from the supervisor in the last day.'}
               </p>
             )}

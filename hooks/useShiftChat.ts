@@ -17,6 +17,7 @@ export interface ShiftFitter {
   id: string;
   display_name: string;
   employee_id: string | null;
+  crew_member_id: string | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -99,7 +100,7 @@ export function useShiftChat(profileId: string, isSupervisor: boolean) {
     let cancelled = false;
     void supabase
       .from('profiles')
-      .select('id, display_name, employee_id')
+      .select('id, display_name, employee_id, crew_member_id')
       .eq('role', 'fitter')
       .eq('active', true)
       .order('display_name')

@@ -166,7 +166,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
         <div className="flex items-center gap-2">
           {(userRole === 'fitter' || userRole === 'management') && profileId && (
-            <ShiftChatDrawer senderName={activeFitter} userRole={userRole} profileId={profileId} />
+            <ShiftChatDrawer senderName={activeFitter} userRole={userRole} profileId={profileId} crew={crew} />
           )}
           <ChangePasswordButton />
           <HelpButton userRole={userRole} shiftId={activeShift?.id ?? null} fleetChoices={fleetChoices} />
