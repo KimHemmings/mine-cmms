@@ -16,6 +16,8 @@ interface FleetDossierCardProps {
   onSpotRepeats: (asset: Asset) => void;
   onHideRepeats: () => void;
   onRefreshRepeats: (asset: Asset) => void;
+  canManageFleet?: boolean;
+  onEditMachine?: (asset: Asset) => void;
 }
 
 export const FleetDossierCard: React.FC<FleetDossierCardProps> = ({
@@ -31,6 +33,8 @@ export const FleetDossierCard: React.FC<FleetDossierCardProps> = ({
   onSpotRepeats,
   onHideRepeats,
   onRefreshRepeats,
+  canManageFleet = false,
+  onEditMachine,
 }) => {
   const isDown = asset.status !== 'OPERATIONAL';
   const place = asset.location?.trim();
@@ -132,7 +136,16 @@ export const FleetDossierCard: React.FC<FleetDossierCardProps> = ({
               <AlertTriangle className="w-4 h-4" />
               {scanningRepeats ? 'Scanning 12-Mo History...' : 'Spot Repeat Failures'}
             </button>
-            {!isDown && (
+            {canManageFleet && onEditMachine && (
+              <button
+                type="button"
+                onClick={() => onEditMachine(asset)}
+                className="h-11 px-3.5 flex-1 flex items-center justify-center gap-2 rounded-lg bg-white border-2 border-slate-300 text-slate-800 text-xs font-bold uppercase tracking-wider"
+              >
+                Edit machine
+              </button>
+            )}
+            {!isDown && onAssignJob && (
               <button
                 type="button"
                 onClick={() => onAssignJob?.(asset)}

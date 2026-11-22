@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/client';
 import { Asset, Authorisation, CrewAuthorisation, CrewSupervision, MachineWorkOrder, DefectItem, HistoryNote, ShiftRecord, CrewMember, HandoverLogEntry, OperatorPassout, ShiftMachineOperator, ShiftSeatChange } from '@/types';
 import { useRealtimeWorkboard } from '@/hooks/useRealtimeWorkboard';
 import { beginStageFlush, dropQueuedStage, endStageFlush, isNetworkError, readStageQueue } from '@/utils/stageQueue';
+import { beginNoteFlush, dropQueuedNote, endNoteFlush, readNoteQueue, withQueuedNotes } from '@/utils/noteQueue';
 import { logAssetHistory } from '@/utils/helpers';
 import { useWorkboardActions } from '@/hooks/useWorkboardActions';
 
@@ -106,7 +107,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (data) setNotes(data as HistoryNote[]);
+    if (data) setNotes(withQueuedNotes(data as HistoryNote[]));
   }, [supabase]);
 
   const fetchCrew = useCallback(async () => {
@@ -219,14 +220,20 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
 
   useEffect(() => {
     const refreshCount = () => {
-      const pending = readStageQueue();
-      setPendingStages(pending.length);
-      setQueuedWorkOrderIds(pending.map((item) => item.woId));
+      const stages = readStageQueue();
+      const notesWaiting = readNoteQueue();
+      setPendingStages(stages.length + notesWaiting.length);
+      setQueuedWorkOrderIds(stages.map((item) => item.woId));
       setWorkOrders((current) => withQueuedStages(current));
+      setNotes((current) => withQueuedNotes(current.filter((item) => !item.pending)));
     };
     refreshCount();
     window.addEventListener('stage-queue-changed', refreshCount);
-    return () => window.removeEventListener('stage-queue-changed', refreshCount);
+    window.addEventListener('note-queue-changed', refreshCount);
+    return () => {
+      window.removeEventListener('stage-queue-changed', refreshCount);
+      window.removeEventListener('note-queue-changed', refreshCount);
+    };
   }, []);
 
   useEffect(() => {
@@ -263,6 +270,39 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
       window.removeEventListener('online', flush);
     };
   }, [supabase, fetchWorkOrders]);
+
+  useEffect(() => {
+    let stopped = false;
+    async function flushNotes() {
+      if (!beginNoteFlush()) return;
+      const pending = readNoteQueue();
+      try {
+        for (const item of pending) {
+          if (stopped) return;
+          const { error } = await supabase.from('asset_history_notes').insert([{
+            asset_id: item.assetId,
+            work_order_id: item.workOrderId,
+            fitter_name: item.fitterName,
+            note: item.note,
+            stage: item.stage,
+            created_at: item.at,
+          }]);
+          if (error && isNetworkError(error)) return;
+          dropQueuedNote(item.id);
+        }
+        if (!stopped && readNoteQueue().length === 0 && pending.length > 0) await fetchNotes();
+      } finally {
+        endNoteFlush();
+      }
+    }
+    const first = setTimeout(() => { void flushNotes(); }, 0);
+    window.addEventListener('online', flushNotes);
+    return () => {
+      stopped = true;
+      clearTimeout(first);
+      window.removeEventListener('online', flushNotes);
+    };
+  }, [supabase, fetchNotes]);
 
   const { syncStatus } = useRealtimeWorkboard({
     onDataChange: fetchAllData,

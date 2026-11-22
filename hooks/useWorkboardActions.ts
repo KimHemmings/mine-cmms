@@ -1,6 +1,7 @@
 // hooks/useWorkboardActions.ts
 import { SupabaseClient } from '@supabase/supabase-js';
 import { ShiftRecord, CreatePartPayload, PartStatus, Asset, STAGE_OPTIONS, CrewMember, CrewMemberInput } from '@/types';
+import { normalizeAccessLevel, normalizeDepartment } from '@/utils/permissions';
 import { logAssetHistory } from '@/utils/helpers';
 import { isNetworkError, queueStage } from '@/utils/stageQueue';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
@@ -242,7 +243,8 @@ export function useWorkboardActions({
     const row = {
       display_name: input.display_name.trim(),
       employee_id: input.employee_id?.trim() || null,
-      department: input.department || 'Workshop',
+      department: normalizeDepartment(input.department),
+      access_level: normalizeAccessLevel(input.access_level),
       trade: input.trade,
       panel: input.panel || null,
     };

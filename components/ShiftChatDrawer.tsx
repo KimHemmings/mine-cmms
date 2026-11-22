@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { MessageCircle, Send, X } from 'lucide-react';
 import { CrewMember, UserRole } from '@/types';
+import { isWorkshopRoster } from '@/utils/permissions';
 import { ShiftMessage, fitterLabel, fitterOnMessage, useShiftChat } from '@/hooks/useShiftChat';
 import DictationMicButton, { useDictationTarget } from '@/components/ui/DictationMicButton';
 
@@ -34,7 +35,7 @@ function seenStorageKey(profileId: string) {
 function readSeen(profileId: string) {
   if (typeof window === 'undefined') return new Set<string>();
   try {
-    const raw = sessionStorage.getItem(seenStorageKey(profileId));
+    const raw = localStorage.getItem(seenStorageKey(profileId));
     const ids = raw ? JSON.parse(raw) : [];
     return new Set<string>(Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : []);
   } catch {
@@ -44,7 +45,7 @@ function readSeen(profileId: string) {
 
 function writeSeen(profileId: string, ids: Set<string>) {
   try {
-    sessionStorage.setItem(seenStorageKey(profileId), JSON.stringify([...ids]));
+    localStorage.setItem(seenStorageKey(profileId), JSON.stringify([...ids]));
   } catch {
     // The banner still works for this page load if storage is blocked.
   }
@@ -100,13 +101,9 @@ export default function ShiftChatDrawer({
   }, [unread, isSupervisor, profileId]);
 
   useEffect(() => {
-    if (loading || ready) return;
-    const initial = readSeen(profileId);
-    for (const item of messages) initial.add(item.id);
-    writeSeen(profileId, initial);
-    setSeen(initial);
+    setSeen(readSeen(profileId));
     setReady(true);
-  }, [loading, ready, messages, profileId]);
+  }, [profileId]);
 
   useEffect(() => {
     if (!open || !ready) return;
@@ -176,8 +173,7 @@ export default function ShiftChatDrawer({
   const unsigned = fitterTerm
     ? crew.filter((member) => (
       member.active
-      && member.department !== 'Production'
-      && member.trade !== 'Operator'
+      && isWorkshopRoster(member)
       && !linkedCrewIds.has(member.id)
       && `${member.display_name} ${member.employee_id ?? ''}`.toLowerCase().includes(fitterTerm)
     ))

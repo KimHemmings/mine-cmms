@@ -9,6 +9,7 @@ interface MachineReleaseFooterProps {
   isReleased: boolean;
   onRelease: () => void;
   onAddWorkOrder?: () => void;
+  showRelease?: boolean;
 }
 
 export default function MachineReleaseFooter({
@@ -17,6 +18,7 @@ export default function MachineReleaseFooter({
   isReleased,
   onRelease,
   onAddWorkOrder,
+  showRelease = true,
 }: MachineReleaseFooterProps) {
   if (isReleased) {
     return (
@@ -52,6 +54,7 @@ export default function MachineReleaseFooter({
           </button>
         )}
 
+        {showRelease && (
         <button
           type="button"
           disabled={!canRelease}
@@ -62,6 +65,7 @@ export default function MachineReleaseFooter({
         >
           <CheckCircle2 className="w-5 h-5" /> Release Machine
         </button>
+        )}
       </div>
     </div>
   );

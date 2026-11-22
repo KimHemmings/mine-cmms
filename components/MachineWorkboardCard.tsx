@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Asset, MachineWorkOrder, HistoryNote } from '@/types';
+import { Permissions } from '@/utils/permissions';
 import { generateSapNotesText, copyToClipboard, notesForWorkOrder } from '@/utils/sapFormatter';
 import { formatDateTime, getElapsedDown, getEtuStatus } from '@/utils/helpers';
 import { createClient } from '@/utils/supabase/client';
 import { EventClassBadge, getEventConfig, getPriorityConfig } from './workboard/workboardTheme';
+import { HoldPill } from './workboard/JobStatusSelect';
+import { holdBadge } from '@/utils/jobHold';
 import MachineCardHeader from './workboard/MachineCardHeader';
 import MainEventSection from './workboard/MainEventSection';
 import AdditionalWorkOrdersSection from './workboard/AdditionalWorkOrdersSection';
@@ -81,6 +84,7 @@ interface MachineWorkboardCardProps {
   yours?: boolean;
   copyLabel?: string;
   activeShiftId?: string | null;
+  permissions: Permissions;
 }
 
 export default function MachineWorkboardCard({
@@ -104,11 +108,18 @@ export default function MachineWorkboardCard({
   yours = false,
   copyLabel = 'Copy Work Order Notes',
   activeShiftId = null,
+  permissions,
 }: MachineWorkboardCardProps) {
   const [expandedNotesItemIds, setExpandedNotesItemIds] = useState<Set<string>>(new Set());
   const [inlineWoInputs, setInlineWoInputs] = useState<Record<string, string>>({});
   const [activeInlineWoTarget, setActiveInlineWoTarget] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const supabase = createClient();
   const isPlanned = asset.status === 'DOWN_PLANNED';
@@ -125,7 +136,9 @@ export default function MachineWorkboardCard({
   const eventConfig = getEventConfig(mainEvent?.order_type, isPlanned);
   const priorityConfig = getPriorityConfig(asset.priority);
   const fill = priorityFill(asset.priority);
-  const etu = isReleased ? null : getEtuStatus(asset.expected_up);
+  const etu = isReleased ? null : getEtuStatus(asset.expected_up, now);
+  const showOverdue = Boolean(etu?.overdue && openOrders.length > 0);
+  const holdLabel = openOrders.map((order) => holdBadge(order.stage, order.hold_eta)).find((label) => label) ?? null;
   const jobCount = openOrders.length;
   const solidBadge = isReleased ? 'bg-slate-200 text-slate-700' : fill.badge;
 
@@ -162,8 +175,12 @@ export default function MachineWorkboardCard({
           Expected back up <strong className="font-mono text-slate-900">{formatDateTime(asset.expected_up)}</strong>
         </span>
       )}
-      {etu?.overdue && (
-        <span className="shrink-0 px-1.5 py-0.5 rounded text-[11px] font-black uppercase bg-rose-100 text-rose-800">Overdue</span>
+      {holdLabel && <HoldPill label={holdLabel} />}
+      {showOverdue && etu && (
+        <span className="shrink-0 px-2 py-0.5 rounded text-[11px] font-black uppercase bg-red-600 text-white">{etu.label}</span>
+      )}
+      {etu && !etu.overdue && (
+        <span className="shrink-0 px-1.5 py-0.5 rounded text-[11px] font-black uppercase bg-emerald-100 text-emerald-800">{etu.label}</span>
       )}
       {canRelease ? (
         <span className="shrink-0 ml-auto px-2 py-0.5 rounded bg-emerald-600 text-[11px] font-black uppercase text-white">Ready to release</span>
@@ -233,6 +250,9 @@ export default function MachineWorkboardCard({
         priorityLabel={isReleased ? 'RELEASED' : priorityConfig.label}
         isReleased={isReleased}
         yours={yours}
+        etu={etu}
+        showOverdue={showOverdue}
+        canEditDetails={permissions.canEditWorkshopJobs}
         openQuickEdit={openQuickEdit}
         openHistory={openHistory}
         openDefects={openDefects}
@@ -254,10 +274,13 @@ export default function MachineWorkboardCard({
           openPartsModal={openPartsModal}
           openCrewPicker={openCrewPicker}
           onRefresh={onRefresh}
+          canEditJobs={permissions.canEditWorkshopJobs}
+          canAddNotes={permissions.canAddNotes}
         />
       ) : (
         <div className="p-4 bg-amber-50/60 border-b border-amber-200 flex flex-wrap items-center justify-between gap-3">
           <span className="text-sm font-semibold text-amber-800">No job logged for this machine yet.</span>
+          {permissions.canEditWorkshopJobs && (
           <button
             type="button"
             onClick={() => openAddWorkOrder(asset)}
@@ -265,6 +288,7 @@ export default function MachineWorkboardCard({
           >
             + Add Work Order
           </button>
+          )}
         </div>
       )}
 
@@ -288,6 +312,8 @@ export default function MachineWorkboardCard({
           openPartsModal={openPartsModal}
           openCrewPicker={openCrewPicker}
           onRefresh={onRefresh}
+          canEditJobs={permissions.canEditWorkshopJobs}
+          canAddNotes={permissions.canAddNotes}
         />
       )}
 
@@ -295,8 +321,9 @@ export default function MachineWorkboardCard({
         openOrdersCount={openOrders.length}
         canRelease={canRelease}
         isReleased={isReleased}
+        showRelease={permissions.canReleaseMachine}
         onRelease={() => releaseMachineToProduction(asset.id, asset.fleet_id)}
-        onAddWorkOrder={mainEvent && !isReleased ? () => openAddWorkOrder(asset) : undefined}
+        onAddWorkOrder={permissions.canEditWorkshopJobs && mainEvent && !isReleased ? () => openAddWorkOrder(asset) : undefined}
       />
       </>
       )}

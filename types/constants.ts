@@ -31,18 +31,26 @@ export const PRIORITY_OPTIONS = [
 
 export const STAGES = [
   'IN_PROGRESS',
-  'WAITING_LABOUR',
   'WAITING_PARTS',
+  'WAITING_OEM',
+  'WAITING_BAY',
+  'WAITING_LABOUR',
   'WAITING_PRODUCTION',
   'WEATHER_DELAY',
   'COMPLETED',
 ] as const;
 
-export const STAGE_OPTIONS = [
+export const OPERATIONAL_STAGE_OPTIONS = [
   { value: 'IN_PROGRESS', label: 'In Progress' },
-  { value: 'WAITING_LABOUR', label: 'Waiting on Labour' },
   { value: 'WAITING_PARTS', label: 'Waiting on Parts' },
+  { value: 'WAITING_OEM', label: 'Waiting on OEM' },
+  { value: 'WAITING_BAY', label: 'Waiting on Bay / Crane' },
+  { value: 'COMPLETED', label: 'Completed (sign off)' },
+] as const;
+
+export const STAGE_OPTIONS = [
+  ...OPERATIONAL_STAGE_OPTIONS,
+  { value: 'WAITING_LABOUR', label: 'Waiting on Labour' },
   { value: 'WAITING_PRODUCTION', label: 'Waiting on Production' },
   { value: 'WEATHER_DELAY', label: 'Weather Delay' },
-  { value: 'COMPLETED', label: 'Complete' },
 ] as const;

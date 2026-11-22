@@ -101,7 +101,8 @@ export function useShiftChat(profileId: string, isSupervisor: boolean) {
     void supabase
       .from('profiles')
       .select('id, display_name, employee_id, crew_member_id')
-      .eq('role', 'fitter')
+      .eq('department', 'workshop')
+      .eq('access_level', 2)
       .eq('active', true)
       .order('display_name')
       .then(({ data, error: loadError }) => {

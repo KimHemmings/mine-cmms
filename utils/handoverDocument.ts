@@ -51,7 +51,7 @@ function peopleOnJob(order: MachineWorkOrder, crew: CrewMember[]) {
   if (!text || text.toLowerCase() === 'unassigned') return [];
   const named = crew.filter((member) => member.active && text.toLowerCase().includes(member.display_name.toLowerCase()));
   if (named.length > 0) return named;
-  return [{ id: '', display_name: text, department: '', trade: '', panel: null, active: true, created_at: '' }];
+  return [{ id: '', display_name: text, department: 'workshop', access_level: 2, trade: '', panel: null, active: true, created_at: '' }];
 }
 
 function ordersFor(asset: Asset, workOrders: MachineWorkOrder[]): HandoverSnapshot['handedOver'][number]['orders'] {

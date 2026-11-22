@@ -5,6 +5,7 @@ import { createClient } from '@/utils/supabase/client';
 import { Authorisation, CREW_PANELS, CrewAuthorisation, CrewMember, TrainingItemKind } from '@/types';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import DateRoster from './DateRoster';
+import { departmentLabel } from '@/utils/permissions';
 
 export default function TicketRegister({
   crew,
@@ -37,7 +38,7 @@ export default function TicketRegister({
     .map((member) => ({
       id: member.id,
       name: member.display_name,
-      detail: `${member.department || 'Workshop'}${member.panel ? ` · ${member.panel}` : ''}`,
+      detail: `${departmentLabel(member.department)}${member.panel ? ` · ${member.panel}` : ''}`,
     }));
 
   function expiresFor(memberId: string) {

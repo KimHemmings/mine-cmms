@@ -32,6 +32,7 @@ import IncomingCrewDialog from './crew/IncomingCrewDialog';
 import { useCrewData } from './crew/CrewDataContext';
 import { siteCover } from '@/utils/crewStanding';
 import { IncomingCrewPicker } from './handover/IncomingCrewPicker';
+import { inWindow, windowFor } from '@/utils/shiftClock';
 
 const LOG_CATEGORIES: HandoverLogCategory[] = [
   'SAFETY', 'WEATHER', 'MANNING', 'WATCHLIST', 'BRAKE_TEST', 'TOOLING', 'PRIORITY',
@@ -98,6 +99,7 @@ export default function HandoverReportTab({
   const [saving, setSaving] = useState(false);
   const [showRollover, setShowRollover] = useState(false);
   const [view, setView] = useState<'current' | 'history'>('current');
+  const [reportWindow, setReportWindow] = useState<'12h' | '24h'>('12h');
   const [opened, setOpened] = useState<SavedHandover | null>(null);
   const [handovers, setHandovers] = useState<SavedHandover[]>([]);
   const [slides, setSlides] = useState<HandoverSlide[]>([]);
@@ -125,13 +127,19 @@ export default function HandoverReportTab({
   const handedOver = shiftJobs.filter((asset) => asset.in_shift && asset.status !== 'OPERATIONAL');
   const currentSaved = handovers.find((handover) => handover.shift_id === activeShift?.id) ?? null;
 
+  const bounds = windowFor(reportWindow);
+  const inReport = (iso?: string | null) => inWindow(iso, bounds.start, bounds.end);
+  const windowedOrders = workOrders.filter((order) => inReport(order.created_at) || inReport(order.completed_at));
+  const windowedNotes = notes.filter((note) => inReport(note.created_at));
+  const windowedLog = handoverLog.filter((entry) => inReport(entry.logged_at));
+  const windowedReleased = completedJobs.filter((asset) => inReport(asset.actual_up));
   const liveSnapshot = buildHandoverSnapshot({
     assets,
     handedOver,
-    released: completedJobs,
-    workOrders,
+    released: windowedReleased,
+    workOrders: windowedOrders,
     defects,
-    log: handoverLog,
+    log: windowedLog,
     shiftStartedAt: activeShift?.started_at ?? null,
     summary,
     machineNotes,
@@ -374,6 +382,14 @@ export default function HandoverReportTab({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 rounded-full border border-slate-300 bg-slate-50 p-1" role="group" aria-label="Handover window">
+            <button type="button" onClick={() => setReportWindow('12h')} aria-pressed={reportWindow === '12h'} className={`min-h-9 px-3 rounded-full text-xs font-black ${reportWindow === '12h' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}>
+              Current 12h Shift
+            </button>
+            <button type="button" onClick={() => setReportWindow('24h')} aria-pressed={reportWindow === '24h'} className={`min-h-9 px-3 rounded-full text-xs font-black ${reportWindow === '24h' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}>
+              Last 24 Hours
+            </button>
+          </div>
           <button type="button" onClick={() => { setOpened(null); setView('current'); }} className={`${actionClass} ${view === 'current' && !opened ? 'bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-700'}`}>
             This shift
           </button>
@@ -499,7 +515,7 @@ export default function HandoverReportTab({
             <summary className="text-sm font-black text-slate-800 cursor-pointer">Add a note or a written summary</summary>
             <div className="mt-4">
               <ShiftHandoverLog
-                entries={handoverLog}
+                entries={windowedLog}
                 onAddEntry={handleAddLogEntry}
                 onUpdateCategory={handleUpdateCategory}
                 onDeleteEntry={handleDeleteLogEntry}
@@ -509,10 +525,10 @@ export default function HandoverReportTab({
               <AiHandoverDigest
                 activeShift={activeShift}
                 shiftJobs={shiftJobs}
-                completedJobs={completedJobs}
-                workOrders={workOrders}
-                notes={notes}
-                logEntries={handoverLog}
+                completedJobs={windowedReleased}
+                workOrders={windowedOrders}
+                notes={windowedNotes}
+                logEntries={windowedLog}
                 summaryText={summary}
                 machineNotes={machineNotes}
                 onSummaryGenerated={(text, notesForMachines) => {

@@ -15,6 +15,8 @@ export interface UserProfile {
   display_name: string;
   employee_id: string | null;
   role: UserRole;
+  department: string;
+  access_level: number;
   active: boolean;
   crew_member_id: string | null;
 }
@@ -39,6 +41,8 @@ export type WorkOrderStage =
   | 'IN_PROGRESS'
   | 'WAITING_LABOUR'
   | 'WAITING_PARTS'
+  | 'WAITING_OEM'
+  | 'WAITING_BAY'
   | 'WAITING_PRODUCTION'
   | 'WEATHER_DELAY'
   | 'COMPLETED';
@@ -54,6 +58,7 @@ export interface MachineWorkOrder {
   component_systems: string[];
   fitter_assigned: string | null;
   stage: WorkOrderStage;
+  hold_eta?: string | null;
   status: 'OPEN' | 'COMPLETED';
   completed_at: string | null;
   completed_by: string | null;
@@ -115,6 +120,7 @@ export interface HistoryNote {
   note: string;
   stage: string;
   created_at: string;
+  pending?: boolean;
 }
 
 export interface AssetWatchItem {

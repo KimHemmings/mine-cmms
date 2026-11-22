@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Asset, DefectItem, HistoryNote } from '@/types';
 import { FleetDossierHeader } from './fleet-directory/FleetDossierHeader';
 import { FleetDossierGroup } from './fleet-directory/FleetDossierGroup';
+import FleetUnitForm from './fleet-directory/FleetUnitForm';
 import { RepeatScan } from './fleet-directory/RepeatFailureCallout';
 
 interface FleetDossierTabProps {
@@ -10,6 +11,8 @@ interface FleetDossierTabProps {
   notes?: HistoryNote[];
   openHistory: (asset: Asset) => void;
   onAssignJob?: (asset: Asset) => void;
+  canManageFleet?: boolean;
+  onChanged?: () => void;
 }
 
 export default function FleetDossierTab({
@@ -18,6 +21,8 @@ export default function FleetDossierTab({
   notes = [],
   openHistory,
   onAssignJob,
+  canManageFleet = false,
+  onChanged,
 }: FleetDossierTabProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPERATIONAL' | 'DOWN'>('ALL');
@@ -26,6 +31,8 @@ export default function FleetDossierTab({
   const [repeatCache, setRepeatCache] = useState<Record<string, RepeatScan>>({});
   const [openRepeatId, setOpenRepeatId] = useState<string | null>(null);
   const [scanningRepeatId, setScanningRepeatId] = useState<string | null>(null);
+  const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
+  const [addingMachine, setAddingMachine] = useState(false);
 
   async function scanRepeats(asset: Asset, force = false) {
     setOpenRepeatId(asset.id);
@@ -167,7 +174,23 @@ export default function FleetDossierTab({
         onOwnerChange={setSelectedOwner}
         owners={owners}
         counts={counts}
+        canManageFleet={canManageFleet}
+        onAddMachine={() => {
+          setEditingAsset(null);
+          setAddingMachine(true);
+        }}
       />
+
+      {canManageFleet && (addingMachine || editingAsset) && (
+        <FleetUnitForm
+          asset={editingAsset}
+          onClose={() => {
+            setAddingMachine(false);
+            setEditingAsset(null);
+          }}
+          onSaved={() => onChanged?.()}
+        />
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-sm font-bold text-slate-600">
         <span>
@@ -220,6 +243,12 @@ export default function FleetDossierTab({
               onToggleMachine={toggleMachine}
               openDefectCounts={openDefectCounts}
               recordCounts={recordCounts}
+              canManageFleet={canManageFleet}
+              onEditMachine={(asset) => {
+                setAddingMachine(false);
+                setEditingAsset(asset);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
             />
           ))
       )}

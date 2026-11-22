@@ -24,6 +24,8 @@ interface AdditionalWorkOrdersSectionProps {
   openPartsModal?: (wo: MachineWorkOrder) => void;
   openCrewPicker?: (wo: MachineWorkOrder) => void;
   onRefresh: () => void;
+  canEditJobs?: boolean;
+  canAddNotes?: boolean;
 }
 
 export default function AdditionalWorkOrdersSection({
@@ -45,6 +47,8 @@ export default function AdditionalWorkOrdersSection({
   openPartsModal,
   openCrewPicker,
   onRefresh,
+  canEditJobs = true,
+  canAddNotes = true,
 }: AdditionalWorkOrdersSectionProps) {
   const [showCompleted, setShowCompleted] = useState(false);
   const openOrders = additionalOrders.filter((w) => w.status !== 'COMPLETED');
@@ -72,6 +76,8 @@ export default function AdditionalWorkOrdersSection({
       openPartsModal={openPartsModal}
       openCrewPicker={openCrewPicker}
       onRefresh={onRefresh}
+      canEditJobs={canEditJobs}
+      canAddNotes={canAddNotes}
     />
   );
 

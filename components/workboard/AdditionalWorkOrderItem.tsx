@@ -9,7 +9,7 @@ import { generateSapNotesText, notesForWorkOrder } from '@/utils/sapFormatter';
 import TidyNotesButton from '@/components/ui/TidyNotesButton';
 import InlineNotesDrawer from '@/components/InlineNotesDrawer';
 import PartsBadge from './PartsBadge';
-import JobStatusSelect from './JobStatusSelect';
+import { JobHoldControls } from './JobStatusSelect';
 import PartsArrivedPrompt from './PartsArrivedPrompt';
 
 interface AdditionalWorkOrderItemProps {
@@ -32,6 +32,8 @@ interface AdditionalWorkOrderItemProps {
   openPartsModal?: (wo: MachineWorkOrder) => void;
   openCrewPicker?: (wo: MachineWorkOrder) => void;
   onRefresh: () => void;
+  canEditJobs?: boolean;
+  canAddNotes?: boolean;
 }
 
 export default function AdditionalWorkOrderItem({
@@ -54,6 +56,8 @@ export default function AdditionalWorkOrderItem({
   openPartsModal,
   openCrewPicker,
   onRefresh,
+  canEditJobs = true,
+  canAddNotes = true,
 }: AdditionalWorkOrderItemProps) {
   const isDone = wo.status === 'COMPLETED';
   const jobLabel = `${asset.fleet_id}: ${wo.task_description}`;
@@ -94,7 +98,7 @@ export default function AdditionalWorkOrderItem({
                 <FileText className="w-4 h-4 inline mr-1" />
                 {formatWoDisplay(wo.wo_number)}
               </span>
-            ) : (
+            ) : canEditJobs ? (
               <button
                 type="button"
                 onClick={onOpenAttachWo}
@@ -102,6 +106,8 @@ export default function AdditionalWorkOrderItem({
               >
                 <PlusCircle className="w-4 h-4" /> Add work order number
               </button>
+            ) : (
+              <span className="text-sm font-bold text-slate-500">No WO # yet</span>
             )}
 
             {wo.component_systems?.map((sys) => (
@@ -111,7 +117,7 @@ export default function AdditionalWorkOrderItem({
             ))}
 
             <PartsBadge parts={wo.parts} onClick={() => openPartsModal?.(wo)} />
-            {!isDone && wo.stage === 'WAITING_PARTS' && !wo.parts?.length && (
+            {canEditJobs && !isDone && wo.stage === 'WAITING_PARTS' && !wo.parts?.length && (
               <button
                 type="button"
                 onClick={() => openPartsModal?.(wo)}
@@ -125,7 +131,7 @@ export default function AdditionalWorkOrderItem({
           <p className="text-sm text-slate-600 flex flex-wrap items-center gap-1.5">
             <User className="w-4 h-4 text-slate-400" />
             <span>Crew: <strong className="text-slate-900">{wo.fitter_assigned || 'Unassigned'}</strong></span>
-            {!isDone && openCrewPicker && (
+            {!isDone && canEditJobs && openCrewPicker && (
               <button
                 type="button"
                 onClick={() => openCrewPicker(wo)}
@@ -178,7 +184,15 @@ export default function AdditionalWorkOrderItem({
             {isNotesExpanded ? 'Hide notes' : 'Notes'}
           </button>
 
-          <JobStatusSelect stage={wo.stage} isDone={isDone} onChange={handleStageChange} />
+          <JobHoldControls
+            stage={wo.stage}
+            isDone={isDone}
+            holdEta={wo.hold_eta}
+            workOrderId={wo.id}
+            locked={!canEditJobs}
+            onChange={handleStageChange}
+            onSaved={onRefresh}
+          />
         </div>
         {copyText && copyText !== compiledNotes && (
           <p className="max-w-xl text-sm font-medium text-slate-900 whitespace-pre-wrap">{copyText}</p>
@@ -214,10 +228,12 @@ export default function AdditionalWorkOrderItem({
         </div>
       )}
 
+      {canEditJobs && (
       <PartsArrivedPrompt
         workOrder={wo}
         onResume={() => updateWorkOrderStage(wo.id, asset.id, 'IN_PROGRESS', jobLabel)}
       />
+      )}
 
       {isNotesExpanded && (
         <InlineNotesDrawer
@@ -230,6 +246,7 @@ export default function AdditionalWorkOrderItem({
           activeFitter={activeFitter}
           heading="Work order notes:"
           onRefresh={onRefresh}
+          canAddNotes={canAddNotes}
         />
       )}
     </div>

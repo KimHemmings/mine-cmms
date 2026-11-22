@@ -5,7 +5,9 @@ import { CheckCircle2, CheckCircle, Search, X } from 'lucide-react';
 import { Asset, CrewMember, MachineWorkOrder, HistoryNote } from '@/types';
 import MachineWorkboardCard, { workOrdersForActiveCard } from '@/components/MachineWorkboardCard';
 import BreakdownHistorySearch from '@/components/workboard/BreakdownHistorySearch';
+import SiteDictionaryPanel from '@/components/workboard/SiteDictionaryPanel';
 import { getEventConfig } from '@/components/workboard/workboardTheme';
+import { Permissions, isWorkshopRoster } from '@/utils/permissions';
 
 interface WorkboardTabProps {
   shiftJobs: Asset[];
@@ -27,7 +29,7 @@ interface WorkboardTabProps {
   releaseMachineToProduction: (assetId: string, fleetId?: string) => void;
   onRefresh: () => void;
   queuedWorkOrderIds?: string[];
-  isWorkshopSupervisor?: boolean;
+  permissions: Permissions;
   historyAssets?: Asset[];
   activeShiftId?: string | null;
 }
@@ -68,7 +70,7 @@ export default function WorkboardTab({
   releaseMachineToProduction,
   onRefresh,
   queuedWorkOrderIds = [],
-  isWorkshopSupervisor = false,
+  permissions,
   historyAssets = [],
   activeShiftId = null,
 }: WorkboardTabProps) {
@@ -128,27 +130,30 @@ export default function WorkboardTab({
       return fields.some((f) => f?.toLowerCase().includes(term));
     };
 
+    const floatMyJobs = permissions.department === 'workshop' && permissions.accessLevel === 2;
+    const supervisorBoard = permissions.canManageSiteDictionary;
+
     const compare = (a: Asset, b: Asset) => {
-      if (!isWorkshopSupervisor) {
+      if (floatMyJobs) {
         const aMine = isMine(a);
         const bMine = isMine(b);
         if (aMine !== bMine) return aMine ? -1 : 1;
         const aBreak = isBreakdown(a);
         const bBreak = isBreakdown(b);
         if (aBreak !== bBreak) return aBreak ? -1 : 1;
-      } else if (sortMode === 'fleet') {
+      } else if (supervisorBoard && sortMode === 'fleet') {
         return a.fleet_id.localeCompare(b.fleet_id, undefined, { numeric: true });
-      } else if (sortMode === 'longest') {
+      } else if (supervisorBoard && sortMode === 'longest') {
         return timeOf(a.down_since) - timeOf(b.down_since);
       }
 
       const aOver = isOverdue(a, now);
       const bOver = isOverdue(b, now);
-      if (isWorkshopSupervisor && aOver !== bOver) return aOver ? -1 : 1;
+      if (supervisorBoard && aOver !== bOver) return aOver ? -1 : 1;
       const pa = PRIORITY_RANK[a.priority ?? ''] ?? 5;
       const pb = PRIORITY_RANK[b.priority ?? ''] ?? 5;
       if (pa !== pb) return pa - pb;
-      if (isWorkshopSupervisor && aOver && bOver) return timeOf(a.expected_up) - timeOf(b.expected_up);
+      if (supervisorBoard && aOver && bOver) return timeOf(a.expected_up) - timeOf(b.expected_up);
       return timeOf(a.down_since) - timeOf(b.down_since);
     };
 
@@ -161,7 +166,7 @@ export default function WorkboardTab({
       mineIds: new Set(active.filter(isMine).map((asset) => asset.id)),
       counts: { all: active.length },
     };
-  }, [shiftJobs, ordersByAsset, search, sortMode, myName, now, crew, myCrewMemberId, isWorkshopSupervisor]);
+  }, [shiftJobs, ordersByAsset, search, sortMode, myName, now, crew, myCrewMemberId, permissions]);
 
   if (loading && shiftJobs.length === 0) {
     return (
@@ -209,6 +214,7 @@ export default function WorkboardTab({
       yours={mineIds.has(asset.id)}
       copyLabel="Copy Work Order Notes"
       activeShiftId={activeShiftId}
+      permissions={permissions}
     />
   );
 
@@ -226,7 +232,7 @@ export default function WorkboardTab({
           >
             <option value="">Choose your name so My jobs is your work</option>
             {crew
-              .filter((member) => member.active && member.department !== 'Production' && member.trade !== 'Operator')
+              .filter((member) => member.active && isWorkshopRoster(member))
               .map((member) => (
                 <option key={member.id} value={member.id}>
                   {member.display_name}{member.panel ? ` · ${member.panel}` : ''}
@@ -259,7 +265,7 @@ export default function WorkboardTab({
             )}
           </label>
 
-          {isWorkshopSupervisor && (
+          {permissions.canManageSiteDictionary && (
           <label className="flex items-center gap-2 text-sm font-bold text-slate-600">
             Sort
             <select
@@ -275,7 +281,8 @@ export default function WorkboardTab({
           )}
         </div>
 
-        {isWorkshopSupervisor && <BreakdownHistorySearch assets={historyAssets} />}
+        {permissions.canManageSiteDictionary && <BreakdownHistorySearch assets={historyAssets} />}
+        {permissions.canManageSiteDictionary && <SiteDictionaryPanel />}
       </div>
 
       <div className="space-y-4">

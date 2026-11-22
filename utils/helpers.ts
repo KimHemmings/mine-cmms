@@ -33,15 +33,15 @@ export function getElapsedDown(downSince: string | null) {
   return `${Math.floor(diffMs / 3600000)}h ${Math.floor((diffMs % 3600000) / 60000)}m`;
 }
 
-export function getEtuStatus(expectedUp: string | null) {
+export function getEtuStatus(expectedUp: string | null, now = Date.now()) {
   if (!expectedUp) return null;
-  const diffMs = new Date(expectedUp).getTime() - Date.now();
+  const diffMs = new Date(expectedUp).getTime() - now;
   const absDiffMs = Math.abs(diffMs);
   const hours = Math.floor(absDiffMs / 3600000);
   const mins = Math.floor((absDiffMs % 3600000) / 60000);
 
   if (diffMs < 0) {
-    return { overdue: true, label: `Overdue by ${hours}h ${mins}m` };
+    return { overdue: true, label: `OVERDUE ${hours}h ${mins}m` };
   }
   return { overdue: false, label: `${hours}h ${mins}m to go` };
 }

@@ -1,5 +1,15 @@
 // types/crew.ts
-export const CREW_DEPARTMENTS = ['Workshop', 'Production'] as const;
+export const CREW_DEPARTMENTS = [
+  { value: 'workshop', label: 'Workshop' },
+  { value: 'production', label: 'Production' },
+  { value: 'training', label: 'Training' },
+] as const;
+
+export const ACCESS_LEVELS = [
+  { value: 1, label: 'Level 1 — Read-Only' },
+  { value: 2, label: 'Level 2 — Crew' },
+  { value: 3, label: 'Level 3 — Supervisor' },
+] as const;
 
 export const CREW_PANELS = ['A Crew', 'B Crew', 'C Crew', 'D Crew'] as const;
 
@@ -10,6 +20,8 @@ export const CREW_TRADES = [
   'Leading Hand',
   'Apprentice',
   'Operator',
+  'Crew Trainer',
+  'OCE',
   'Other',
 ] as const;
 
@@ -18,6 +30,7 @@ export interface CrewMember {
   display_name: string;
   employee_id: string | null;
   department: string;
+  access_level: number;
   trade: string;
   panel: string | null;
   active: boolean;
@@ -47,6 +60,7 @@ export interface CrewMemberInput {
   display_name: string;
   employee_id: string | null;
   department: string;
+  access_level: number;
   trade: string;
   panel: string | null;
 }

@@ -17,6 +17,16 @@ export const STAGE_THEMES: Record<string, { label: string; badge: string; select
     badge: 'bg-amber-100 text-amber-900 border-amber-300',
     select: 'border-amber-300 bg-amber-50 text-amber-900',
   },
+  WAITING_OEM: {
+    label: 'Waiting on OEM',
+    badge: 'bg-amber-100 text-amber-900 border-amber-300',
+    select: 'border-amber-300 bg-amber-50 text-amber-900',
+  },
+  WAITING_BAY: {
+    label: 'Waiting on Bay / Crane',
+    badge: 'bg-amber-100 text-amber-900 border-amber-300',
+    select: 'border-amber-300 bg-amber-50 text-amber-900',
+  },
   WAITING_PRODUCTION: {
     label: 'Waiting on Production',
     badge: 'bg-teal-100 text-teal-900 border-teal-300',
@@ -28,7 +38,7 @@ export const STAGE_THEMES: Record<string, { label: string; badge: string; select
     select: 'border-slate-300 bg-slate-100 text-slate-800',
   },
   COMPLETED: {
-    label: 'Complete',
+    label: 'Completed (sign off)',
     badge: 'bg-emerald-100 text-emerald-900 border-emerald-300',
     select: 'border-emerald-300 bg-emerald-50 text-emerald-900',
   },

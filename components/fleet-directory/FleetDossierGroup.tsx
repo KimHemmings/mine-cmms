@@ -19,6 +19,8 @@ interface FleetDossierGroupProps {
   onToggleMachine: (id: string) => void;
   openDefectCounts: Map<string, number>;
   recordCounts: Map<string, number>;
+  canManageFleet?: boolean;
+  onEditMachine?: (asset: Asset) => void;
 }
 
 export const FleetDossierGroup: React.FC<FleetDossierGroupProps> = ({
@@ -36,6 +38,8 @@ export const FleetDossierGroup: React.FC<FleetDossierGroupProps> = ({
   onToggleMachine,
   openDefectCounts,
   recordCounts,
+  canManageFleet = false,
+  onEditMachine,
 }) => {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -96,6 +100,8 @@ export const FleetDossierGroup: React.FC<FleetDossierGroupProps> = ({
               onSpotRepeats={onSpotRepeats}
               onHideRepeats={onHideRepeats}
               onRefreshRepeats={onRefreshRepeats}
+              canManageFleet={canManageFleet}
+              onEditMachine={onEditMachine}
             />
           ))}
         </div>

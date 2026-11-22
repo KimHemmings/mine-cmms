@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Users, Pencil, UserX, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import { CREW_PANELS, CrewMember, CrewMemberInput, ShiftRecord } from '@/types';
+import { departmentLabel } from '@/utils/permissions';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import { useCrewData } from './CrewDataContext';
 import { CrewMarks } from '@/components/training/CrewMarks';
@@ -80,7 +81,7 @@ export default function CrewTab({ activeShift, saveCrewMember, setCrewMemberActi
                     {c.display_name}
                     <span className="ml-2 inline-flex align-middle"><CrewMarks person={c} supervision={supervision} authorisations={authorisations} holdings={holdings} showUpcoming /></span>
                     <span className="ml-2 text-sm font-medium text-slate-500">
-                      {c.department || 'Workshop'} · {c.trade}
+                      {departmentLabel(c.department)} · Level {c.access_level || 2} · {c.trade}
                       {c.employee_id && <span className="font-mono"> · #{c.employee_id}</span>}
                       {onShiftIds.has(c.id) && <span className="ml-2 text-emerald-700 font-bold">On shift</span>}
                     </span>
@@ -125,7 +126,7 @@ export default function CrewTab({ activeShift, saveCrewMember, setCrewMemberActi
                 {removedCrew.map((c) => (
                   <li key={c.id} className="p-3 flex items-center justify-between gap-2 bg-slate-50">
                     <span className="text-sm font-semibold text-slate-500">
-                      {c.display_name} · {c.department || 'Workshop'} · {c.trade}
+                      {c.display_name} · {departmentLabel(c.department)} · Level {c.access_level || 2} · {c.trade}
                     </span>
                     <button
                       type="button"

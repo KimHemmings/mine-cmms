@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Plus,
@@ -18,19 +18,14 @@ import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 import { HelpButton } from '@/components/help/HelpButton';
 import { ChangePasswordButton } from '@/components/auth/ChangePasswordButton';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
-import { CrewMember, ShiftRecord, UserRole } from '@/types';
+import { CREW_PANELS, CrewMember, ShiftRecord, UserRole } from '@/types';
 import ShiftChatDrawer from '@/components/ShiftChatDrawer';
+import { Permissions, isWorkshopRoster } from '@/utils/permissions';
+import { getShiftClock, type ShiftClock } from '@/utils/shiftClock';
 import { formatStartDay, shiftIsPast } from '@/utils/crewStanding';
 import type { SyncStatus } from '@/hooks/useRealtimeWorkboard';
 
 type Tab = 'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status';
-
-const ROLE_LABEL: Record<UserRole, string> = {
-  fitter: 'Fitter',
-  management: 'Supervisor',
-  training: 'Training',
-  production: 'Production',
-};
 
 interface TopHeaderProps {
   activeShift: ShiftRecord | null;
@@ -41,6 +36,7 @@ interface TopHeaderProps {
   onTabChange: (tab: Tab) => void;
   shiftJobsCount: number;
   userRole: UserRole;
+  permissions: Permissions;
   onOpenAssign: () => void;
   onRefresh: () => void;
   crewAttention?: number;
@@ -48,12 +44,13 @@ interface TopHeaderProps {
   myCrewMemberId?: string | null;
   crew?: CrewMember[];
   onLinkCrew?: (crewMemberId: string) => void;
+  onSetShiftCrew?: (panel: string) => void;
   profileId?: string | null;
 }
 
-function screenTitle(role: UserRole, tab: Tab) {
-  if (role === 'training') return 'Training';
-  if (role === 'production') return tab === 'handover' ? 'Shift handover' : 'Production whiteboard';
+function screenTitle(tab: Tab) {
+  if (tab === 'training') return 'Training';
+  if (tab === 'status') return 'Production whiteboard';
   if (tab === 'dossier') return 'Fleet directory';
   if (tab === 'handover') return 'Shift handover';
   if (tab === 'crew') return 'Crew';
@@ -61,7 +58,7 @@ function screenTitle(role: UserRole, tab: Tab) {
 }
 
 function workshopPeople(crew: CrewMember[]) {
-  return crew.filter((member) => member.active && member.department !== 'Production' && member.trade !== 'Operator');
+  return crew.filter((member) => member.active && isWorkshopRoster(member));
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -73,6 +70,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onTabChange,
   shiftJobsCount,
   userRole,
+  permissions,
   onOpenAssign,
   onRefresh,
   crewAttention = 0,
@@ -80,14 +78,25 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   myCrewMemberId = null,
   crew = [],
   onLinkCrew,
+  onSetShiftCrew,
   profileId = null,
 }) => {
   const router = useRouter();
   const supabase = createClient();
   const { confirm } = useFeedback();
   const [signingOut, setSigningOut] = useState(false);
+  const [clock, setClock] = useState<ShiftClock | null>(null);
+
+  useEffect(() => {
+    const tick = () => setClock(getShiftClock());
+    tick();
+    const timer = setInterval(tick, 60_000);
+    return () => clearInterval(timer);
+  }, []);
   const people = workshopPeople(crew);
   const linked = myCrewMemberId;
+  const workshopCrew = permissions.department === 'workshop' && permissions.accessLevel === 2;
+  const workshopDesk = permissions.department === 'workshop' && permissions.accessLevel === 3;
 
   async function handleSignOut() {
     const ok = await confirm({
@@ -105,27 +114,27 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   }
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
-    { id: 'status', label: 'Whiteboard', icon: <Factory className="w-4 h-4" />, show: userRole === 'production' },
-    { id: 'board', label: `Whiteboard (${shiftJobsCount})`, icon: <ClipboardList className="w-4 h-4" />, show: userRole === 'fitter' || userRole === 'management' },
-    { id: 'dossier', label: 'Fleet directory', icon: <BookOpen className="w-4 h-4" />, show: userRole === 'fitter' || userRole === 'management' },
-    { id: 'handover', label: 'Shift handover', icon: <FileSpreadsheet className="w-4 h-4" />, show: userRole === 'management' || userRole === 'production' },
-    { id: 'crew', label: crewAttention > 0 ? `Crew (${crewAttention})` : 'Crew', icon: <Users className="w-4 h-4" />, show: userRole === 'management' },
-    { id: 'training', label: 'Training', icon: <GraduationCap className="w-4 h-4" />, show: userRole === 'training' },
+    { id: 'status', label: 'Production', icon: <Factory className="w-4 h-4" />, show: permissions.department === 'production' },
+    { id: 'board', label: `Whiteboard (${shiftJobsCount})`, icon: <ClipboardList className="w-4 h-4" />, show: permissions.canViewWhiteboard },
+    { id: 'dossier', label: 'Fleet directory', icon: <BookOpen className="w-4 h-4" />, show: permissions.canViewFleetDirectory },
+    { id: 'handover', label: 'Shift handover', icon: <FileSpreadsheet className="w-4 h-4" />, show: permissions.canViewHandover },
+    { id: 'crew', label: crewAttention > 0 ? `Crew (${crewAttention})` : 'Crew', icon: <Users className="w-4 h-4" />, show: permissions.canManageCrew },
+    { id: 'training', label: 'Training', icon: <GraduationCap className="w-4 h-4" />, show: permissions.department === 'training' },
   ];
 
-  const showAssign = (currentTab === 'board' || currentTab === 'dossier') && (userRole === 'fitter' || userRole === 'management');
+  const showAssign = permissions.canAssignMachine && (currentTab === 'board' || currentTab === 'dossier' || currentTab === 'status');
 
   return (
     <header className="space-y-3 pb-4 border-b border-slate-300 print:hidden">
       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-black tracking-tight text-slate-900">{screenTitle(userRole, currentTab)}</h1>
+          <h1 className="text-2xl font-black tracking-tight text-slate-900">{screenTitle(currentTab)}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-            <span className="font-black uppercase tracking-wide text-slate-800">{ROLE_LABEL[userRole]}</span>
+            <span className="font-black uppercase tracking-wide text-slate-800">{permissions.badge}</span>
             <strong className="text-slate-900" title="Your name is stamped on every note and sign-off you make">
               {activeFitter || '...'}
             </strong>
-            {userRole === 'fitter' && onLinkCrew && linked && (
+            {workshopCrew && onLinkCrew && linked && (
               <label className="inline-flex items-center gap-1 text-xs font-bold text-slate-600">
                 <UserCheck className="w-3.5 h-3.5" />
                 <span className="sr-only">Change the person My jobs follows</span>
@@ -148,14 +157,43 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 </select>
               </label>
             )}
+            {clock && (
+              <span className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-black text-slate-900">
+                {clock.shiftName}
+                <span className="font-bold text-slate-600">{clock.timeRemaining}</span>
+              </span>
+            )}
+            {permissions.canViewHandover && onSetShiftCrew ? (
+              <label className="inline-flex items-center gap-1 text-xs font-bold text-slate-600">
+                <span className="sr-only">Active crew</span>
+                <select
+                  value={activeShift?.crew ?? ''}
+                  onChange={(event) => {
+                    if (event.target.value) onSetShiftCrew(event.target.value);
+                  }}
+                  className="min-h-9 rounded-full border border-slate-300 bg-white px-3 text-xs font-black text-slate-900"
+                  aria-label="Active crew"
+                >
+                  {!activeShift?.crew && <option value="">Active crew</option>}
+                  {CREW_PANELS.map((panel) => (
+                    <option key={panel} value={panel}>{panel}</option>
+                  ))}
+                  {activeShift?.crew && !(CREW_PANELS as readonly string[]).includes(activeShift.crew) && (
+                    <option value={activeShift.crew}>{activeShift.crew}</option>
+                  )}
+                </select>
+              </label>
+            ) : (
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-700">
+                {activeShift?.crew || 'No crew'}
+              </span>
+            )}
             <span className="text-slate-500">
-              {userRole === 'training'
+              {permissions.department === 'training'
                 ? 'All crews'
                 : (
                   <>
-                    {activeShift?.shift_name || 'No active shift'}
-                    {activeShift?.crew ? ` · ${activeShift.crew}` : ''}
-                    {activeShift?.shift_date ? ` · ${formatStartDay(activeShift.shift_date)}` : ''}
+                    {activeShift?.shift_date ? formatStartDay(activeShift.shift_date) : 'No open shift'}
                     {shiftIsPast(activeShift?.shift_date) ? ' · still open' : ''}
                   </>
                 )}
@@ -165,8 +203,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {(userRole === 'fitter' || userRole === 'management') && profileId && (
-            <ShiftChatDrawer senderName={activeFitter} userRole={userRole} profileId={profileId} crew={crew} />
+          {permissions.canUseShiftChat && profileId && (
+            <ShiftChatDrawer
+              senderName={activeFitter}
+              userRole={workshopDesk ? 'management' : 'fitter'}
+              profileId={profileId}
+              crew={crew}
+            />
           )}
           <ChangePasswordButton />
           <HelpButton userRole={userRole} shiftId={activeShift?.id ?? null} fleetChoices={fleetChoices} />

@@ -3,8 +3,11 @@ import { Send } from 'lucide-react';
 import { HistoryNote } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
 import { createClient } from '@/utils/supabase/client';
+import { isNetworkError } from '@/utils/stageQueue';
+import { queueNote } from '@/utils/noteQueue';
 import DictationMicButton, { useDictationTarget } from '@/components/ui/DictationMicButton';
 import TidyNotesButton from '@/components/ui/TidyNotesButton';
+import { useFeedback } from '@/components/ui/FeedbackProvider';
 
 interface InlineNotesDrawerProps {
   assetId: string;
@@ -16,6 +19,7 @@ interface InlineNotesDrawerProps {
   heading?: string;
   taskDescription?: string;
   fleetId?: string;
+  canAddNotes?: boolean;
 }
 
 export default function InlineNotesDrawer({
@@ -28,23 +32,55 @@ export default function InlineNotesDrawer({
   heading = 'Work order notes:',
   taskDescription = '',
   fleetId,
+  canAddNotes = true,
 }: InlineNotesDrawerProps) {
   const note = useDictationTarget();
   const [fitterStamp, setFitterStamp] = useState(activeFitter);
   const supabase = createClient();
+  const { showToast } = useFeedback();
 
   const itemNotes = notes.filter((note) => note.work_order_id === itemId);
 
   async function handleAddNote() {
-    if (!note.value.trim()) return;
+    const text = note.value.trim();
+    if (!text) return;
+    const fitterName = (fitterStamp || activeFitter || 'Shift Fitter').trim();
+    const row = {
+      assetId,
+      workOrderId: itemId,
+      fitterName,
+      note: text,
+      stage: 'IN_REPAIR',
+    };
 
-    await supabase.from('asset_history_notes').insert([{
-      asset_id: assetId,
-      work_order_id: itemId,
-      fitter_name: (fitterStamp || activeFitter || 'Shift Fitter').trim(),
-      note: note.value.trim(),
-      stage: 'IN_REPAIR'
+    const holdLocally = () => {
+      queueNote(row);
+      note.setValue('');
+      showToast({ message: 'Saved on this tablet. It will send when the signal is back.' });
+      onRefresh();
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      holdLocally();
+      return;
+    }
+
+    const { error } = await supabase.from('asset_history_notes').insert([{
+      asset_id: row.assetId,
+      work_order_id: row.workOrderId,
+      fitter_name: row.fitterName,
+      note: row.note,
+      stage: row.stage,
     }]);
+
+    if (error && isNetworkError(error)) {
+      holdLocally();
+      return;
+    }
+    if (error) {
+      showToast({ message: 'That note was not saved. Try again.', tone: 'error' });
+      return;
+    }
 
     note.setValue('');
     onRefresh();
@@ -56,7 +92,7 @@ export default function InlineNotesDrawer({
         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
           {heading}
         </span>
-        <DictationMicButton {...note.mic} />
+        {canAddNotes && <DictationMicButton {...note.mic} />}
       </div>
 
       <div className="space-y-1.5 max-h-32 overflow-y-auto">
@@ -65,7 +101,9 @@ export default function InlineNotesDrawer({
         ) : (
           itemNotes.map((n) => (
             <div key={n.id} className="text-xs bg-slate-50 p-2 rounded border border-slate-200 flex items-start gap-2 shadow-2xs">
-              <span className="font-mono text-[10px] text-slate-400 shrink-0">{formatDateTime(n.created_at)}</span>
+              <span className="font-mono text-[10px] text-slate-400 shrink-0">
+                {n.pending ? 'Waiting to send' : formatDateTime(n.created_at)}
+              </span>
               <span className="font-bold text-amber-800 shrink-0">[{n.fitter_name}]:</span>
               <span className="text-slate-800">{n.note.replace(/^\[.*?\]:\s*/, '')}</span>
             </div>
@@ -73,6 +111,7 @@ export default function InlineNotesDrawer({
         )}
       </div>
 
+      {canAddNotes && (
       <div className="flex flex-col sm:flex-row gap-1.5 pt-1">
         <input
           type="text"
@@ -105,6 +144,7 @@ export default function InlineNotesDrawer({
           <Send className="w-4 h-4" /> Add Note
         </button>
       </div>
+      )}
     </div>
   );
 }

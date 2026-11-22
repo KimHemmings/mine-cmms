@@ -10,6 +10,8 @@ interface FleetDossierHeaderProps {
   onOwnerChange: (owner: string) => void;
   owners: string[];
   counts: { all: number; down: number; running: number };
+  canManageFleet?: boolean;
+  onAddMachine?: () => void;
 }
 
 export const FleetDossierHeader: React.FC<FleetDossierHeaderProps> = ({
@@ -21,6 +23,8 @@ export const FleetDossierHeader: React.FC<FleetDossierHeaderProps> = ({
   onOwnerChange,
   owners,
   counts,
+  canManageFleet = false,
+  onAddMachine,
 }) => {
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-5 shadow-xs">
@@ -32,6 +36,15 @@ export const FleetDossierHeader: React.FC<FleetDossierHeaderProps> = ({
           <p className="text-xs text-slate-500 mt-0.5 font-medium">
             Open a machine for its history and repeat failures.
           </p>
+          {canManageFleet && onAddMachine && (
+            <button
+              type="button"
+              onClick={onAddMachine}
+              className="mt-3 min-h-11 px-4 rounded-lg bg-slate-900 text-white text-sm font-black"
+            >
+              Add machine
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200 self-start lg:self-auto">

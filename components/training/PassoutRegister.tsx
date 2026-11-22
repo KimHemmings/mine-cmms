@@ -5,6 +5,7 @@ import { createClient } from '@/utils/supabase/client';
 import { Asset, CREW_PANELS, CrewMember, OperatorPassout, PRODUCTION_PLANT } from '@/types';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import DateRoster from './DateRoster';
+import { isProductionDepartment } from '@/utils/permissions';
 
 export default function PassoutRegister({
   machines,
@@ -25,7 +26,7 @@ export default function PassoutRegister({
   const selected = plant.find((asset) => asset.fleet_id === fleetId) ?? plant[0] ?? null;
 
   const people = crew
-    .filter((member) => member.active && member.department === 'Production')
+    .filter((member) => member.active && isProductionDepartment(member.department))
     .filter((member) => crewFilter === 'all' || member.panel === crewFilter)
     .sort((a, b) => a.display_name.localeCompare(b.display_name))
     .map((member) => ({

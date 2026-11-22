@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { UserPlus, Save } from 'lucide-react';
-import { CREW_DEPARTMENTS, CREW_PANELS, CREW_TRADES, CrewMember, CrewMemberInput } from '@/types';
+import { ACCESS_LEVELS, CREW_DEPARTMENTS, CREW_PANELS, CREW_TRADES, CrewMember, CrewMemberInput } from '@/types';
+import { normalizeAccessLevel, normalizeDepartment } from '@/utils/permissions';
 
 interface CrewMemberFormProps {
   editing: CrewMember | null;
@@ -13,11 +14,18 @@ interface CrewMemberFormProps {
 const inputClass =
   'w-full min-h-11 rounded-lg border-2 border-slate-300 bg-slate-50 px-3 text-base text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white';
 
-const EMPTY: CrewMemberInput = { display_name: '', employee_id: '', department: 'Workshop', trade: 'Fitter', panel: '' };
+const EMPTY: CrewMemberInput = { display_name: '', employee_id: '', department: 'workshop', access_level: 2, trade: 'Fitter', panel: '' };
 
 function toInput(member: CrewMember | null): CrewMemberInput {
   return member
-    ? { display_name: member.display_name, employee_id: member.employee_id ?? '', department: member.department || 'Workshop', trade: member.trade, panel: member.panel ?? '' }
+    ? {
+        display_name: member.display_name,
+        employee_id: member.employee_id ?? '',
+        department: normalizeDepartment(member.department),
+        access_level: normalizeAccessLevel(member.access_level),
+        trade: member.trade,
+        panel: member.panel ?? '',
+      }
     : EMPTY;
 }
 
@@ -58,16 +66,31 @@ export default function CrewMemberForm({ editing, onSave, onCancelEdit }: CrewMe
           <span className="text-xs font-bold text-slate-600">Department</span>
           <select value={form.department} onChange={set('department')} className={`${inputClass} cursor-pointer`}>
             {CREW_DEPARTMENTS.map((department) => (
-              <option key={department} value={department}>{department}</option>
+              <option key={department.value} value={department.value}>{department.label}</option>
             ))}
           </select>
         </label>
         <label className="space-y-1">
-          <span className="text-xs font-bold text-slate-600">Trade</span>
+          <span className="text-xs font-bold text-slate-600">Access level</span>
+          <select
+            value={form.access_level}
+            onChange={(event) => setForm((prev) => ({ ...prev, access_level: normalizeAccessLevel(Number(event.target.value)) }))}
+            className={`${inputClass} cursor-pointer`}
+          >
+            {ACCESS_LEVELS.map((level) => (
+              <option key={level.value} value={level.value}>{level.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold text-slate-600">Job title / Trade</span>
           <select value={form.trade} onChange={set('trade')} className={`${inputClass} cursor-pointer`}>
             {CREW_TRADES.map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
+            {form.trade && !(CREW_TRADES as readonly string[]).includes(form.trade) && (
+              <option value={form.trade}>{form.trade}</option>
+            )}
           </select>
         </label>
         <label className="space-y-1">

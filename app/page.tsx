@@ -18,7 +18,7 @@ import WorkboardTab from '@/components/WorkboardTab';
 import FleetDossierTab from '@/components/FleetDossierTab';
 import HandoverReportTab from '@/components/HandoverReportTab';
 import WorkboardModals from '@/components/WorkboardModals';
-import { isWorkshopSupervisorRole } from '@/utils/roles';
+import { getPermissions } from '@/utils/permissions';
 import { TopHeader } from '@/components/TopHeader';
 import { FeedbackProvider, useFeedback } from '@/components/ui/FeedbackProvider';
 import CrewTab from '@/components/crew/CrewTab';
@@ -38,21 +38,31 @@ function Workboard() {
   const supabase = useMemo(() => createClient(), []);
   const { profile, displayName: activeFitter, loading: profileLoading, reload } = useCurrentUser();
   const userRole: UserRole = profile?.role ?? 'fitter';
-  const isWorkshopSupervisor = isWorkshopSupervisorRole(userRole);
+  const permissions = getPermissions(profile);
   const [currentTab, setCurrentTab] = useState<'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status'>('board');
   const [trainingSection, setTrainingSection] = useState<'tickets' | 'passouts' | 'supervision'>('tickets');
-  const [routedRole, setRoutedRole] = useState<UserRole | null>(null);
-  if (profile && routedRole !== profile.role) {
-    setRoutedRole(profile.role);
-    if (profile.role === 'training') setCurrentTab('training');
-    if (profile.role === 'production') setCurrentTab('status');
+  const [routedProfile, setRoutedProfile] = useState<string | null>(null);
+  const homeTab = permissions.department === 'training'
+    ? 'training'
+    : permissions.department === 'production'
+      ? 'status'
+      : 'board';
+  if (profile && routedProfile !== profile.id) {
+    setRoutedProfile(profile.id);
+    setCurrentTab(homeTab);
   }
 
   useEffect(() => {
-    if (!profile || isWorkshopSupervisor) return;
-    if (userRole === 'production' || userRole === 'training') return;
-    if (currentTab === 'handover' || currentTab === 'crew') setCurrentTab('board');
-  }, [profile, isWorkshopSupervisor, userRole, currentTab]);
+    if (!profile) return;
+    const allowed =
+      (currentTab === 'board' && permissions.canViewWhiteboard)
+      || (currentTab === 'dossier' && permissions.canViewFleetDirectory)
+      || (currentTab === 'handover' && permissions.canViewHandover)
+      || (currentTab === 'crew' && permissions.canManageCrew)
+      || (currentTab === 'training' && permissions.department === 'training')
+      || (currentTab === 'status' && permissions.department === 'production');
+    if (!allowed) setCurrentTab(homeTab);
+  }, [profile, permissions, currentTab, homeTab]);
   const { showToast } = useFeedback();
 
   // Modal Visibility State
@@ -114,9 +124,9 @@ function Workboard() {
       authorisations,
       holdings,
       supervision,
-      canCheckAuthorisations: userRole !== 'fitter',
+      canCheckAuthorisations: permissions.accessLevel === 3,
     };
-  }, [crew, onShiftCrewIds, workOrders, allAssets, authorisations, holdings, supervision, userRole]);
+  }, [crew, onShiftCrewIds, workOrders, allAssets, authorisations, holdings, supervision, permissions.accessLevel]);
 
   const crewAttention = useMemo(() => {
     let count = 0;
@@ -190,6 +200,7 @@ function Workboard() {
         onTabChange={setCurrentTab}
         shiftJobsCount={shiftJobs.length}
         userRole={userRole}
+        permissions={permissions}
         onOpenAssign={() => {
           setAssignAssetId(null);
           setShowAssignModal(true);
@@ -199,12 +210,13 @@ function Workboard() {
         fleetChoices={fleetChoices}
         myCrewMemberId={profile?.crew_member_id ?? null}
         crew={crew}
-        onLinkCrew={userRole === 'fitter' ? linkMyCrew : undefined}
+        onLinkCrew={permissions.department === 'workshop' && permissions.accessLevel === 2 ? linkMyCrew : undefined}
+        onSetShiftCrew={setShiftPanel}
         profileId={profile?.id ?? null}
       />
 
       <section className="mt-6">
-        {currentTab === 'board' && (userRole === 'fitter' || userRole === 'management') && (
+        {currentTab === 'board' && permissions.canViewWhiteboard && (
           <WorkboardTab
             shiftJobs={shiftJobs}
             workOrders={workOrders}
@@ -219,13 +231,13 @@ function Workboard() {
             openQuickEdit={setQuickEditAsset}
             myCrewMemberId={profile?.crew_member_id ?? null}
             crew={crew}
-            onLinkCrew={userRole === 'fitter' ? linkMyCrew : undefined}
+            onLinkCrew={permissions.department === 'workshop' && permissions.accessLevel === 2 ? linkMyCrew : undefined}
             queuedWorkOrderIds={queuedWorkOrderIds}
             openPartsModal={(wo: MachineWorkOrder) => setTargetPartsWoId(wo.id)}
             openCrewPicker={(wo: MachineWorkOrder) => setTargetCrewWoId(wo.id)}
             releaseMachineToProduction={releaseMachineToProduction}
             onRefresh={refreshAfterSave}
-            isWorkshopSupervisor={isWorkshopSupervisor}
+            permissions={permissions}
             historyAssets={allAssets}
             activeShiftId={activeShift?.id ?? null}
           />
@@ -237,14 +249,16 @@ function Workboard() {
             defects={defects}
             notes={notes}
             openHistory={setActiveHistoryAsset}
-            onAssignJob={(asset) => {
+            canManageFleet={permissions.canManageFleet}
+            onChanged={fetchAllData}
+            onAssignJob={permissions.canAssignMachine ? (asset) => {
               setAssignAssetId(asset.id);
               setShowAssignModal(true);
-            }}
+            } : undefined}
           />
         )}
 
-        {currentTab === 'handover' && userRole === 'management' && (
+        {currentTab === 'handover' && permissions.canViewHandover && permissions.department !== 'production' && (
           <HandoverReportTab
             activeShift={activeShift}
             shiftJobs={shiftJobs}
@@ -260,7 +274,7 @@ function Workboard() {
           />
         )}
 
-        {currentTab === 'training' && userRole === 'training' && (
+        {currentTab === 'training' && permissions.department === 'training' && (
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2" role="group" aria-label="Training sections">
               {([
@@ -320,7 +334,7 @@ function Workboard() {
           </div>
         )}
 
-        {currentTab === 'handover' && userRole === 'production' && (
+        {currentTab === 'handover' && permissions.canViewHandover && permissions.department === 'production' && (
           <ProductionHandover
             activeShift={activeShift}
             machines={allAssets}
@@ -333,7 +347,7 @@ function Workboard() {
           />
         )}
 
-        {currentTab === 'status' && userRole === 'production' && (
+        {currentTab === 'status' && permissions.department === 'production' && (
           <ProductionStatus
             activeShift={activeShift}
             machines={allAssets}
@@ -349,7 +363,7 @@ function Workboard() {
           />
         )}
 
-        {currentTab === 'crew' && userRole === 'management' && (
+        {currentTab === 'crew' && permissions.canManageCrew && (
           <CrewTab
             activeShift={activeShift}
             saveCrewMember={saveCrewMember}

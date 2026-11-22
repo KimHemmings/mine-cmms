@@ -3,7 +3,7 @@
 import React from 'react';
 import { Pencil, History, MapPin, AlertTriangle, ChevronUp } from 'lucide-react';
 import { Asset } from '@/types';
-import { formatDateTime, getElapsedDown, getEtuStatus } from '@/utils/helpers';
+import { formatDateTime, getElapsedDown } from '@/utils/helpers';
 import { EventClassBadge } from './workboardTheme';
 
 interface MachineCardHeaderProps {
@@ -13,6 +13,9 @@ interface MachineCardHeaderProps {
   priorityLabel: string;
   isReleased: boolean;
   yours?: boolean;
+  etu?: { overdue: boolean; label: string } | null;
+  showOverdue?: boolean;
+  canEditDetails?: boolean;
   openQuickEdit: (asset: Asset) => void;
   openHistory: (asset: Asset) => void;
   openDefects: (asset: Asset) => void;
@@ -26,13 +29,14 @@ export default function MachineCardHeader({
   priorityLabel,
   isReleased,
   yours = false,
+  etu = null,
+  showOverdue = false,
+  canEditDetails = true,
   openQuickEdit,
   openHistory,
   openDefects,
   onCollapse,
 }: MachineCardHeaderProps) {
-  const etu = isReleased ? null : getEtuStatus(asset.expected_up);
-
   return (
     <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -70,12 +74,13 @@ export default function MachineCardHeader({
 
             <span className="text-slate-600">
               Expected back up <strong className="font-mono text-slate-900">{formatDateTime(asset.expected_up)}</strong>
-              {etu && (
-                <span
-                  className={`ml-1.5 px-1.5 py-0.5 rounded text-xs font-black ${
-                    etu.overdue ? 'text-rose-800 bg-rose-100' : 'text-emerald-800 bg-emerald-100'
-                  }`}
-                >
+              {showOverdue && etu && (
+                <span className="ml-1.5 px-2 py-0.5 rounded text-xs font-black uppercase bg-red-600 text-white">
+                  {etu.label}
+                </span>
+              )}
+              {etu && !etu.overdue && (
+                <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-black bg-emerald-100 text-emerald-800">
                   {etu.label}
                 </span>
               )}
@@ -84,6 +89,7 @@ export default function MachineCardHeader({
         )}
 
         <div className="flex gap-2">
+          {canEditDetails && (
           <button
             type="button"
             onClick={() => openQuickEdit(asset)}
@@ -92,6 +98,7 @@ export default function MachineCardHeader({
           >
             <Pencil className="w-4 h-4 text-amber-600" /> Edit details
           </button>
+          )}
 
           <button
             type="button"

@@ -9,7 +9,7 @@ import { formatWoDisplay } from './workboardTheme';
 import TidyNotesButton from '@/components/ui/TidyNotesButton';
 import InlineNotesDrawer from '@/components/InlineNotesDrawer';
 import PartsBadge from './PartsBadge';
-import JobStatusSelect from './JobStatusSelect';
+import { JobHoldControls } from './JobStatusSelect';
 import PartsArrivedPrompt from './PartsArrivedPrompt';
 
 interface MainEventSectionProps {
@@ -26,6 +26,8 @@ interface MainEventSectionProps {
   copyLabel?: string;
   updateWorkOrderStage: (woId: string, assetId: string, newStage: string, jobLabel?: string) => void;
   onRefresh: () => void;
+  canEditJobs?: boolean;
+  canAddNotes?: boolean;
 }
 
 export default function MainEventSection({
@@ -42,6 +44,8 @@ export default function MainEventSection({
   openPartsModal,
   openCrewPicker,
   onRefresh,
+  canEditJobs = true,
+  canAddNotes = true,
 }: MainEventSectionProps) {
   const isDone = mainEvent.status === 'COMPLETED';
   const jobLabel = `${asset.fleet_id}: ${mainEvent.task_description}`;
@@ -88,7 +92,7 @@ export default function MainEventSection({
               </span>
             ))}
             <PartsBadge parts={mainEvent.parts} onClick={() => openPartsModal?.(mainEvent)} />
-            {mainEvent.stage === 'WAITING_PARTS' && !mainEvent.parts?.length && (
+            {canEditJobs && mainEvent.stage === 'WAITING_PARTS' && !mainEvent.parts?.length && (
               <button
                 type="button"
                 onClick={() => openPartsModal?.(mainEvent)}
@@ -103,7 +107,7 @@ export default function MainEventSection({
           <p className="text-sm text-slate-600 flex flex-wrap items-center gap-1.5">
             <User className="w-4 h-4 text-slate-400" />
             <span>Crew: <strong className="text-slate-900">{mainEvent.fitter_assigned || 'Unassigned'}</strong></span>
-            {!isDone && openCrewPicker && (
+            {!isDone && canEditJobs && openCrewPicker && (
               <button
                 type="button"
                 onClick={() => openCrewPicker(mainEvent)}
@@ -156,7 +160,15 @@ export default function MainEventSection({
             {isNotesExpanded ? 'Hide notes' : `Notes (${itemNotesCount})`}
           </button>
 
-          <JobStatusSelect stage={mainEvent.stage} isDone={isDone} onChange={handleStageChange} />
+          <JobHoldControls
+            stage={mainEvent.stage}
+            isDone={isDone}
+            holdEta={mainEvent.hold_eta}
+            workOrderId={mainEvent.id}
+            locked={!canEditJobs}
+            onChange={handleStageChange}
+            onSaved={onRefresh}
+          />
         </div>
         {copyText && copyText !== compiledNotes && (
           <p className="max-w-xl text-sm font-medium text-slate-900 whitespace-pre-wrap">{copyText}</p>
@@ -164,10 +176,12 @@ export default function MainEventSection({
         </div>
       </div>
 
+      {canEditJobs && (
       <PartsArrivedPrompt
         workOrder={mainEvent}
         onResume={() => updateWorkOrderStage(mainEvent.id, asset.id, 'IN_PROGRESS', jobLabel)}
       />
+      )}
 
       {isNotesExpanded && (
         <InlineNotesDrawer
@@ -180,6 +194,7 @@ export default function MainEventSection({
           activeFitter={activeFitter}
           heading="Work order notes:"
           onRefresh={onRefresh}
+          canAddNotes={canAddNotes}
         />
       )}
     </div>

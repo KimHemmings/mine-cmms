@@ -18,6 +18,7 @@ import {
   ShiftRecord,
   ShiftSeatChange,
 } from '@/types';
+import { isProductionDepartment } from '@/utils/permissions';
 import { formatDateTime } from '@/utils/helpers';
 import { normalizeOceBriefing } from '@/utils/oce';
 import { seatChangeLines, siteCover } from '@/utils/crewStanding';
@@ -103,7 +104,7 @@ export default function ProductionHandover({
   const notCrewed = plant
     .filter((asset) => asset.status === 'OPERATIONAL' && !asset.in_shift && !shiftAllocations.some((row) => row.asset_id === asset.id))
     .map((asset) => ({ fleetId: asset.fleet_id, machine: asset.make_model, location: asset.location || '' }));
-  const onCrew = crew.filter((member) => member.active && member.department === 'Production' && (!activeShift?.crew || member.panel === activeShift.crew));
+  const onCrew = crew.filter((member) => member.active && isProductionDepartment(member.department) && (!activeShift?.crew || member.panel === activeShift.crew));
   const cover = siteCover(onCrew, supervision, authorisations, holdings, crew);
   const inWorkshop = plant
     .filter((asset) => asset.status !== 'OPERATIONAL')

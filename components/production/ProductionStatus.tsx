@@ -19,6 +19,7 @@ import {
   authorisationState,
   personLight,
 } from '@/types';
+import { isProductionDepartment } from '@/utils/permissions';
 import { formatDateTime } from '@/utils/helpers';
 import { generatePrestartPptx } from '@/utils/prestartPptx';
 import { formatStartDay, seatChangeLines, shiftIsPast, siteCover, supervisionFor, supervisionIsLive } from '@/utils/crewStanding';
@@ -59,7 +60,7 @@ export default function ProductionStatus({
   const [showCrewed, setShowCrewed] = useState(true);
   const [openPerson, setOpenPerson] = useState<CrewMember | null>(null);
   const [changingId, setChangingId] = useState<string | null>(null);
-  const operators = crew.filter((member) => member.active && member.department === 'Production');
+  const operators = crew.filter((member) => member.active && isProductionDepartment(member.department));
   const onCrew = operators.filter((member) => !activeShift?.crew || member.panel === activeShift.crew);
   const cover = siteCover(onCrew, supervision, authorisations, holdings, crew);
   const plant = machines.filter((asset) => (PRODUCTION_PLANT as readonly string[]).includes(asset.asset_type));
@@ -105,7 +106,7 @@ export default function ProductionStatus({
     if (state !== 'due' && state !== 'expired') return [];
     const person = crew.find((member) => member.id === row.crew_member_id);
     const asset = machines.find((item) => item.id === row.asset_id);
-    if (!person || person.department !== 'Production') return [];
+    if (!person || !isProductionDepartment(person.department)) return [];
     return [{ personId: person.id, person: person.display_name, fleetId: asset?.fleet_id ?? 'Machine', expires: row.expires_on.slice(0, 10), state: STATE_WORD[state] }];
   });
 
