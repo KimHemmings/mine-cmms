@@ -21,6 +21,8 @@ import {
 } from '@/types';
 import { isProductionDepartment } from '@/utils/permissions';
 import ServiceAlertPills from '@/components/StatutoryDueBadge';
+import RepeatFailurePill from '@/components/RepeatFailurePill';
+import { repeatFailures, repeatsForAsset } from '@/utils/repeatFailures';
 import { isOpenPlannedService } from '@/utils/statutoryCompliance';
 import { formatDateTime } from '@/utils/helpers';
 import { generatePrestartPptx } from '@/utils/prestartPptx';
@@ -288,7 +290,13 @@ export default function ProductionStatus({
                     <td className="py-2 pr-3 font-bold">{asset.fleet_id}<span className="block text-xs font-medium text-slate-500">{asset.make_model}{asset.in_shift ? '' : ' · Not in the workshop'}</span></td>
                     <td className="py-2 pr-3">{main?.task_description || 'No open job'}</td>
                     <td className="py-2 pr-3">{stage || 'No open job'}</td>
-                    <td className="py-2"><span className="inline-flex items-center gap-2">{formatDateTime(asset.expected_up)}<ServiceAlertPills asset={asset} suppressSmu={openJobs.some((order) => isOpenPlannedService(order))} /></span></td>
+                    <td className="py-2">
+                      <span className="inline-flex flex-wrap items-center gap-2">
+                        {formatDateTime(asset.expected_up)}
+                        <ServiceAlertPills asset={asset} suppressSmu={openJobs.some((order) => isOpenPlannedService(order))} />
+                        {repeatsForAsset(repeatFailures(workOrders, [asset]), asset.id).map((failure) => <RepeatFailurePill key={failure.component} failure={failure} />)}
+                      </span>
+                    </td>
                   </tr>
                 );
               })}

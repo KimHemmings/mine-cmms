@@ -30,6 +30,7 @@ import {
 } from '@/utils/managementRates';
 import { HandoverCheckRow, HandoverIncident, normalizeIncidents, recordFromRow, shiftRank } from '@/utils/productionHandoverRecord';
 import { expiryState, serviceAlerts } from '@/utils/statutoryCompliance';
+import { formatDownHours, repeatFailures } from '@/utils/repeatFailures';
 import { useSiteBrand } from '@/components/SiteBrand';
 import { Department, departmentLabel } from '@/utils/permissions';
 import { CrewLetter, crewLetter } from '@/utils/shiftRoster';
@@ -195,6 +196,7 @@ export default function ManagementTab({
       {scope === 'all' && <AccountabilitySplit snapshot={snapshot} targets={targets} books={books} showMoney={showMoney} />}
       <ManningTable rows={snapshot.manning} targets={targets} showMoney={showMoney} />
       <CompetencyMatrix rows={snapshot.models.filter((row) => row.risk !== 'COVERED')} letter={letter} targets={targets} showMoney={showMoney} unmannedModels={unmannedModels} horizon={horizon} />
+      <BadActors failures={repeatFailures(workOrders, assets)} />
       <div className="grid gap-4 lg:grid-cols-2">
         <HoldCard snapshot={snapshot} />
         <StatutoryCard statutory={statutory} />
@@ -485,6 +487,30 @@ function CompetencyMatrix({ rows, letter, targets, showMoney, unmannedModels, ho
           })}
         </tbody>
       </table>
+      )}
+    </section>
+  );
+}
+
+function BadActors({ failures }: { failures: ReturnType<typeof repeatFailures> }) {
+  return (
+    <section className="rounded-xl border border-rose-300 bg-white p-4">
+      <h2 className="text-sm font-black uppercase tracking-wide text-rose-900">Workshop Bad Actors / Bottlenecks</h2>
+      {failures.length === 0 ? (
+        <p className="mt-3 text-sm text-slate-500">No component has broken twice in the last 14 days.</p>
+      ) : (
+        <ul className="mt-3 space-y-3">
+          {failures.map((failure) => (
+            <li key={`${failure.assetId}-${failure.component}`}>
+              <p className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-black text-slate-900">{failure.fleetId}</span>
+                <span className="rounded-full bg-rose-700 px-2 py-0.5 text-[11px] font-black text-white">REPEAT • {failure.count}× {failure.component}</span>
+                <span className="font-bold text-slate-700">{formatDownHours(failure.hours)} down over 14 days</span>
+              </p>
+              <p className="mt-1 text-sm text-slate-700">{failure.detail}</p>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );

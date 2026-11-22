@@ -16,7 +16,9 @@ import MainEventSection from './workboard/MainEventSection';
 import AdditionalWorkOrdersSection from './workboard/AdditionalWorkOrdersSection';
 import MachineReleaseFooter from './workboard/MachineReleaseFooter';
 import ServiceAlertPills from '@/components/StatutoryDueBadge';
+import RepeatFailurePill, { RepeatFailureDetail } from '@/components/RepeatFailurePill';
 import { isOpenPlannedService } from '@/utils/statutoryCompliance';
+import { repeatFailures, repeatsForAsset } from '@/utils/repeatFailures';
 
 const PRIORITY_FILLS = {
   P1: {
@@ -146,6 +148,7 @@ export default function MachineWorkboardCard({
   const solidBadge = isReleased ? 'bg-slate-200 text-slate-700' : fill.badge;
   const productionView = permissions.isReadOnlyWorkshop;
   const suppressSmu = openOrders.some((order) => isOpenPlannedService(order));
+  const repeats = repeatsForAsset(repeatFailures(workOrders, [asset]), asset.id);
 
   const summaryRow = compact ? (
     <button
@@ -191,6 +194,7 @@ export default function MachineWorkboardCard({
       )}
       <span className="shrink-0 ml-auto inline-flex items-center gap-2">
         <ServiceAlertPills asset={asset} suppressSmu={suppressSmu} />
+        {repeats.map((failure) => <RepeatFailurePill key={failure.component} failure={failure} />)}
         {!productionView && (canRelease ? (
           <span className="px-2 py-0.5 rounded bg-emerald-600 text-[11px] font-black uppercase text-white">Ready to release</span>
         ) : (
@@ -207,6 +211,7 @@ export default function MachineWorkboardCard({
     return (
       <div className={`rounded-xl border bg-white border-slate-300 border-l-8 ${fill.edge} shadow-sm overflow-hidden`}>
         {summaryRow}
+        {isDetailsExpanded && <RepeatFailureDetail failures={repeats} />}
         {isDetailsExpanded && (
           <div className="border-t border-slate-200 p-4 space-y-4">
             <section>
@@ -295,11 +300,13 @@ export default function MachineWorkboardCard({
         showOverdue={showOverdue}
         canEditDetails={permissions.canEditWorkshopJobs}
         suppressSmu={suppressSmu}
+        repeats={repeats}
         openQuickEdit={openQuickEdit}
         openHistory={openHistory}
         openDefects={openDefects}
         onCollapse={compact ? toggleExpandDetails : undefined}
       />
+      <RepeatFailureDetail failures={repeats} />
 
       {mainEvent ? (
         <MainEventSection
