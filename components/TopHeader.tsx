@@ -316,7 +316,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             onClick={onOpenAssign}
             className="min-h-11 flex items-center gap-2 px-4 bg-white hover:bg-slate-50 border-2 border-slate-300 text-slate-800 text-sm font-bold rounded-xl"
           >
-            <Plus className="w-4 h-4" /> Assign machine
+            <Plus className="w-4 h-4" /> Create downtime event
           </button>
         )}
       </div>

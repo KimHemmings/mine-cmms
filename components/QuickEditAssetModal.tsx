@@ -5,6 +5,7 @@ import { X, Edit3, Check } from 'lucide-react';
 import { Asset, OrderType } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 import PrioritySelector from './quick-edit/PrioritySelector';
+import { getPriorityConfig, workshopPriority } from './workboard/workboardTheme';
 import AssetDetailsInputs from './quick-edit/AssetDetailsInputs';
 import EtuTimeSection from './quick-edit/EtuTimeSection';
 
@@ -64,8 +65,8 @@ export default function QuickEditAssetModal({
       setCurrentSmu(asset.current_smu == null ? '' : String(asset.current_smu));
       setNextServiceSmu(asset.next_service_smu == null ? '' : String(asset.next_service_smu));
       setStatutoryDue((asset.statutory_inspection_due ?? '').slice(0, 10));
-setPriority(asset.priority || '');
-setOrderType(asset.status === 'DOWN_PLANNED' ? 'PLANNED' : 'UNPLANNED');
+      setPriority(workshopPriority(asset.priority));
+      setOrderType(asset.status === 'DOWN_PLANNED' ? 'PLANNED' : 'UNPLANNED');
 
       if (asset.down_since) {
         try {
@@ -119,7 +120,7 @@ setOrderType(asset.status === 'DOWN_PLANNED' ? 'PLANNED' : 'UNPLANNED');
       .update({
         location: formattedLocation,
         machine_owner: machineOwner,
-        priority: priority || null,
+        priority: workshopPriority(priority),
         down_since: downSinceInput ? new Date(downSinceInput).toISOString() : asset.down_since,
         expected_up: expectedUpInput ? new Date(expectedUpInput).toISOString() : asset.expected_up,
         current_smu: currentSmu === '' ? null : Number(currentSmu),
@@ -142,7 +143,7 @@ setOrderType(asset.status === 'DOWN_PLANNED' ? 'PLANNED' : 'UNPLANNED');
         {
           asset_id: asset.id,
           fitter_name: activeFitter || 'Supervisor',
-          note: `Updated banner details: Loc: ${formattedLocation || 'Unassigned'}, Owner: ${machineOwner}, Priority: ${priority || 'No Priority'}, WO: ${woNumber.trim() || 'None'}, ETU: ${expectedUpInput}`,
+          note: `Updated banner details: Loc: ${formattedLocation || 'Unassigned'}, Owner: ${machineOwner}, Priority: ${getPriorityConfig(priority).label}, WO: ${woNumber.trim() || 'None'}, ETU: ${expectedUpInput}`,
           stage: asset.shift_stage || 'IN_PROGRESS',
         },
       ]);

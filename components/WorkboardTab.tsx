@@ -6,7 +6,7 @@ import { Asset, CrewMember, MachineWorkOrder, HistoryNote } from '@/types';
 import MachineWorkboardCard, { workOrdersForActiveCard } from '@/components/MachineWorkboardCard';
 import BreakdownHistorySearch from '@/components/workboard/BreakdownHistorySearch';
 import SiteDictionaryPanel from '@/components/workboard/SiteDictionaryPanel';
-import { getEventConfig } from '@/components/workboard/workboardTheme';
+import { getEventConfig, workshopPriority } from '@/components/workboard/workboardTheme';
 import { Permissions, isProductionDepartment, isWorkshopRoster } from '@/utils/permissions';
 import { seatLabel } from '@/utils/crewAllocation';
 import LocationPill, { parkUpNeedsConfirm } from '@/components/production/LocationPill';
@@ -43,7 +43,7 @@ interface WorkboardTabProps {
 
 type SortMode = 'urgent' | 'longest' | 'fleet';
 
-const PRIORITY_RANK: Record<string, number> = { P1: 1, P2: 2, P3: 3, P4: 4 };
+const PRIORITY_RANK: Record<'P1' | 'P2' | 'P3', number> = { P1: 1, P2: 2, P3: 3 };
 
 function newestOpenJob(orders: MachineWorkOrder[]) {
   const open = orders.filter((order) => order.status !== 'COMPLETED');
@@ -170,8 +170,8 @@ export default function WorkboardTab({
       const aOver = isOverdue(a, now);
       const bOver = isOverdue(b, now);
       if (supervisorBoard && aOver !== bOver) return aOver ? -1 : 1;
-      const pa = PRIORITY_RANK[a.priority ?? ''] ?? 5;
-      const pb = PRIORITY_RANK[b.priority ?? ''] ?? 5;
+      const pa = PRIORITY_RANK[workshopPriority(a.priority)];
+      const pb = PRIORITY_RANK[workshopPriority(b.priority)];
       if (pa !== pb) return pa - pb;
       if (supervisorBoard && aOver && bOver) return timeOf(a.expected_up) - timeOf(b.expected_up);
       return timeOf(a.down_since) - timeOf(b.down_since);
@@ -202,7 +202,7 @@ export default function WorkboardTab({
       <div className="p-12 text-center bg-white border border-slate-300 rounded-2xl max-w-xl mx-auto mt-8 shadow-md">
         <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto mb-3" />
         <h2 className="text-xl font-bold text-slate-900">No machines on the board</h2>
-        <p className="text-sm text-slate-500 mt-1">{productionBoard ? 'Nothing is down in the workshop.' : 'Every machine is running. Use Assign Machine to log a new job.'}</p>
+        <p className="text-sm text-slate-500 mt-1">{productionBoard ? 'Nothing is down in the workshop.' : 'Every machine is running. Use Create downtime event to log a new job.'}</p>
       </div>
     );
   }
@@ -269,7 +269,7 @@ export default function WorkboardTab({
           </select>
         </label>
       )}
-      <div className="bg-white border border-slate-300 rounded-xl p-3 shadow-2xs space-y-3">
+      <div className="bg-sky-100 border border-slate-300 rounded-xl p-3 shadow-2xs space-y-3">
         <div className="flex flex-col md:flex-row gap-3">
           <label className="relative flex-1">
             <span className="sr-only">Search the board</span>
@@ -355,7 +355,7 @@ export default function WorkboardTab({
           )}
         </div>
 
-        {permissions.canManageSiteDictionary && <BreakdownHistorySearch assets={historyAssets} />}
+        {permissions.canManageSiteDictionary && <BreakdownHistorySearch assets={historyAssets} workOrders={workOrders} />}
         {permissions.canManageSiteDictionary && <SiteDictionaryPanel />}
       </div>
 

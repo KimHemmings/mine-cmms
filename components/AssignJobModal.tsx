@@ -33,7 +33,7 @@ export default function AssignJobModal({
   preselectedAsset,
 }: AssignJobModalProps) {
   const [selectedAssetId, setSelectedAssetId] = useState('');
-  const [selectedPriority, setSelectedPriority] = useState('');
+  const [selectedPriority, setSelectedPriority] = useState('P3');
   const [selectedSystems, setSelectedSystems] = useState<string[]>([]);
   const [orderType, setOrderType] = useState<OrderType>('UNPLANNED');
   const [isMachineDown, setIsMachineDown] = useState(true);
@@ -64,6 +64,7 @@ export default function AssignJobModal({
       setSelectedAssetId(id);
       const chosen = unassignedMachines.find((machine) => machine.id === id) || preselectedAsset;
       setLocation(chosen?.location || '');
+      setSelectedPriority('P3');
       setSelectedSystems([]);
       setCrewIds([]);
       setFormError(null);
@@ -88,7 +89,7 @@ export default function AssignJobModal({
       .update({
         in_shift: true,
         status: assetStatus,
-        priority: selectedPriority || null,
+        priority: selectedPriority || 'P3',
         location: location.trim(),
         down_since: isMachineDown ? new Date(downSinceInput).toISOString() : null,
         expected_up: isMachineDown && expectedUpInput ? new Date(expectedUpInput).toISOString() : null,
@@ -165,7 +166,7 @@ export default function AssignJobModal({
         <div className="shrink-0 flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white rounded-t-2xl">
           <div>
             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <Star className="w-5 h-5 text-amber-500 fill-amber-400" /> Assign Machine & Define Main Event
+              <Star className="w-5 h-5 text-amber-500 fill-amber-400" /> Create downtime event
             </h3>
             <p className="text-xs text-slate-500">Record a downtime event or in-service inspection on the shift workboard.</p>
           </div>

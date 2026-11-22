@@ -1,6 +1,6 @@
 import { Asset, MachineWorkOrder } from '@/types';
 
-const WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export interface RepeatFailure {
@@ -40,9 +40,9 @@ export function formatDownHours(hours: number) {
   return Number.isInteger(rounded) ? `${rounded}h` : `${rounded.toFixed(1)}h`;
 }
 
-export function repeatFailures(orders: RepeatOrder[], assets: Pick<Asset, 'id' | 'fleet_id'>[], now = Date.now()): RepeatFailure[] {
+export function repeatFailures(orders: RepeatOrder[], assets: Pick<Asset, 'id' | 'fleet_id'>[], now = Date.now(), windowDays = 14): RepeatFailure[] {
   const fleet = new Map(assets.map((asset) => [asset.id, asset.fleet_id]));
-  const windowStart = now - WINDOW_MS;
+  const windowStart = now - windowDays * DAY_MS;
   const groups = new Map<string, { assetId: string; component: string; jobs: RepeatOrder[] }>();
   for (const order of orders) {
     if (!order.asset_id || !order.created_at || isRoutine(order.order_type)) continue;

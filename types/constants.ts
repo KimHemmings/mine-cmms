@@ -22,11 +22,9 @@ export const ORDER_TYPES = [
 ] as const;
 
 export const PRIORITY_OPTIONS = [
-  { value: 'P1', label: 'P1 - Critical' },
-  { value: 'P2', label: 'P2 - High' },
-  { value: 'P3', label: 'P3 - Medium' },
-  { value: 'P4', label: 'P4 - Low' },
-  { value: null, label: 'No Priority' },
+  { value: 'P1', label: 'P1 - HIGH' },
+  { value: 'P2', label: 'P2 - MEDIUM' },
+  { value: 'P3', label: 'P3 - LOW' },
 ] as const;
 
 export const STAGES = [

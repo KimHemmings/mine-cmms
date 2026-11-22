@@ -7,7 +7,7 @@ import { Permissions } from '@/utils/permissions';
 import { generateSapNotesText, copyToClipboard, notesForWorkOrder } from '@/utils/sapFormatter';
 import { formatDateTime, getElapsedDown, getEtuStatus } from '@/utils/helpers';
 import { createClient } from '@/utils/supabase/client';
-import { EventClassBadge, getEventConfig, getPriorityConfig } from './workboard/workboardTheme';
+import { EventClassBadge, getEventConfig, getPriorityConfig, workshopPriority } from './workboard/workboardTheme';
 import { HoldPill } from './workboard/JobStatusSelect';
 import { holdBadge } from '@/utils/jobHold';
 import { jobStatusLabel } from '@/utils/crewAllocation';
@@ -16,9 +16,7 @@ import MainEventSection from './workboard/MainEventSection';
 import AdditionalWorkOrdersSection from './workboard/AdditionalWorkOrdersSection';
 import MachineReleaseFooter from './workboard/MachineReleaseFooter';
 import ServiceAlertPills from '@/components/StatutoryDueBadge';
-import RepeatFailurePill, { RepeatFailureDetail } from '@/components/RepeatFailurePill';
 import { isOpenPlannedService } from '@/utils/statutoryCompliance';
-import { repeatFailures, repeatsForAsset } from '@/utils/repeatFailures';
 
 const PRIORITY_FILLS = {
   P1: {
@@ -27,32 +25,19 @@ const PRIORITY_FILLS = {
     edge: 'border-l-rose-600',
   },
   P2: {
-    badge: 'bg-orange-500 text-white',
-    row: 'bg-orange-50 hover:bg-orange-100',
-    edge: 'border-l-orange-500',
-  },
-  P3: {
-    badge: 'bg-amber-400 text-slate-900',
-    row: 'bg-amber-50/50 hover:bg-amber-100',
+    badge: 'bg-amber-500 text-slate-950',
+    row: 'bg-amber-50 hover:bg-amber-100',
     edge: 'border-l-amber-500',
   },
-  P4: {
-    badge: 'bg-blue-600 text-white',
+  P3: {
+    badge: 'bg-blue-700 text-white',
     row: 'bg-blue-50 hover:bg-blue-100',
-    edge: 'border-l-blue-600',
-  },
-  NONE: {
-    badge: 'bg-slate-200 text-slate-700',
-    row: 'bg-white hover:bg-slate-100',
-    edge: 'border-l-slate-300',
+    edge: 'border-l-blue-700',
   },
 } as const;
 
 function priorityFill(priority?: string | null) {
-  if (priority === 'P1' || priority === 'P2' || priority === 'P3' || priority === 'P4') {
-    return PRIORITY_FILLS[priority];
-  }
-  return PRIORITY_FILLS.NONE;
+  return PRIORITY_FILLS[workshopPriority(priority)];
 }
 
 /** Open work stays on the card. Signed-off work from another shift stays in History. */
@@ -148,7 +133,6 @@ export default function MachineWorkboardCard({
   const solidBadge = isReleased ? 'bg-slate-200 text-slate-700' : fill.badge;
   const productionView = permissions.isReadOnlyWorkshop;
   const suppressSmu = openOrders.some((order) => isOpenPlannedService(order));
-  const repeats = repeatsForAsset(repeatFailures(workOrders, [asset]), asset.id);
 
   const summaryRow = compact ? (
     <button
@@ -194,7 +178,6 @@ export default function MachineWorkboardCard({
       )}
       <span className="shrink-0 ml-auto inline-flex items-center gap-2">
         <ServiceAlertPills asset={asset} suppressSmu={suppressSmu} />
-        {repeats.map((failure) => <RepeatFailurePill key={failure.component} failure={failure} />)}
         {!productionView && (canRelease ? (
           <span className="px-2 py-0.5 rounded bg-emerald-600 text-[11px] font-black uppercase text-white">Ready to release</span>
         ) : (
@@ -211,7 +194,6 @@ export default function MachineWorkboardCard({
     return (
       <div className={`rounded-xl border bg-white border-slate-300 border-l-8 ${fill.edge} shadow-sm overflow-hidden`}>
         {summaryRow}
-        {isDetailsExpanded && <RepeatFailureDetail failures={repeats} />}
         {isDetailsExpanded && (
           <div className="border-t border-slate-200 p-4 space-y-4">
             <section>
@@ -300,13 +282,11 @@ export default function MachineWorkboardCard({
         showOverdue={showOverdue}
         canEditDetails={permissions.canEditWorkshopJobs}
         suppressSmu={suppressSmu}
-        repeats={repeats}
         openQuickEdit={openQuickEdit}
         openHistory={openHistory}
         openDefects={openDefects}
         onCollapse={compact ? toggleExpandDetails : undefined}
       />
-      <RepeatFailureDetail failures={repeats} />
 
       {mainEvent ? (
         <MainEventSection

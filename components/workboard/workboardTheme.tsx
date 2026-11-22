@@ -102,30 +102,17 @@ export function EventClassBadge({
   );
 }
 
+/** Workshop board uses three tiers. Blank, P4, and any unknown value render as P3. */
+export function workshopPriority(priority?: string | null): 'P1' | 'P2' | 'P3' {
+  if (priority === 'P1' || priority === 'P2') return priority;
+  return 'P3';
+}
+
 export function getPriorityConfig(priority?: string | null) {
-  const badge =
-    priority === 'P1'
-      ? 'bg-rose-100 text-rose-800 border-rose-300'
-      : priority === 'P2'
-      ? 'bg-orange-100 text-orange-800 border-orange-300'
-      : priority === 'P3'
-      ? 'bg-amber-100 text-amber-800 border-amber-300'
-      : priority === 'P4'
-      ? 'bg-blue-100 text-blue-800 border-blue-300'
-      : 'bg-slate-100 text-slate-700 border-slate-300';
-
-  const label =
-    priority === 'P1'
-      ? 'P1 - CRITICAL'
-      : priority === 'P2'
-      ? 'P2 - HIGH'
-      : priority === 'P3'
-      ? 'P3 - MEDIUM'
-      : priority === 'P4'
-      ? 'P4 - LOW'
-      : 'NO PRIORITY';
-
-  return { badge, label };
+  const tier = workshopPriority(priority);
+  if (tier === 'P1') return { badge: 'bg-rose-600 text-white border-rose-700', label: 'P1 - HIGH' };
+  if (tier === 'P2') return { badge: 'bg-amber-500 text-slate-950 border-amber-600', label: 'P2 - MEDIUM' };
+  return { badge: 'bg-blue-700 text-white border-blue-800', label: 'P3 - LOW' };
 }
 
 export function formatWoDisplay(woNum?: string | null, emptyLabel?: string): string {

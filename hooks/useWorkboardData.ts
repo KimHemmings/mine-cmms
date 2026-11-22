@@ -70,9 +70,10 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
 
     if (data) {
       const sorted = [...data].sort((a, b) => {
-        const pOrder = { P1: 1, P2: 2, P3: 3, P4: 4 };
-        const valA = a.priority ? pOrder[a.priority as keyof typeof pOrder] : 5;
-        const valB = b.priority ? pOrder[b.priority as keyof typeof pOrder] : 5;
+        const pOrder = { P1: 1, P2: 2, P3: 3 } as const;
+        const rank = (priority: string | null | undefined) => pOrder[priority === 'P1' || priority === 'P2' ? priority : 'P3'];
+        const valA = rank(a.priority);
+        const valB = rank(b.priority);
         if (valA !== valB) return valA - valB;
         if (a.down_since && b.down_since) {
           return new Date(a.down_since).getTime() - new Date(b.down_since).getTime();

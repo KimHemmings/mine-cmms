@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { Asset, COMPONENT_SYSTEMS } from '@/types';
+import { Asset, COMPONENT_SYSTEMS, MachineWorkOrder } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
+import { formatDownHours, repeatFailures } from '@/utils/repeatFailures';
 
 export interface BreakdownHistoryFilters {
   fleetId: string;
@@ -40,11 +41,16 @@ interface HistoryHit {
 
 const fieldClass = 'min-h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold text-slate-900';
 
-export default function BreakdownHistorySearch({ assets }: { assets: Asset[] }) {
+export default function BreakdownHistorySearch({ assets, workOrders }: { assets: Asset[]; workOrders: MachineWorkOrder[] }) {
   const [filters, setFilters] = useState<BreakdownHistoryFilters>(EMPTY_BREAKDOWN_HISTORY_FILTERS);
   const [hits, setHits] = useState<HistoryHit[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState('');
+  const [repeatWindow, setRepeatWindow] = useState<7 | 30 | null>(null);
+  const repeats = useMemo(
+    () => (repeatWindow === null ? [] : repeatFailures(workOrders, assets, Date.now(), repeatWindow)),
+    [repeatWindow, workOrders, assets],
+  );
   const fleetIds = [...new Set(assets.map((asset) => asset.fleet_id))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   function setFilter<K extends keyof BreakdownHistoryFilters>(key: K, value: BreakdownHistoryFilters[K]) {
@@ -183,7 +189,48 @@ export default function BreakdownHistorySearch({ assets }: { assets: Asset[] }) 
         <button type="button" onClick={() => void search()} disabled={searching} className="min-h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:opacity-50">
           {searching ? 'Searching...' : 'Search history'}
         </button>
+        <button
+          type="button"
+          onClick={() => setRepeatWindow((current) => (current === null ? 7 : null))}
+          aria-pressed={repeatWindow !== null}
+          className={`min-h-10 px-4 rounded-lg border text-sm font-black ${repeatWindow !== null ? 'bg-rose-700 text-white border-rose-700' : 'bg-white text-slate-800 border-slate-300'}`}
+        >
+          Repeat Failures
+        </button>
       </div>
+      {repeatWindow !== null && (
+        <div className="rounded-xl border border-rose-200 bg-white p-3">
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Repeat failure window">
+            {([7, 30] as const).map((days) => (
+              <button
+                key={days}
+                type="button"
+                onClick={() => setRepeatWindow(days)}
+                aria-pressed={repeatWindow === days}
+                className={`min-h-10 px-3 rounded-full text-sm font-black border ${repeatWindow === days ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300'}`}
+              >
+                Last {days} days
+              </button>
+            ))}
+          </div>
+          {repeats.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-600">No component has broken twice in the last {repeatWindow} days.</p>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {repeats.map((failure) => (
+                <li key={`${failure.assetId}-${failure.component}`}>
+                  <p className="text-sm font-black text-slate-900">
+                    {failure.fleetId}
+                    <span className="ml-2 rounded-full bg-rose-700 px-2 py-0.5 text-[11px] font-black text-white">REPEAT • {failure.count}× {failure.component}</span>
+                    <span className="ml-2 font-bold text-slate-600">{formatDownHours(failure.hours)} down</span>
+                  </p>
+                  <p className="mt-1 text-sm text-slate-700">{failure.detail}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {error && <p className="text-sm font-bold text-rose-700">{error}</p>}
       {hits && hits.length === 0 && <p className="text-sm text-slate-500">Nothing matches that history search.</p>}
       {hits && hits.length > 0 && (

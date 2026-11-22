@@ -6,8 +6,6 @@ import { Asset } from '@/types';
 import { formatDateTime, getElapsedDown } from '@/utils/helpers';
 import { EventClassBadge } from './workboardTheme';
 import ServiceAlertPills from '@/components/StatutoryDueBadge';
-import RepeatFailurePill from '@/components/RepeatFailurePill';
-import type { RepeatFailure } from '@/utils/repeatFailures';
 
 interface MachineCardHeaderProps {
   asset: Asset;
@@ -20,7 +18,6 @@ interface MachineCardHeaderProps {
   showOverdue?: boolean;
   canEditDetails?: boolean;
   suppressSmu?: boolean;
-  repeats?: RepeatFailure[];
   openQuickEdit: (asset: Asset) => void;
   openHistory: (asset: Asset) => void;
   openDefects: (asset: Asset) => void;
@@ -38,7 +35,6 @@ export default function MachineCardHeader({
   showOverdue = false,
   canEditDetails = true,
   suppressSmu = false,
-  repeats = [],
   openQuickEdit,
   openHistory,
   openDefects,
@@ -96,7 +92,6 @@ export default function MachineCardHeader({
         )}
 
         <ServiceAlertPills asset={asset} suppressSmu={suppressSmu} />
-        {repeats.map((failure) => <RepeatFailurePill key={failure.component} failure={failure} />)}
         <div className="flex gap-2">
           {canEditDetails && (
           <button
