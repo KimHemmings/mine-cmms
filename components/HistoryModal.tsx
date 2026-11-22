@@ -24,6 +24,7 @@ export default function ShiftHistoryModal({
   asset,
   notes = [],
   activeFitter,
+  userRole,
   onClose,
   onRefresh,
 }: ShiftHistoryModalProps) {
@@ -35,6 +36,8 @@ export default function ShiftHistoryModal({
   const [copied, setCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const copyLabel = userRole === 'management' ? 'Copy Work Order Notes' : 'Copy SAP Notes';
+  const titleLabel = userRole === 'management' ? 'WORK ORDER NOTES & RUNNING LOG' : 'SAP NOTES & RUNNING LOG';
   const supabase = createClient();
 
   if (!isOpen || !asset) return null;
@@ -106,7 +109,7 @@ export default function ShiftHistoryModal({
         <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
           <div>
             <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-              <span className="text-amber-600">📖</span> {asset.fleet_id} SAP NOTES & RUNNING LOG
+              <span className="text-amber-600">📖</span> {asset.fleet_id} {titleLabel}
             </h3>
             <p className="text-xs text-slate-500">
               {asset.make_model} • Owner: {asset.machine_owner || 'Central'}
@@ -123,7 +126,7 @@ export default function ShiftHistoryModal({
               }`}
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-amber-600" />}
-              {copied ? 'Copied to Clipboard!' : 'Copy SAP Notes'}
+              {copied ? 'Copied to Clipboard!' : copyLabel}
             </button>
             <button
               type="button"

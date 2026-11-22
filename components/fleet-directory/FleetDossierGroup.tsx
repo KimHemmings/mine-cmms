@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Asset } from '@/types';
 import { FleetDossierCard } from './FleetDossierCard';
+import { RepeatScan } from './RepeatFailureCallout';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
 interface FleetDossierGroupProps {
@@ -8,6 +9,12 @@ interface FleetDossierGroupProps {
   assets: Asset[];
   openHistory: (asset: Asset) => void;
   onAssignJob?: (asset: Asset) => void;
+  repeatCache: Record<string, RepeatScan>;
+  openRepeatId: string | null;
+  scanningRepeatId: string | null;
+  onSpotRepeats: (asset: Asset) => void;
+  onHideRepeats: () => void;
+  onRefreshRepeats: (asset: Asset) => void;
 }
 
 export const FleetDossierGroup: React.FC<FleetDossierGroupProps> = ({
@@ -15,6 +22,12 @@ export const FleetDossierGroup: React.FC<FleetDossierGroupProps> = ({
   assets,
   openHistory,
   onAssignJob,
+  repeatCache,
+  openRepeatId,
+  scanningRepeatId,
+  onSpotRepeats,
+  onHideRepeats,
+  onRefreshRepeats,
 }) => {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -66,6 +79,11 @@ export const FleetDossierGroup: React.FC<FleetDossierGroupProps> = ({
               asset={asset}
               openHistory={openHistory}
               onAssignJob={onAssignJob}
+              repeatResult={openRepeatId === asset.id ? repeatCache[asset.id] ?? null : null}
+              scanningRepeats={scanningRepeatId === asset.id}
+              onSpotRepeats={onSpotRepeats}
+              onHideRepeats={onHideRepeats}
+              onRefreshRepeats={onRefreshRepeats}
             />
           ))}
         </div>

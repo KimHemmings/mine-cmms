@@ -6,11 +6,13 @@ export async function logAssetHistory(
   assetId: string,
   fitterName: string,
   note: string,
-  stage: string
+  stage: string,
+  workOrderId?: string | null
 ) {
   return supabase.from('asset_history_notes').insert([
     {
       asset_id: assetId,
+      work_order_id: workOrderId || null,
       fitter_name: fitterName,
       note,
       stage,

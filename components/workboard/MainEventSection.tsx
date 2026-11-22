@@ -1,10 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { User, FileText, Copy, Check, MessageSquare, Package } from 'lucide-react';
 import { Asset, MachineWorkOrder, HistoryNote } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
+import { generateSapNotesText, notesForWorkOrder } from '@/utils/sapFormatter';
 import { formatWoDisplay } from './workboardTheme';
+import TidyNotesButton from '@/components/ui/TidyNotesButton';
 import InlineNotesDrawer from '@/components/InlineNotesDrawer';
 import PartsBadge from './PartsBadge';
 import JobStatusSelect from './JobStatusSelect';
@@ -21,7 +23,8 @@ interface MainEventSectionProps {
   isNotesExpanded: boolean;
   toggleNotes: () => void;
   isCopied: boolean;
-  onCopySapNotes: () => void;
+  onCopySapNotes: (override?: string) => void;
+  copyLabel?: string;
   updateWorkOrderStage: (woId: string, assetId: string, newStage: string, jobLabel?: string) => void;
   onRefresh: () => void;
 }
@@ -36,6 +39,7 @@ export default function MainEventSection({
   toggleNotes,
   isCopied,
   onCopySapNotes,
+  copyLabel = 'Copy SAP Notes',
   updateWorkOrderStage,
   openPartsModal,
   openCrewPicker,
@@ -43,10 +47,14 @@ export default function MainEventSection({
 }: MainEventSectionProps) {
   const isDone = mainEvent.status === 'COMPLETED';
   const jobLabel = `${asset.fleet_id}: ${mainEvent.task_description}`;
-
-  const itemNotesCount = notes.filter(
-    (n) => n.asset_id === asset.id && n.note.toLowerCase().includes('main event')
-  ).length;
+  const jobNotes = notesForWorkOrder(notes, mainEvent.id);
+  const compiledNotes = generateSapNotesText(jobNotes);
+  const [copyText, setCopyText] = useState<string | null>(null);
+  useEffect(() => {
+    setCopyText(null);
+  }, [compiledNotes]);
+  const textToCopy = copyText ?? (jobNotes.length > 0 ? compiledNotes : '');
+  const itemNotesCount = jobNotes.length;
 
   const handleStageChange = (newStage: string) => {
     updateWorkOrderStage(mainEvent.id, asset.id, newStage, jobLabel);
@@ -73,7 +81,7 @@ export default function MainEventSection({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-mono font-bold px-2.5 py-1 rounded border bg-sky-50 text-sky-800 border-sky-300">
               <FileText className="w-4 h-4 inline mr-1" />
-              {formatWoDisplay(mainEvent.wo_number)}
+              {formatWoDisplay(mainEvent.wo_number, copyLabel === 'Copy Work Order Notes' ? 'No WO # yet' : undefined)}
             </span>
             {mainEvent.notification_num && (
               <span className="text-sm font-mono text-slate-700 bg-white px-2.5 py-1 rounded border border-slate-200">
@@ -118,17 +126,27 @@ export default function MainEventSection({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-end gap-2 shrink-0">
+        <div className="flex flex-col items-stretch gap-2 shrink-0">
+        <div className="flex flex-wrap items-end gap-2">
           <button
             type="button"
-            onClick={onCopySapNotes}
+            onClick={() => onCopySapNotes(copyText ?? undefined)}
             className={`min-h-11 flex items-center gap-1.5 px-3.5 border-2 rounded-lg text-sm font-bold transition cursor-pointer ${
               isCopied ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'
             }`}
           >
             {isCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-            {isCopied ? 'Copied!' : 'Copy SAP Notes'}
+            {isCopied ? 'Copied!' : copyLabel}
           </button>
+          {jobNotes.length > 0 && (
+            <TidyNotesButton
+              rawNotes={textToCopy}
+              fleetId={asset.fleet_id}
+              taskDescription={mainEvent.task_description}
+              isSingleNote={false}
+              onTidied={setCopyText}
+            />
+          )}
 
           <button
             type="button"
@@ -146,6 +164,10 @@ export default function MainEventSection({
 
           <JobStatusSelect stage={mainEvent.stage} isDone={isDone} onChange={handleStageChange} />
         </div>
+        {copyText && copyText !== compiledNotes && (
+          <p className="max-w-xl text-sm font-medium text-slate-900 whitespace-pre-wrap">{copyText}</p>
+        )}
+        </div>
       </div>
 
       <PartsArrivedPrompt
@@ -158,8 +180,11 @@ export default function MainEventSection({
           assetId={asset.id}
           itemId={mainEvent.id}
           contextLabel="Main Event Note"
-          notes={notes}
+          notes={jobNotes}
+          taskDescription={mainEvent.task_description}
+          fleetId={asset.fleet_id}
           activeFitter={activeFitter}
+          heading={copyLabel === 'Copy Work Order Notes' ? 'Work order notes:' : 'Progressive SAP Notes:'}
           onRefresh={onRefresh}
         />
       )}

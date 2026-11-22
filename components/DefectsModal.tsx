@@ -21,9 +21,10 @@ interface DefectsModalProps {
   notes?: HistoryNote[];
   onClose: () => void;
   onRefresh: () => void;
+  plainLabels?: boolean;
 }
 
-export default function DefectsModal({ asset, defects, notes = [], onClose, onRefresh }: DefectsModalProps) {
+export default function DefectsModal({ asset, defects, notes = [], onClose, onRefresh, plainLabels = false }: DefectsModalProps) {
   // New Defect Form State
   const [severity, setSeverity] = useState<'CAT1' | 'CAT2' | 'CAT3'>('CAT2');
   const [description, setDescription] = useState('');
@@ -176,7 +177,9 @@ export default function DefectsModal({ asset, defects, notes = [], onClose, onRe
               {asset.fleet_id} Defect & Work Order Manager
             </h3>
             <p className="text-xs text-slate-500">
-              Manage defect rectification, assign SAP work orders (PM03), log progress notes, and clear defects.
+              {plainLabels
+                ? 'Manage defect rectification, assign work orders, log progress notes, and clear defects.'
+                : 'Manage defect rectification, assign SAP work orders (PM03), log progress notes, and clear defects.'}
             </p>
           </div>
           <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg">
@@ -230,7 +233,7 @@ export default function DefectsModal({ asset, defects, notes = [], onClose, onRe
                           }}
                           className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded hover:bg-amber-100"
                         >
-                          + Assign SAP WO
+                          + {plainLabels ? 'Assign work order' : 'Assign SAP WO'}
                         </button>
                       )}
 
@@ -248,10 +251,10 @@ export default function DefectsModal({ asset, defects, notes = [], onClose, onRe
                       <button
                         onClick={() => handleCopyDefectSap(defect)}
                         className="flex items-center gap-1.5 p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-bold transition"
-                        title="Copy clean SAP Notes for this defect"
+                        title={plainLabels ? 'Copy work order notes for this defect' : 'Copy clean SAP Notes for this defect'}
                       >
                         {copiedDefectId === defect.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        {copiedDefectId === defect.id ? 'Copied' : 'SAP Notes'}
+                        {copiedDefectId === defect.id ? 'Copied' : plainLabels ? 'Copy Work Order Notes' : 'SAP Notes'}
                       </button>
 
                       {/* Stage Selector */}

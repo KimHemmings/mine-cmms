@@ -10,6 +10,10 @@ import { formatDateTime } from '@/utils/helpers';
  * 3. Sorts entries chronologically (oldest to newest) to match SAP confirmation diaries.
  * 4. Cleans internal UI labels like "[Main Event Note]:" or "[Scope]:".
  */
+export function notesForWorkOrder(notes: HistoryNote[] = [], workOrderId: string) {
+  return notes.filter((note) => note.work_order_id === workOrderId);
+}
+
 export function generateSapNotesText(
   notes: HistoryNote[] = [],
   keywordFilter?: string

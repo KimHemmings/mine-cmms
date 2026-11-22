@@ -55,7 +55,7 @@ export default function SupervisionRegister({
       <div>
         <h2 className="text-xl font-black text-slate-900">People in training</h2>
         <p className="text-sm text-slate-600 mt-1">
-          Close supervision means the trainer assessor stays with them. Minimal supervision means the assessor is on site. A person with no row here is competent. Trainer assessor and ERT are tickets in the matrix above.
+          Close supervision means the assessor stays with them. Minimal means the assessor is on site. No row means they are competent. Trainer assessor and ERT are set on Tickets.
         </p>
       </div>
       {supervision.length === 0 ? (

@@ -22,6 +22,7 @@ import SafetyBriefingFields from './handover/SafetyBriefingFields';
 import OceReportPanel from './handover/OceReportPanel';
 import RecordTrail from './training/RecordTrail';
 import { formatDateTime } from '@/utils/helpers';
+import { formatStartDay, shiftIsPast } from '@/utils/crewStanding';
 import { generateHandoverPptx } from '@/utils/handoverPptx';
 import { buildHandoverSnapshot, normalizeHandoverDocument } from '@/utils/handoverDocument';
 import { HandoverMachineNote, HandoverSlide, OceReport, SafetyIncident, SavedHandover } from '@/types';
@@ -450,6 +451,16 @@ export default function HandoverReportTab({
 
       {view === 'current' && !opened && (
         <>
+          {shiftIsPast(activeShift?.shift_date) && (
+            <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+              <p className="text-sm font-bold text-amber-950">
+                This shift is still {formatStartDay(activeShift?.shift_date ?? '')}. Finish it so the next crew can start.
+              </p>
+              <button type="button" onClick={() => setShowRollover(true)} className={`${actionClass} mt-3 border-2 border-slate-900 bg-white text-slate-900`}>
+                <RotateCw className="w-4 h-4" /> Finish shift
+              </button>
+            </div>
+          )}
           <IncomingCrewPicker
             panel={incomingPanel}
             crew={crew}

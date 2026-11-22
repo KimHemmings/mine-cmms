@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { HandoverLogEntry, HandoverLogCategory } from '@/types';
 import { Plus, Trash2, ClipboardList, AlertTriangle } from 'lucide-react';
+import DictationMicButton, { appendDictation } from '@/components/ui/DictationMicButton';
 
 const CATEGORY_CONFIG: Record<
   HandoverLogCategory,
@@ -95,7 +96,10 @@ export default function ShiftHandoverLog({
           </div>
 
           <div className="flex-1 min-w-50">
-            <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">Details / Condition</label>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <label className="text-[10px] font-bold uppercase text-slate-600">Details / Condition</label>
+              <DictationMicButton onTranscript={(spoken) => setDetails((current) => appendDictation(current, spoken))} />
+            </div>
             <input
               type="text"
               placeholder="e.g. Pit 27 closed due to wet conditions, or strut weep observed"

@@ -7,11 +7,10 @@ import { useWorkboardData } from '@/hooks/useWorkboardData';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { Asset, MachineWorkOrder, UserRole, personLight } from '@/types';
 import { PRODUCTION_PLANT } from '@/types/production';
-import TrainingMatrix from '@/components/training/TrainingMatrix';
+import TicketRegister from '@/components/training/TicketRegister';
 import PassoutRegister from '@/components/training/PassoutRegister';
 import SupervisionRegister from '@/components/training/SupervisionRegister';
 import RecordTrail from '@/components/training/RecordTrail';
-import TrainingDesk from '@/components/training/TrainingDesk';
 import ProductionStatus from '@/components/production/ProductionStatus';
 import ProductionHandover from '@/components/production/ProductionHandover';
 
@@ -19,6 +18,7 @@ import WorkboardTab from '@/components/WorkboardTab';
 import FleetDossierTab from '@/components/FleetDossierTab';
 import HandoverReportTab from '@/components/HandoverReportTab';
 import WorkboardModals from '@/components/WorkboardModals';
+import { isWorkshopSupervisorRole } from '@/utils/roles';
 import { TopHeader } from '@/components/TopHeader';
 import { FeedbackProvider, useFeedback } from '@/components/ui/FeedbackProvider';
 import CrewTab from '@/components/crew/CrewTab';
@@ -39,9 +39,9 @@ function Workboard() {
   const supabase = useMemo(() => createClient(), []);
   const { profile, displayName: activeFitter, loading: profileLoading, reload } = useCurrentUser();
   const userRole: UserRole = profile?.role ?? 'fitter';
+  const isWorkshopSupervisor = isWorkshopSupervisorRole(userRole);
   const [currentTab, setCurrentTab] = useState<'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status'>('board');
   const [trainingSection, setTrainingSection] = useState<'tickets' | 'passouts' | 'supervision'>('tickets');
-  const [trainingMode, setTrainingMode] = useState<'person' | 'lists'>('person');
   const [routedRole, setRoutedRole] = useState<UserRole | null>(null);
   if (profile && routedRole !== profile.role) {
     setRoutedRole(profile.role);
@@ -219,6 +219,9 @@ function Workboard() {
             openCrewPicker={(wo: MachineWorkOrder) => setTargetCrewWoId(wo.id)}
             releaseMachineToProduction={releaseMachineToProduction}
             onRefresh={refreshAfterSave}
+            isWorkshopSupervisor={isWorkshopSupervisor}
+            historyAssets={allAssets}
+            activeShiftId={activeShift?.id ?? null}
           />
         )}
 
@@ -251,42 +254,9 @@ function Workboard() {
 
         {currentTab === 'training' && userRole === 'training' && (
           <div className="space-y-4">
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Training navigation">
-              {([
-                ['person', 'One person'],
-                ['lists', 'Whole crew'],
-              ] as const).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setTrainingMode(id)}
-                  aria-pressed={trainingMode === id}
-                  className={`min-h-10 px-4 rounded-full border text-sm font-bold ${
-                    trainingMode === id ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-700'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {trainingMode === 'person' ? (
-              <>
-                <TrainingDesk
-                  crew={crew}
-                  authorisations={authorisations}
-                  holdings={holdings}
-                  passouts={passouts}
-                  machines={allAssets}
-                  supervision={supervision}
-                  onChanged={fetchAllData}
-                />
-                <RecordTrail title="Recent changes" tables={['crew_authorisations', 'operator_passouts', 'crew_supervision']} />
-              </>
-            ) : (
-            <div className="space-y-4">
             <div className="flex flex-wrap gap-2" role="group" aria-label="Training sections">
               {([
-                ['tickets', 'Tickets'],
+                ['tickets', 'Tickets and SOPs'],
                 ['passouts', 'Pass-outs'],
                 ['supervision', 'In training'],
               ] as const).map(([id, label]) => (
@@ -307,7 +277,7 @@ function Workboard() {
             </div>
             {trainingSection === 'tickets' && (
               <>
-                <TrainingMatrix
+                <TicketRegister
                   crew={crew}
                   authorisations={authorisations}
                   holdings={holdings}
@@ -338,8 +308,6 @@ function Workboard() {
                 />
                 <RecordTrail title="Supervision changes" tables={['crew_supervision']} />
               </>
-            )}
-            </div>
             )}
           </div>
         )}

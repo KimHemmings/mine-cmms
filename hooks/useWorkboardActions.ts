@@ -120,7 +120,7 @@ export function useWorkboardActions({
       ? 'Work order completed and signed off.'
       : `Work order updated to ${stageLabel(newStage)}.`;
 
-    await logAssetHistory(supabase, assetId, fitter, noteText, newStage);
+    await logAssetHistory(supabase, assetId, fitter, noteText, newStage, woId);
     await fetchAllData();
 
     if (isComplete) {

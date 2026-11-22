@@ -1,10 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { FileText, PlusCircle, Check, Copy, MessageSquare, User, Package } from 'lucide-react';
 import { Asset, MachineWorkOrder, HistoryNote } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
 import { formatWoDisplay } from './workboardTheme';
+import { generateSapNotesText, notesForWorkOrder } from '@/utils/sapFormatter';
+import TidyNotesButton from '@/components/ui/TidyNotesButton';
 import InlineNotesDrawer from '@/components/InlineNotesDrawer';
 import PartsBadge from './PartsBadge';
 import JobStatusSelect from './JobStatusSelect';
@@ -18,7 +20,8 @@ interface AdditionalWorkOrderItemProps {
   isNotesExpanded: boolean;
   toggleNotes: () => void;
   isCopied: boolean;
-  onCopySapNotes: () => void;
+  onCopySapNotes: (override?: string) => void;
+  copyLabel?: string;
   isAttachingWo: boolean;
   onOpenAttachWo: () => void;
   onCancelAttachWo: () => void;
@@ -40,6 +43,7 @@ export default function AdditionalWorkOrderItem({
   toggleNotes,
   isCopied,
   onCopySapNotes,
+  copyLabel = 'Copy SAP Notes',
   isAttachingWo,
   onOpenAttachWo,
   onCancelAttachWo,
@@ -53,6 +57,14 @@ export default function AdditionalWorkOrderItem({
 }: AdditionalWorkOrderItemProps) {
   const isDone = wo.status === 'COMPLETED';
   const jobLabel = `${asset.fleet_id}: ${wo.task_description}`;
+  const jobNotes = notesForWorkOrder(notes, wo.id);
+  const compiledNotes = generateSapNotesText(jobNotes);
+  const [copyText, setCopyText] = useState<string | null>(null);
+  useEffect(() => {
+    setCopyText(null);
+  }, [compiledNotes]);
+  const hasNotes = jobNotes.length > 0;
+  const textToCopy = copyText ?? (hasNotes ? compiledNotes : '');
 
   const handleStageChange = (newStage: string) => {
     updateWorkOrderStage(wo.id, asset.id, newStage, jobLabel);
@@ -77,7 +89,7 @@ export default function AdditionalWorkOrderItem({
             {wo.wo_number ? (
               <span className="text-sm font-mono font-bold px-2.5 py-1 rounded border bg-sky-50 text-sky-800 border-sky-200">
                 <FileText className="w-4 h-4 inline mr-1" />
-                {formatWoDisplay(wo.wo_number)}
+                {formatWoDisplay(wo.wo_number, copyLabel === 'Copy Work Order Notes' ? 'No WO # yet' : undefined)}
               </span>
             ) : (
               <button
@@ -85,7 +97,7 @@ export default function AdditionalWorkOrderItem({
                 onClick={onOpenAttachWo}
                 className="min-h-9 text-sm font-bold text-amber-800 bg-amber-50 border border-amber-300 px-3 rounded-lg hover:bg-amber-100 flex items-center gap-1.5 cursor-pointer"
               >
-                <PlusCircle className="w-4 h-4" /> Add SAP WO number
+                <PlusCircle className="w-4 h-4" /> {copyLabel === 'Copy Work Order Notes' ? 'Add work order number' : 'Add SAP WO number'}
               </button>
             )}
 
@@ -127,17 +139,27 @@ export default function AdditionalWorkOrderItem({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-end gap-2 shrink-0">
+        <div className="flex flex-col items-stretch gap-2 shrink-0">
+        <div className="flex flex-wrap items-end gap-2">
           <button
             type="button"
-            onClick={onCopySapNotes}
+            onClick={() => onCopySapNotes(copyText ?? undefined)}
             className={`min-h-11 flex items-center gap-1.5 px-3.5 border-2 rounded-lg text-sm font-bold transition cursor-pointer ${
               isCopied ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'
             }`}
           >
             {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            {isCopied ? 'Copied!' : 'Copy SAP Notes'}
+            {isCopied ? 'Copied!' : copyLabel}
           </button>
+          {jobNotes.length > 0 && (
+            <TidyNotesButton
+              rawNotes={textToCopy}
+              fleetId={asset.fleet_id}
+              taskDescription={wo.task_description}
+              isSingleNote={false}
+              onTidied={setCopyText}
+            />
+          )}
 
           <button
             type="button"
@@ -155,13 +177,17 @@ export default function AdditionalWorkOrderItem({
 
           <JobStatusSelect stage={wo.stage} isDone={isDone} onChange={handleStageChange} />
         </div>
+        {copyText && copyText !== compiledNotes && (
+          <p className="max-w-xl text-sm font-medium text-slate-900 whitespace-pre-wrap">{copyText}</p>
+        )}
+        </div>
       </div>
 
       {isAttachingWo && (
         <div className="mt-3 pt-3 border-t border-slate-200 flex flex-wrap items-center gap-2">
           <input
             type="text"
-            placeholder="SAP WO number"
+            placeholder={copyLabel === 'Copy Work Order Notes' ? 'Work order number' : 'SAP WO number'}
             value={inlineWoValue}
             onChange={(e) => onInlineWoChange(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && onSaveInlineWo()}
@@ -195,8 +221,11 @@ export default function AdditionalWorkOrderItem({
           assetId={asset.id}
           itemId={wo.id}
           contextLabel={wo.task_description.slice(0, 15)}
-          notes={notes}
+          notes={jobNotes}
+          taskDescription={wo.task_description}
+          fleetId={asset.fleet_id}
           activeFitter={activeFitter}
+          heading={copyLabel === 'Copy Work Order Notes' ? 'Work order notes:' : 'Progressive SAP Notes:'}
           onRefresh={onRefresh}
         />
       )}

@@ -105,8 +105,8 @@ export function getPriorityConfig(priority?: string | null) {
   return { badge, label };
 }
 
-export function formatWoDisplay(woNum?: string | null): string {
-  if (!woNum || !woNum.trim()) return 'No SAP WO yet';
+export function formatWoDisplay(woNum?: string | null, emptyLabel?: string): string {
+  if (!woNum || !woNum.trim()) return emptyLabel || 'No SAP WO yet';
   const clean = woNum.replace(/^WO-?/i, '').trim();
   return `WO #${clean}`;
 }

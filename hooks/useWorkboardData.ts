@@ -232,7 +232,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
             const note = item.newStage === 'COMPLETED'
               ? 'Work order completed and signed off.'
               : `Work order updated to ${item.newStage.replace(/_/g, ' ')}.`;
-            await logAssetHistory(supabase, item.assetId, item.fitter, note, item.newStage);
+            await logAssetHistory(supabase, item.assetId, item.fitter, note, item.newStage, item.woId);
           }
         }
         if (!stopped && readStageQueue().length === 0 && pending.length > 0) await fetchWorkOrders();

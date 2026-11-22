@@ -10,6 +10,7 @@ import ComponentSystemsPicker from './assign-job/ComponentSystemsPicker';
 import StatusImpactSelector from './assign-job/StatusImpactSelector';
 import SapDetailsInputs from './assign-job/SapDetailsInputs';
 import CrewPicker from './crew/CrewPicker';
+import DictationMicButton, { appendDictation } from './ui/DictationMicButton';
 import { useCrewData, crewNames } from './crew/CrewDataContext';
 
 interface AssignJobModalProps {
@@ -97,6 +98,12 @@ export default function AssignJobModal({
     const cleanNotif = sapNotification.trim();
 
     const assignedNames = crewNames(crew, crewIds);
+
+    await supabase
+      .from('machine_work_orders')
+      .update({ is_main_event: false })
+      .eq('asset_id', selectedAssetId)
+      .eq('is_main_event', true);
 
     const { data: newWo, error: woError } = await supabase
       .from('machine_work_orders')
@@ -209,7 +216,10 @@ export default function AssignJobModal({
           <ComponentSystemsPicker selectedSystems={selectedSystems} onChange={setSelectedSystems} />
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">MAIN EVENT SCOPE / REASON *</label>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <label className="text-xs font-bold text-slate-700">MAIN EVENT SCOPE / REASON *</label>
+              <DictationMicButton onTranscript={(spoken) => setTaskDesc((current) => appendDictation(current, spoken))} />
+            </div>
             <textarea
               value={taskDesc}
               onChange={(e) => setTaskDesc(e.target.value)}

@@ -19,6 +19,7 @@ import { HelpButton } from '@/components/help/HelpButton';
 import { ChangePasswordButton } from '@/components/auth/ChangePasswordButton';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import { CrewMember, ShiftRecord, UserRole } from '@/types';
+import { formatStartDay, shiftIsPast } from '@/utils/crewStanding';
 import type { SyncStatus } from '@/hooks/useRealtimeWorkboard';
 
 type Tab = 'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status';
@@ -145,8 +146,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               </label>
             )}
             <span className="text-slate-500">
-              {activeShift?.shift_name || 'No active shift'}
-              {activeShift?.crew ? ` · ${activeShift.crew}` : ''}
+              {userRole === 'training'
+                ? 'All crews'
+                : (
+                  <>
+                    {activeShift?.shift_name || 'No active shift'}
+                    {activeShift?.crew ? ` · ${activeShift.crew}` : ''}
+                    {activeShift?.shift_date ? ` · ${formatStartDay(activeShift.shift_date)}` : ''}
+                    {shiftIsPast(activeShift?.shift_date) ? ' · still open' : ''}
+                  </>
+                )}
             </span>
             <SyncStatusBadge status={syncStatus} pending={pendingStages} onRefresh={onRefresh} />
           </div>

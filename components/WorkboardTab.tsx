@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { CheckCircle2, CheckCircle, Search, X } from 'lucide-react';
 import { Asset, CrewMember, MachineWorkOrder, HistoryNote } from '@/types';
-import MachineWorkboardCard from '@/components/MachineWorkboardCard';
+import MachineWorkboardCard, { workOrdersForActiveCard } from '@/components/MachineWorkboardCard';
+import BreakdownHistorySearch from '@/components/workboard/BreakdownHistorySearch';
 
 interface WorkboardTabProps {
   shiftJobs: Asset[];
@@ -25,6 +26,9 @@ interface WorkboardTabProps {
   releaseMachineToProduction: (assetId: string, fleetId?: string) => void;
   onRefresh: () => void;
   queuedWorkOrderIds?: string[];
+  isWorkshopSupervisor?: boolean;
+  historyAssets?: Asset[];
+  activeShiftId?: string | null;
 }
 
 type QuickFilter = 'all' | 'mine' | 'overdue' | 'parts' | 'ready';
@@ -57,6 +61,9 @@ export default function WorkboardTab({
   releaseMachineToProduction,
   onRefresh,
   queuedWorkOrderIds = [],
+  isWorkshopSupervisor = false,
+  historyAssets = [],
+  activeShiftId = null,
 }: WorkboardTabProps) {
   const [expandedAssetIds, setExpandedAssetIds] = useState<Set<string>>(() => {
     if (typeof window !== 'undefined') {
@@ -78,10 +85,16 @@ export default function WorkboardTab({
   }, []);
 
   useEffect(() => {
+    if (!isWorkshopSupervisor) return;
+    setExpandedAssetIds(new Set());
+  }, [isWorkshopSupervisor]);
+
+  useEffect(() => {
+    if (isWorkshopSupervisor) return;
     try {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(expandedAssetIds)));
     } catch {}
-  }, [expandedAssetIds]);
+  }, [expandedAssetIds, isWorkshopSupervisor]);
 
   const toggleExpand = (assetId: string) => {
     setExpandedAssetIds((prev) => {
@@ -94,13 +107,13 @@ export default function WorkboardTab({
 
   const ordersByAsset = useMemo(() => {
     const map = new Map<string, MachineWorkOrder[]>();
-    for (const wo of workOrders) {
+    for (const wo of workOrdersForActiveCard(workOrders, activeShiftId)) {
       const list = map.get(wo.asset_id);
       if (list) list.push(wo);
       else map.set(wo.asset_id, [wo]);
     }
     return map;
-  }, [workOrders]);
+  }, [workOrders, activeShiftId]);
 
   const { activeFleet, releasedFleet, counts } = useMemo(() => {
     const me = myName.trim().toLowerCase();
@@ -146,10 +159,11 @@ export default function WorkboardTab({
 
     const searched = shiftJobs.filter(matchesSearch);
     const active = searched.filter((a) => !isReleasedAsset(a));
+    const boardFilter = isWorkshopSupervisor ? 'all' : quickFilter;
 
     return {
-      activeFleet: (quickFilter === 'all' ? active : active.filter(matchers[quickFilter])).sort(compare),
-      releasedFleet: quickFilter === 'all' ? searched.filter(isReleasedAsset) : [],
+      activeFleet: (boardFilter === 'all' ? active : active.filter(matchers[boardFilter])).sort(compare),
+      releasedFleet: boardFilter === 'all' ? searched.filter(isReleasedAsset) : [],
       counts: {
         all: active.length,
         mine: active.filter(matchers.mine).length,
@@ -158,7 +172,7 @@ export default function WorkboardTab({
         ready: active.filter(matchers.ready).length,
       } satisfies Record<QuickFilter, number>,
     };
-  }, [shiftJobs, ordersByAsset, search, quickFilter, sortMode, myName, now, crew, myCrewMemberId]);
+  }, [shiftJobs, ordersByAsset, search, quickFilter, sortMode, myName, now, crew, myCrewMemberId, isWorkshopSupervisor]);
 
   if (loading && shiftJobs.length === 0) {
     return (
@@ -187,7 +201,7 @@ export default function WorkboardTab({
     { id: 'ready', label: 'Ready to release' },
   ];
 
-  const isFiltering = quickFilter !== 'all' || search.trim() !== '';
+  const isFiltering = (!isWorkshopSupervisor && quickFilter !== 'all') || search.trim() !== '';
 
   const renderCard = (asset: Asset) => (
     <MachineWorkboardCard
@@ -208,6 +222,9 @@ export default function WorkboardTab({
       releaseMachineToProduction={releaseMachineToProduction}
       onRefresh={onRefresh}
       heldOnTablet={workOrders.some((order) => order.asset_id === asset.id && queuedWorkOrderIds.includes(order.id))}
+      compact={isWorkshopSupervisor}
+      copyLabel={isWorkshopSupervisor ? 'Copy Work Order Notes' : 'Copy SAP Notes'}
+      activeShiftId={activeShiftId}
     />
   );
 
@@ -272,6 +289,9 @@ export default function WorkboardTab({
           </label>
         </div>
 
+        {isWorkshopSupervisor ? (
+          <BreakdownHistorySearch assets={historyAssets} />
+        ) : (
         <div className="flex flex-wrap gap-2" role="group" aria-label="Quick filters">
           {filterChips.map((chip) => {
             const active = quickFilter === chip.id;
@@ -293,6 +313,7 @@ export default function WorkboardTab({
             );
           })}
         </div>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -302,7 +323,18 @@ export default function WorkboardTab({
               ? `Showing ${activeFleet.length} of ${counts.all} machines being worked on`
               : `Machines being worked on (${activeFleet.length})`}
           </span>
-          {isFiltering && (
+          <span className="flex flex-wrap items-center gap-2">
+            {isWorkshopSupervisor && (
+              <>
+                <button type="button" onClick={() => setExpandedAssetIds(new Set(activeFleet.concat(releasedFleet).map((asset) => asset.id)))} className="min-h-10 px-3 rounded-lg border border-slate-300 bg-white text-slate-800">
+                  Expand all
+                </button>
+                <button type="button" onClick={() => setExpandedAssetIds(new Set())} className="min-h-10 px-3 rounded-lg border border-slate-300 bg-white text-slate-800">
+                  Collapse all
+                </button>
+              </>
+            )}
+            {isFiltering && (
             <button
               type="button"
               onClick={() => {
@@ -313,7 +345,8 @@ export default function WorkboardTab({
             >
               Clear search and filters
             </button>
-          )}
+            )}
+          </span>
         </div>
 
         {activeFleet.length === 0 ? (

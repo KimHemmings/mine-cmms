@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Pencil, History, MapPin, AlertTriangle } from 'lucide-react';
+import { Pencil, History, MapPin, AlertTriangle, ChevronUp } from 'lucide-react';
 import { Asset } from '@/types';
 import { formatDateTime, getElapsedDown, getEtuStatus } from '@/utils/helpers';
 
@@ -14,6 +14,7 @@ interface MachineCardHeaderProps {
   openQuickEdit: (asset: Asset) => void;
   openHistory: (asset: Asset) => void;
   openDefects: (asset: Asset) => void;
+  onCollapse?: () => void;
 }
 
 export default function MachineCardHeader({
@@ -24,6 +25,7 @@ export default function MachineCardHeader({
   openQuickEdit,
   openHistory,
   openDefects,
+  onCollapse,
 }: MachineCardHeaderProps) {
   const etu = isReleased ? null : getEtuStatus(asset.expected_up);
 
@@ -95,6 +97,16 @@ export default function MachineCardHeader({
           >
             <History className="w-4 h-4 text-amber-600" /> History
           </button>
+          {onCollapse && (
+            <button
+              type="button"
+              onClick={onCollapse}
+              aria-expanded
+              className="min-h-11 flex items-center gap-1.5 px-3.5 bg-white hover:bg-slate-100 border-2 border-slate-300 rounded-lg text-slate-800 text-sm font-bold transition cursor-pointer"
+            >
+              <ChevronUp className="w-4 h-4" /> Collapse
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -1,14 +1,64 @@
 'use client';
 
 import React, { useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Asset, MachineWorkOrder, HistoryNote } from '@/types';
-import { generateSapNotesText, copyToClipboard } from '@/utils/sapFormatter';
+import { generateSapNotesText, copyToClipboard, notesForWorkOrder } from '@/utils/sapFormatter';
+import { formatDateTime, getElapsedDown, getEtuStatus } from '@/utils/helpers';
 import { createClient } from '@/utils/supabase/client';
 import { getEventConfig, getPriorityConfig } from './workboard/workboardTheme';
 import MachineCardHeader from './workboard/MachineCardHeader';
 import MainEventSection from './workboard/MainEventSection';
 import AdditionalWorkOrdersSection from './workboard/AdditionalWorkOrdersSection';
 import MachineReleaseFooter from './workboard/MachineReleaseFooter';
+
+const PRIORITY_FILLS = {
+  P1: {
+    badge: 'bg-rose-600 text-white',
+    row: 'bg-rose-50 hover:bg-rose-100',
+    edge: 'border-l-rose-600',
+  },
+  P2: {
+    badge: 'bg-orange-500 text-white',
+    row: 'bg-orange-50 hover:bg-orange-100',
+    edge: 'border-l-orange-500',
+  },
+  P3: {
+    badge: 'bg-amber-400 text-slate-900',
+    row: 'bg-amber-50/50 hover:bg-amber-100',
+    edge: 'border-l-amber-500',
+  },
+  P4: {
+    badge: 'bg-blue-600 text-white',
+    row: 'bg-blue-50 hover:bg-blue-100',
+    edge: 'border-l-blue-600',
+  },
+  NONE: {
+    badge: 'bg-slate-200 text-slate-700',
+    row: 'bg-white hover:bg-slate-100',
+    edge: 'border-l-slate-300',
+  },
+} as const;
+
+function priorityFill(priority?: string | null) {
+  if (priority === 'P1' || priority === 'P2' || priority === 'P3' || priority === 'P4') {
+    return PRIORITY_FILLS[priority];
+  }
+  return PRIORITY_FILLS.NONE;
+}
+
+/** Open work stays on the card. Signed-off work from another shift stays in History. */
+export function workOrdersForActiveCard(orders: MachineWorkOrder[], activeShiftId: string | null) {
+  return orders.filter((order) => order.status !== 'COMPLETED' || (!!activeShiftId && order.shift_id === activeShiftId));
+}
+
+function pickMainJob(orders: MachineWorkOrder[]) {
+  const open = orders.filter((order) => order.status !== 'COMPLETED');
+  const pool = open.length > 0 ? open : orders;
+  const flagged = pool.filter((order) => order.is_main_event);
+  const chosen = flagged.length > 0 ? flagged : pool;
+  return [...chosen].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0];
+}
 
 interface MachineWorkboardCardProps {
   asset: Asset;
@@ -27,6 +77,9 @@ interface MachineWorkboardCardProps {
   releaseMachineToProduction: (assetId: string, fleetId?: string) => void;
   onRefresh: () => void;
   heldOnTablet?: boolean;
+  compact?: boolean;
+  copyLabel?: string;
+  activeShiftId?: string | null;
 }
 
 export default function MachineWorkboardCard({
@@ -46,6 +99,9 @@ export default function MachineWorkboardCard({
   releaseMachineToProduction,
   onRefresh,
   heldOnTablet = false,
+  compact = false,
+  copyLabel = 'Copy SAP Notes',
+  activeShiftId = null,
 }: MachineWorkboardCardProps) {
   const [expandedNotesItemIds, setExpandedNotesItemIds] = useState<Set<string>>(new Set());
   const [inlineWoInputs, setInlineWoInputs] = useState<Record<string, string>>({});
@@ -55,14 +111,56 @@ export default function MachineWorkboardCard({
   const supabase = createClient();
   const isPlanned = asset.status === 'DOWN_PLANNED';
   const isReleased = asset.status === 'OPERATIONAL' && !asset.in_shift;
-  const machineOrders = workOrders.filter((w) => w.asset_id === asset.id);
-  const mainEvent = machineOrders.find((w) => w.is_main_event) || machineOrders[0];
+  const machineOrders = workOrdersForActiveCard(
+    workOrders.filter((w) => w.asset_id === asset.id),
+    activeShiftId
+  );
+  const mainEvent = pickMainJob(machineOrders);
   const additionalOrders = machineOrders.filter((w) => w.id !== mainEvent?.id);
-  const openOrders = machineOrders.filter((w) => w.status === 'OPEN');
+  const openOrders = machineOrders.filter((w) => w.status !== 'COMPLETED');
   const canRelease = !isReleased && openOrders.length === 0;
 
   const eventConfig = getEventConfig(mainEvent?.order_type, isPlanned);
   const priorityConfig = getPriorityConfig(asset.priority);
+  const fill = priorityFill(asset.priority);
+  const etu = isReleased ? null : getEtuStatus(asset.expected_up);
+  const jobCount = openOrders.length;
+  const solidBadge = isReleased ? 'bg-slate-200 text-slate-700' : fill.badge;
+
+  const summaryRow = compact ? (
+    <button
+      type="button"
+      onClick={toggleExpandDetails}
+      aria-expanded={isDetailsExpanded}
+      className={`w-full min-h-12 px-3 py-2 flex items-center gap-3 overflow-x-auto text-left ${
+        isReleased ? 'bg-slate-100 hover:bg-slate-200' : fill.row
+      }`}
+    >
+      <span className={`shrink-0 text-[11px] font-black px-2 py-0.5 rounded uppercase tracking-wide ${solidBadge}`}>
+        {isReleased ? 'RELEASED' : priorityConfig.label}
+      </span>
+      <span className="shrink-0 text-sm text-slate-800">
+        <strong className="text-base font-black text-slate-900">{asset.fleet_id}</strong>
+        <span className="text-slate-400"> • </span>
+        <span className="font-bold text-slate-600">{asset.make_model}</span>
+      </span>
+      <span className="shrink-0 text-xs font-bold text-slate-500">
+        {asset.machine_owner || 'Central'} • {asset.location || 'No location set'}
+      </span>
+      {!isReleased && (
+        <span className="shrink-0 text-xs text-slate-600">
+          Down for <strong className="font-mono text-rose-700">{getElapsedDown(asset.down_since)}</strong>
+          <span className="text-slate-400"> • </span>
+          Expected back up <strong className="font-mono text-slate-900">{formatDateTime(asset.expected_up)}</strong>
+        </span>
+      )}
+      {etu?.overdue && (
+        <span className="shrink-0 px-1.5 py-0.5 rounded text-[11px] font-black uppercase bg-rose-100 text-rose-800">Overdue</span>
+      )}
+      <span className="shrink-0 ml-auto px-2 py-0.5 rounded bg-slate-200 text-xs font-black text-slate-800">{jobCount} {jobCount === 1 ? 'Job' : 'Jobs'}</span>
+      {isDetailsExpanded ? <ChevronUp className="w-4 h-4 shrink-0 text-slate-500" /> : <ChevronDown className="w-4 h-4 shrink-0 text-slate-500" />}
+    </button>
+  ) : null;
 
   const toggleItemNotes = (id: string) => {
     setExpandedNotesItemIds((prev) => {
@@ -73,8 +171,8 @@ export default function MachineWorkboardCard({
     });
   };
 
-  const handleCopySapNotes = async (itemId: string, keyword?: string) => {
-    const text = generateSapNotesText(notes.filter((n) => n.asset_id === asset.id), keyword);
+  const handleCopySapNotes = async (itemId: string, keyword?: string, override?: string) => {
+    const text = override?.trim() || generateSapNotesText(notesForWorkOrder(notes, itemId), keyword);
     if (await copyToClipboard(text)) {
       setCopiedId(itemId);
       setTimeout(() => setCopiedId(null), 2000);
@@ -88,6 +186,7 @@ export default function MachineWorkboardCard({
     if (error) return alert(`Error saving SAP WO number: ${error.message}`);
     await supabase.from('asset_history_notes').insert([{
       asset_id: asset.id,
+      work_order_id: id,
       fitter_name: activeFitter || 'Planner',
       note: `Assigned SAP Work Order #${woNum} to item.`,
       stage: 'IN_PROGRESS',
@@ -102,6 +201,8 @@ export default function MachineWorkboardCard({
       className={`rounded-xl border transition-all duration-200 overflow-hidden ${
         isReleased
           ? 'bg-slate-100/90 border-slate-300 border-l-8 border-l-slate-400 shadow-xs'
+          : compact
+          ? `bg-white border-slate-300 border-l-8 ${fill.edge} shadow-sm`
           : `bg-white border-slate-300 border-l-8 ${eventConfig.border} shadow-sm`
       }`}
     >
@@ -110,15 +211,19 @@ export default function MachineWorkboardCard({
           On this tablet. It will send when the signal is back.
         </p>
       )}
+      {compact && !isDetailsExpanded && summaryRow}
+      {(!compact || isDetailsExpanded) && (
+      <>
       <MachineCardHeader
         asset={asset}
         eventConfig={eventConfig}
-        priorityBadge={isReleased ? 'bg-slate-200 text-slate-700 border-slate-300' : priorityConfig.badge}
+        priorityBadge={isReleased ? 'bg-slate-200 text-slate-700 border-slate-300' : compact ? `${fill.badge} border-transparent` : priorityConfig.badge}
         priorityLabel={isReleased ? 'RELEASED' : priorityConfig.label}
         isReleased={isReleased}
         openQuickEdit={openQuickEdit}
         openHistory={openHistory}
         openDefects={openDefects}
+        onCollapse={compact ? toggleExpandDetails : undefined}
       />
 
       {mainEvent ? (
@@ -131,7 +236,8 @@ export default function MachineWorkboardCard({
           isNotesExpanded={expandedNotesItemIds.has(mainEvent.id)}
           toggleNotes={() => toggleItemNotes(mainEvent.id)}
           isCopied={copiedId === mainEvent.id}
-          onCopySapNotes={() => handleCopySapNotes(mainEvent.id, 'Main Event')}
+          onCopySapNotes={(override) => handleCopySapNotes(mainEvent.id, 'Main Event', override)}
+          copyLabel={copyLabel}
           updateWorkOrderStage={updateWorkOrderStage}
           openPartsModal={openPartsModal}
           openCrewPicker={openCrewPicker}
@@ -156,12 +262,11 @@ export default function MachineWorkboardCard({
           additionalOrders={additionalOrders}
           notes={notes}
           activeFitter={activeFitter}
-          isDetailsExpanded={isDetailsExpanded}
-          toggleExpandDetails={toggleExpandDetails}
           expandedNotesItemIds={expandedNotesItemIds}
           toggleItemNotes={toggleItemNotes}
           copiedId={copiedId}
           onCopySapNotes={handleCopySapNotes}
+          copyLabel={copyLabel}
           activeInlineWoTarget={activeInlineWoTarget}
           setActiveInlineWoTarget={setActiveInlineWoTarget}
           inlineWoInputs={inlineWoInputs}
@@ -181,6 +286,8 @@ export default function MachineWorkboardCard({
         onRelease={() => releaseMachineToProduction(asset.id, asset.fleet_id)}
         onAddWorkOrder={mainEvent && !isReleased ? () => openAddWorkOrder(asset) : undefined}
       />
+      </>
+      )}
     </div>
   );
 }

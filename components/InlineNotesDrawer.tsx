@@ -3,6 +3,8 @@ import { Send } from 'lucide-react';
 import { HistoryNote } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
 import { createClient } from '@/utils/supabase/client';
+import DictationMicButton, { appendDictation } from '@/components/ui/DictationMicButton';
+import TidyNotesButton from '@/components/ui/TidyNotesButton';
 
 interface InlineNotesDrawerProps {
   assetId: string;
@@ -11,6 +13,9 @@ interface InlineNotesDrawerProps {
   notes: HistoryNote[];
   activeFitter: string;
   onRefresh: () => void;
+  heading?: string;
+  taskDescription?: string;
+  fleetId?: string;
 }
 
 export default function InlineNotesDrawer({
@@ -20,22 +25,24 @@ export default function InlineNotesDrawer({
   notes,
   activeFitter,
   onRefresh,
+  heading = 'Progressive SAP Notes:',
+  taskDescription = '',
+  fleetId,
 }: InlineNotesDrawerProps) {
   const [noteText, setNoteText] = useState('');
   const [fitterStamp, setFitterStamp] = useState(activeFitter);
   const supabase = createClient();
 
-  const itemNotes = notes.filter((n) => 
-    n.asset_id === assetId && n.note.toLowerCase().includes(contextLabel.toLowerCase().slice(0, 15))
-  );
+  const itemNotes = notes.filter((note) => note.work_order_id === itemId);
 
   async function handleAddNote() {
     if (!noteText.trim()) return;
 
     await supabase.from('asset_history_notes').insert([{
       asset_id: assetId,
+      work_order_id: itemId,
       fitter_name: (fitterStamp || activeFitter || 'Shift Fitter').trim(),
-      note: `[${contextLabel}]: ${noteText.trim()}`,
+      note: noteText.trim(),
       stage: 'IN_REPAIR'
     }]);
 
@@ -45,9 +52,12 @@ export default function InlineNotesDrawer({
 
   return (
     <div className="mt-2.5 pt-2.5 border-t border-slate-200/80 space-y-2">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
-        Progressive SAP Notes:
-      </span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          {heading}
+        </span>
+        <DictationMicButton onTranscript={(spoken) => setNoteText((current) => appendDictation(current, spoken))} />
+      </div>
 
       <div className="space-y-1.5 max-h-32 overflow-y-auto">
         {itemNotes.length === 0 ? (
@@ -77,14 +87,21 @@ export default function InlineNotesDrawer({
           value={noteText}
           onChange={(e) => setNoteText(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') handleAddNote(); }}
-          className="flex-1 bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900"
+          className="flex-1 min-h-[38px] bg-white border border-slate-300 rounded px-2 text-sm text-slate-900"
+        />
+        <TidyNotesButton
+          rawNotes={noteText}
+          fleetId={fleetId}
+          taskDescription={taskDescription}
+          isSingleNote
+          onTidied={setNoteText}
         />
         <button
           type="button"
           onClick={handleAddNote}
-          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-bold shrink-0 flex items-center justify-center gap-1 shadow-2xs"
+          className="min-h-[38px] px-3 bg-amber-600 hover:bg-amber-500 text-white rounded text-sm font-bold shrink-0 flex items-center justify-center gap-1 shadow-2xs"
         >
-          <Send className="w-3 h-3" /> Add Note
+          <Send className="w-4 h-4" /> Add Note
         </button>
       </div>
     </div>

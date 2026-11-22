@@ -1,11 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { Asset, CrewMember, OperatorPassout, PRODUCTION_PLANT, authorisationState } from '@/types';
+import { Asset, CREW_PANELS, CrewMember, OperatorPassout, PRODUCTION_PLANT } from '@/types';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
-
-const STATE_WORD = { current: 'Current', due: 'Due soon', expired: 'Expired', not_held: 'Not passed out' };
+import DateRoster from './DateRoster';
 
 export default function PassoutRegister({
   machines,
@@ -18,73 +17,84 @@ export default function PassoutRegister({
   passouts: OperatorPassout[];
   onChanged: () => void;
 }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const { showToast } = useFeedback();
-  const operators = crew.filter((member) => member.active && member.department === 'Production');
   const plant = machines.filter((asset) => (PRODUCTION_PLANT as readonly string[]).includes(asset.asset_type));
   const [fleetId, setFleetId] = useState(plant[0]?.fleet_id ?? '');
+  const [crewFilter, setCrewFilter] = useState('all');
   const selected = plant.find((asset) => asset.fleet_id === fleetId) ?? plant[0] ?? null;
 
-  async function save(memberId: string, assetId: string, expiresOn: string) {
+  const people = crew
+    .filter((member) => member.active && member.department === 'Production')
+    .filter((member) => crewFilter === 'all' || member.panel === crewFilter)
+    .sort((a, b) => a.display_name.localeCompare(b.display_name))
+    .map((member) => ({
+      id: member.id,
+      name: member.display_name,
+      detail: member.panel || 'No crew',
+    }));
+
+  function expiresFor(memberId: string) {
+    if (!selected) return null;
+    return passouts.find((row) => row.crew_member_id === memberId && row.asset_id === selected.id)?.expires_on ?? null;
+  }
+
+  async function saveOne(memberId: string, expiresOn: string) {
+    if (!selected) return false;
     const query = expiresOn
       ? supabase.from('operator_passouts').upsert(
-          { crew_member_id: memberId, asset_id: assetId, expires_on: expiresOn },
+          { crew_member_id: memberId, asset_id: selected.id, expires_on: expiresOn },
           { onConflict: 'crew_member_id,asset_id' },
         )
-      : supabase.from('operator_passouts').delete().eq('crew_member_id', memberId).eq('asset_id', assetId);
+      : supabase.from('operator_passouts').delete().eq('crew_member_id', memberId).eq('asset_id', selected.id);
     const { error } = await query;
     if (error) {
       showToast({ message: 'Could not save that pass-out.', tone: 'error' });
-      return;
+      return false;
     }
     onChanged();
+    return true;
+  }
+
+  async function saveMany(ids: string[], expiresOn: string) {
+    if (!selected) return false;
+    const { error } = await supabase.from('operator_passouts').upsert(
+      ids.map((id) => ({ crew_member_id: id, asset_id: selected.id, expires_on: expiresOn })),
+      { onConflict: 'crew_member_id,asset_id' },
+    );
+    if (error) return false;
+    onChanged();
+    return true;
   }
 
   return (
-    <section className="bg-white border border-slate-300 rounded-2xl p-4 shadow-sm space-y-3">
-      <div>
-        <h2 className="text-xl font-black text-slate-900">Machine pass-outs</h2>
-        <p className="text-sm text-slate-600 mt-1">
-          Training records who is signed off on each machine. A production supervisor can only allocate an operator while this date is still current.
-        </p>
-      </div>
-      {!selected || operators.length === 0 ? (
-        <p className="text-sm text-slate-500">No production operators are set up yet.</p>
-      ) : (
-        <>
+    <DateRoster
+      title="Machine pass-outs"
+      hint="Pick a machine. Set a date on a person, or tick the people who were signed off and set one date for them."
+      people={people}
+      dateFor={expiresFor}
+      onSaveOne={saveOne}
+      onSaveMany={saveMany}
+      emptyWord="Not passed out"
+      picker={(
+        <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
             Machine
-            <select value={selected.fleet_id} onChange={(event) => setFleetId(event.target.value)} className="min-h-11 rounded-lg border-2 border-slate-300 bg-white px-3">
+            <select value={selected?.fleet_id ?? ''} onChange={(event) => setFleetId(event.target.value)} className="min-h-11 rounded-lg border-2 border-slate-300 bg-white px-3">
               {plant.map((asset) => (
                 <option key={asset.id} value={asset.fleet_id}>{asset.fleet_id} · {asset.make_model}</option>
               ))}
             </select>
           </label>
-          <ul className="divide-y divide-slate-200 border border-slate-200 rounded-xl">
-            {operators.map((member) => {
-              const held = passouts.find((row) => row.crew_member_id === member.id && row.asset_id === selected.id);
-              const state = authorisationState(held?.expires_on ?? null);
-              return (
-                <li key={member.id} className="px-3 py-2 flex items-center justify-between gap-3">
-                  <span className="text-sm font-bold">{member.display_name}</span>
-                  <span className="flex items-center gap-2">
-                    <span className={`text-xs font-black uppercase ${state === 'expired' ? 'text-rose-700' : state === 'due' ? 'text-amber-700' : state === 'current' ? 'text-emerald-700' : 'text-slate-400'}`}>
-                      {STATE_WORD[state]}
-                    </span>
-                    <input
-                      type="date"
-                      value={held?.expires_on?.slice(0, 10) ?? ''}
-                      aria-label={`${member.display_name} pass-out on ${selected.fleet_id}`}
-                      onChange={(event) => void save(member.id, selected.id, event.target.value)}
-                      className="min-h-10 px-2 rounded-lg border border-slate-300"
-                    />
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </>
+          <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+            Crew
+            <select value={crewFilter} onChange={(event) => setCrewFilter(event.target.value)} className="min-h-11 rounded-lg border-2 border-slate-300 bg-white px-3">
+              <option value="all">All crews</option>
+              {CREW_PANELS.map((panel) => <option key={panel} value={panel}>{panel}</option>)}
+            </select>
+          </label>
+        </div>
       )}
-    </section>
+    />
   );
 }

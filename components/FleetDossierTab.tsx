@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Asset } from '@/types';
 import { FleetDossierHeader } from './fleet-directory/FleetDossierHeader';
 import { FleetDossierGroup } from './fleet-directory/FleetDossierGroup';
+import { RepeatScan } from './fleet-directory/RepeatFailureCallout';
 
 interface FleetDossierTabProps {
   assets: Asset[];
@@ -17,6 +18,49 @@ export default function FleetDossierTab({
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPERATIONAL' | 'DOWN'>('ALL');
   const [selectedOwner, setSelectedOwner] = useState('ALL');
+  const [repeatCache, setRepeatCache] = useState<Record<string, RepeatScan>>({});
+  const [openRepeatId, setOpenRepeatId] = useState<string | null>(null);
+  const [scanningRepeatId, setScanningRepeatId] = useState<string | null>(null);
+
+  async function scanRepeats(asset: Asset, force = false) {
+    setOpenRepeatId(asset.id);
+    if (!force && repeatCache[asset.id] && !repeatCache[asset.id].error) return;
+    setScanningRepeatId(asset.id);
+    try {
+      const response = await fetch('/api/ai-repeat-failures', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          machineId: asset.id,
+          fleetId: asset.fleet_id,
+          makeModel: asset.make_model,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setRepeatCache((current) => ({
+          ...current,
+          [asset.id]: { error: 'Could not scan that history.' },
+        }));
+        return;
+      }
+      setRepeatCache((current) => ({
+        ...current,
+        [asset.id]: {
+          insufficientData: Boolean(data.insufficientData),
+          message: typeof data.message === 'string' ? data.message : undefined,
+          bullets: Array.isArray(data.bullets) ? data.bullets.filter((line: unknown) => typeof line === 'string') : [],
+        },
+      }));
+    } catch {
+      setRepeatCache((current) => ({
+        ...current,
+        [asset.id]: { error: 'Could not scan that history.' },
+      }));
+    } finally {
+      setScanningRepeatId(null);
+    }
+  }
 
   const owners = useMemo(() => {
   const uniqueOwners = new Set<string>();
@@ -98,6 +142,12 @@ export default function FleetDossierTab({
               assets={groupedAssets[category]}
               openHistory={openHistory}
               onAssignJob={onAssignJob}
+              repeatCache={repeatCache}
+              openRepeatId={openRepeatId}
+              scanningRepeatId={scanningRepeatId}
+              onSpotRepeats={(asset) => void scanRepeats(asset)}
+              onHideRepeats={() => setOpenRepeatId(null)}
+              onRefreshRepeats={(asset) => void scanRepeats(asset, true)}
             />
           ))
       )}

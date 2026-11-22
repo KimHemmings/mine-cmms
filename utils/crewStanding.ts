@@ -38,6 +38,11 @@ export function todayKey(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+export function shiftIsPast(shiftDate: string | null | undefined, today = new Date()) {
+  if (!shiftDate) return false;
+  return shiftDate.slice(0, 10) < todayKey(today);
+}
+
 export function supervisionIsLive(row: { starts_on?: string | null }, today = new Date()) {
   const start = (row.starts_on ?? todayKey(today)).slice(0, 10);
   return start <= todayKey(today);

@@ -1,17 +1,28 @@
 import React from 'react';
 import { Asset } from '@/types';
-import { Wrench, History, MapPin, Hash, User } from 'lucide-react';
+import { Wrench, History, MapPin, Hash, User, AlertTriangle } from 'lucide-react';
+import RepeatFailureCallout, { RepeatScan } from './RepeatFailureCallout';
 
 interface FleetDossierCardProps {
   asset: Asset;
   openHistory: (asset: Asset) => void;
   onAssignJob?: (asset: Asset) => void;
+  repeatResult?: RepeatScan | null;
+  scanningRepeats?: boolean;
+  onSpotRepeats: (asset: Asset) => void;
+  onHideRepeats: () => void;
+  onRefreshRepeats: (asset: Asset) => void;
 }
 
 export const FleetDossierCard: React.FC<FleetDossierCardProps> = ({
   asset,
   openHistory,
   onAssignJob,
+  repeatResult = null,
+  scanningRepeats = false,
+  onSpotRepeats,
+  onHideRepeats,
+  onRefreshRepeats,
 }) => {
   const isDown = asset.status !== 'OPERATIONAL';
   const priorityText = asset.priority ? ' • ' + asset.priority : '';
@@ -53,6 +64,30 @@ export const FleetDossierCard: React.FC<FleetDossierCardProps> = ({
         {/* Make, Model & Type */}
         <p className="text-sm font-bold text-slate-800 leading-snug">{asset.make_model}</p>
         <p className="text-xs text-slate-500 mb-3 font-medium">{asset.asset_type}</p>
+
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onSpotRepeats(asset);
+          }}
+          disabled={scanningRepeats}
+          className="w-full min-h-[40px] mb-3 inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:opacity-70"
+        >
+          <AlertTriangle className="w-4 h-4" />
+          {scanningRepeats ? 'Scanning 12-Mo History...' : 'Spot Repeat Failures'}
+        </button>
+
+        {repeatResult && (
+          <div onClick={(event) => event.stopPropagation()}>
+            <RepeatFailureCallout
+              result={repeatResult}
+              refreshing={scanningRepeats}
+              onHide={onHideRepeats}
+              onRefresh={() => onRefreshRepeats(asset)}
+            />
+          </div>
+        )}
 
         {/* Operational Metadata */}
         <div className="grid grid-cols-1 gap-1.5 py-2.5 border-t border-b border-slate-200/80 text-xs">

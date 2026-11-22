@@ -21,7 +21,7 @@ import {
 } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
 import { generatePrestartPptx } from '@/utils/prestartPptx';
-import { formatStartDay, seatChangeLines, siteCover, supervisionFor, supervisionIsLive } from '@/utils/crewStanding';
+import { formatStartDay, seatChangeLines, shiftIsPast, siteCover, supervisionFor, supervisionIsLive } from '@/utils/crewStanding';
 import { CrewMarks, SiteCoverList } from '@/components/training/CrewMarks';
 import { AuthLight, PersonAuthorisationsDialog } from '@/components/training/PersonAuthorisations';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
@@ -64,7 +64,7 @@ export default function ProductionStatus({
   const cover = siteCover(onCrew, supervision, authorisations, holdings, crew);
   const plant = machines.filter((asset) => (PRODUCTION_PLANT as readonly string[]).includes(asset.asset_type));
   const available = plant.filter((asset) => asset.status === 'OPERATIONAL' && !asset.in_shift);
-  const unavailable = plant.filter((asset) => asset.in_shift && asset.status !== 'OPERATIONAL');
+  const unavailable = plant.filter((asset) => asset.status !== 'OPERATIONAL');
   const shiftAllocations = allocations.filter((row) => row.shift_id === activeShift?.id);
   const changeLines = useMemo(() => {
     const fleetByAsset = new Map(machines.map((asset) => [asset.id, asset.fleet_id]));
@@ -209,7 +209,7 @@ export default function ProductionStatus({
   const dueElsewhere = (staleAuthorisations.length - dueHereAuth.length) + (stalePassouts.length - dueHerePassouts.length);
 
   const shiftLabel = activeShift
-    ? `${activeShift.shift_name}${activeShift.crew ? ` · ${activeShift.crew}` : ''}`
+    ? `${activeShift.shift_name}${activeShift.crew ? ` · ${activeShift.crew}` : ''}${activeShift.shift_date ? ` · ${formatStartDay(activeShift.shift_date)}` : ''}`
     : 'No active shift';
 
   return (
@@ -218,6 +218,9 @@ export default function ProductionStatus({
         <div>
           <h2 className="text-xl font-black text-slate-900">Who is on each machine</h2>
           <p className="text-sm text-slate-600 mt-1">{shiftLabel}. Only an operator training has passed out on that machine can be allocated.</p>
+          {shiftIsPast(activeShift?.shift_date) && (
+            <p className="text-sm font-bold text-amber-800 mt-1">This shift is still open from {formatStartDay(activeShift?.shift_date ?? '')}. The workshop supervisor finishes it.</p>
+          )}
         </div>
         <button
           type="button"
@@ -259,9 +262,9 @@ export default function ProductionStatus({
       }} />
 
       <section className="bg-white border border-slate-300 rounded-2xl p-4 shadow-sm">
-        <h3 className="text-lg font-black text-slate-900">Still in the workshop</h3>
+        <h3 className="text-lg font-black text-slate-900">Not running</h3>
         {unavailable.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-500">No production machines are down on this shift.</p>
+          <p className="mt-2 text-sm text-slate-500">No production machines are down.</p>
         ) : (
           <table className="mt-3 w-full text-sm text-left">
             <thead>
@@ -279,7 +282,7 @@ export default function ProductionStatus({
                 const stage = STAGE_OPTIONS.find((option) => option.value === main?.stage)?.label;
                 return (
                   <tr key={asset.id} className="border-t border-slate-200">
-                    <td className="py-2 pr-3 font-bold">{asset.fleet_id}<span className="block text-xs font-medium text-slate-500">{asset.make_model}</span></td>
+                    <td className="py-2 pr-3 font-bold">{asset.fleet_id}<span className="block text-xs font-medium text-slate-500">{asset.make_model}{asset.in_shift ? '' : ' · Not in the workshop'}</span></td>
                     <td className="py-2 pr-3">{main?.task_description || 'No open job'}</td>
                     <td className="py-2 pr-3">{stage || 'No open job'}</td>
                     <td className="py-2">{formatDateTime(asset.expected_up)}</td>
@@ -462,7 +465,11 @@ function AllocationTable({
                 <td className="py-2">
                   <select
                     value={chosenIsSuitable ? chosen.id : ''}
-                    onChange={(event) => allocate(asset.id, event.target.value)}
+                    onChange={(event) => {
+                      const nextId = event.target.value;
+                      if (current && nextId) changeOperator(asset.id, nextId);
+                      else allocate(asset.id, nextId);
+                    }}
                     disabled={!activeShift}
                     className="min-h-11 w-full max-w-md rounded-lg border-2 border-slate-300 bg-white px-3 text-sm font-bold"
                   >
