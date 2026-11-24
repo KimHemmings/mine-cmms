@@ -363,6 +363,7 @@ function Workboard() {
           <HandoverReportTab
             readOnly={showLens}
             accessLevel={permissions.accessLevel}
+            signedByName={activeFitter}
             activeShift={activeShift}
             shiftJobs={shiftJobs}
             completedJobs={completedJobs}

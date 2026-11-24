@@ -15,6 +15,7 @@ interface BuildHandoverInput {
   shiftId?: string | null;
   shiftStartedAt?: string | null;
   summary: string | null;
+  oceSummary?: string | null;
   outgoingCrew?: string | null;
   incomingCrew?: string | null;
   machineNotes?: HandoverSnapshot['machineNotes'];
@@ -111,6 +112,7 @@ export function buildHandoverSnapshot({
   shiftId = null,
   shiftStartedAt = null,
   summary,
+  oceSummary,
   outgoingCrew = null,
   incomingCrew = null,
   machineNotes = [],
@@ -187,6 +189,8 @@ export function buildHandoverSnapshot({
 
   return {
     summary: summary?.trim() || null,
+    shift_summary: summary?.trim() || null,
+    oce_summary: oceSummary?.trim() || oce?.briefing.summary?.trim() || null,
     outgoingCrew,
     incomingCrew: incomingCrew ?? incomingPanel,
     machineNotes: machineNotes.filter((note) => note.fleetId.trim() && note.summary.trim()),
@@ -244,8 +248,12 @@ export function buildHandoverSnapshot({
 }
 
 export function normalizeHandoverDocument(document: Partial<HandoverSnapshot> | null | undefined): HandoverSnapshot {
+  const shiftSummary = document?.shift_summary ?? document?.summary ?? null;
+  const oceSummary = document?.oce_summary ?? document?.oce?.briefing?.summary ?? null;
   return {
-    summary: document?.summary ?? null,
+    summary: shiftSummary,
+    shift_summary: shiftSummary,
+    oce_summary: oceSummary,
     outgoingCrew: document?.outgoingCrew ?? null,
     incomingCrew: document?.incomingCrew ?? document?.allocation?.panel ?? null,
     machineNotes: document?.machineNotes ?? [],
@@ -283,7 +291,10 @@ export function normalizeHandoverDocument(document: Partial<HandoverSnapshot> | 
     safetyIncidents: document?.safetyIncidents ?? [],
     safetyFocus: document?.safetyFocus ?? null,
     oce: document?.oce
-      ? { fileName: document.oce.fileName ?? null, briefing: normalizeOceBriefing(document.oce.briefing) }
+      ? {
+          fileName: document.oce.fileName ?? null,
+          briefing: { ...normalizeOceBriefing(document.oce.briefing), summary: oceSummary ?? '' },
+        }
       : null,
     inTraining: document?.inTraining ?? [],
     ertOnSite: document?.ertOnSite ?? [],

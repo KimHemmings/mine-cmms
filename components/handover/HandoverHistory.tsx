@@ -27,6 +27,15 @@ export default function HandoverHistory({ handovers, activeShiftId, onOpen }: Ha
   }, [handovers, shiftType, crew, from, to]);
 
   const selectClass = 'min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold';
+  const statusFor = (handover: SavedHandover) => {
+    if (!handover.outgoing_signed_at) {
+      return { label: 'Draft', className: 'border-amber-300 bg-amber-50 text-amber-900' };
+    }
+    if (!handover.oncoming_signed_at) {
+      return { label: 'Awaiting Oncoming Sign-Off', className: 'border-sky-300 bg-sky-50 text-sky-900' };
+    }
+    return { label: 'Signed & Complete', className: 'border-emerald-300 bg-emerald-50 text-emerald-900' };
+  };
 
   return (
     <div className="space-y-4">
@@ -67,21 +76,29 @@ export default function HandoverHistory({ handovers, activeShiftId, onOpen }: Ha
         <ul className="divide-y divide-slate-200 rounded-xl border border-slate-300 bg-white">
           {filtered.map((handover) => (
             <li key={handover.id}>
-              <button type="button" onClick={() => onOpen(handover)} className="w-full text-left px-4 py-3 hover:bg-slate-50 min-h-16">
-                <span className="block text-base font-black text-slate-900">
-                  {handover.shift_name}{handover.crew ? ` · ${handover.crew}` : ''}
-                  {handover.shift_id === activeShiftId && <span className="ml-2 text-xs font-bold uppercase text-emerald-700">Current shift</span>}
-                </span>
-                <span className="block text-sm text-slate-500">
-                  {handover.shift_date ? new Date(handover.shift_date).toLocaleDateString() : 'No date'}
-                  {' · '}{handover.supervisor || 'Supervisor not recorded'}
-                  {' · '}Saved {formatDateTime(handover.saved_at)}
-                  {' · '}{handover.document.handedOver.length} still down, {handover.document.released.length} released
-                  {Object.keys(handover.document.machine_summaries ?? {}).length > 0
-                    ? ` · AI notes for ${Object.keys(handover.document.machine_summaries).length} units`
-                    : ''}
-                </span>
-              </button>
+              {(() => {
+                const status = statusFor(handover);
+                return (
+                  <button type="button" onClick={() => onOpen(handover)} className="w-full px-4 py-3 text-left hover:bg-slate-50 min-h-16">
+                    <span className="flex flex-wrap items-center gap-2 text-base font-black text-slate-900">
+                      {handover.shift_name}{handover.crew ? ` · ${handover.crew}` : ''}
+                      {handover.shift_id === activeShiftId && <span className="text-xs font-bold uppercase text-emerald-700">Current shift</span>}
+                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${status.className}`}>
+                        {status.label}
+                      </span>
+                    </span>
+                    <span className="block text-sm text-slate-500">
+                      {handover.shift_date ? new Date(handover.shift_date).toLocaleDateString() : 'No date'}
+                      {' · '}{handover.supervisor || 'Supervisor not recorded'}
+                      {' · '}Saved {formatDateTime(handover.saved_at)}
+                      {' · '}{handover.document.handedOver.length} still down, {handover.document.released.length} released
+                      {Object.keys(handover.document.machine_summaries ?? {}).length > 0
+                        ? ` · Shift notes for ${Object.keys(handover.document.machine_summaries).length} units`
+                        : ''}
+                    </span>
+                  </button>
+                );
+              })()}
             </li>
           ))}
         </ul>

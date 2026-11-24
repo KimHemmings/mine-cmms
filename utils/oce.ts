@@ -19,7 +19,7 @@ function points(value: unknown) {
 export function normalizeOceBriefing(value: unknown): OceBriefing {
   const row = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
   return {
-    summary: typeof row.summary === 'string' ? row.summary.trim().slice(0, 2000) : '',
+    summary: typeof row.summary === 'string' ? row.summary.trim().slice(0, 120_000) : '',
     hazards: points(row.hazards),
     incidents: points(row.incidents),
     restrictions: points(row.restrictions),

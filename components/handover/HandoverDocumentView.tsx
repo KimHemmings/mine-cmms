@@ -15,6 +15,11 @@ interface HandoverDocumentViewProps {
   savedBy?: string | null;
   document: HandoverSnapshot;
   emptyCrewMessage?: string;
+  isLivePreview?: boolean;
+  outgoingSignedBy?: string | null;
+  outgoingSignedAt?: string | null;
+  oncomingSignedBy?: string | null;
+  oncomingSignedAt?: string | null;
 }
 
 const NOTE_ORDER: { category: HandoverLogCategory; title: string }[] = [
@@ -29,7 +34,7 @@ const NOTE_ORDER: { category: HandoverLogCategory; title: string }[] = [
 function Section({ title, children, className = '' }: { title: string; children: ReactNode; className?: string }) {
   const accent = title.toLowerCase().includes('safety') ? 'border-l-amber-500' : 'border-l-slate-700';
   return (
-    <section className={`mt-6 overflow-hidden rounded-xl border border-slate-200 border-l-4 ${accent} bg-white ${className}`}>
+    <section className={`mt-6 overflow-hidden rounded-xl border border-slate-200 border-l-4 ${accent} bg-white print:overflow-visible ${className}`}>
       <h3 className="border-b border-slate-200 bg-slate-50/90 px-5 py-3.5 text-sm font-black uppercase tracking-wide text-slate-800">
         {title}
       </h3>
@@ -46,20 +51,6 @@ function workOrderLabel(value: string | null, suffix: string) {
   const workOrder = value?.trim().replace(/^WO\s+(WO-)/i, '$1');
   if (!workOrder) return '';
   return `${/^WO/i.test(workOrder) ? '' : 'WO '}${workOrder}${suffix}`;
-}
-
-function SignoffMetadata({ value }: { value: string | null }) {
-  if (!value) return <>Not signed.</>;
-  const relief = value.match(/^(.*?) \(Relief Coverage — Home: (.*?)\)$/);
-  if (!relief) return <>{value}</>;
-  return (
-    <>
-      {relief[1]}
-      <span className="ml-1 inline-block rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-black text-amber-950 print:border-black print:bg-white">
-        Relief Coverage — Home: {relief[2]}
-      </span>
-    </>
-  );
 }
 
 function inlineBriefingText(text: string) {
@@ -148,17 +139,23 @@ export default function HandoverDocumentView({
   savedBy,
   document,
   emptyCrewMessage = 'The crew coming on was not recorded on this handover.',
+  isLivePreview = false,
+  outgoingSignedBy = null,
+  outgoingSignedAt = null,
+  oncomingSignedBy = null,
+  oncomingSignedAt = null,
 }: HandoverDocumentViewProps) {
   const dateLabel = shiftDate ? new Date(shiftDate).toLocaleDateString() : '';
   const allocation = document.allocation ?? { panel: null, people: [], withOutgoing: [], needsName: [] };
   const outgoingCrew = document.outgoingCrew ?? crew;
   const incomingCrew = document.incomingCrew ?? allocation.panel;
+  const shiftSummary = (document.shift_summary ?? document.summary ?? '').trim();
+  const oceSummary = (document.oce_summary ?? document.oce?.briefing.summary ?? '').trim();
   const handedOverMachines = [...document.handedOver].sort(compareHandoverMachines);
   const releasedMachines = [...document.released].sort(compareHandoverMachines);
   const parts = document.parts ?? [];
   const safetyLog = document.log.filter((entry) => entry.category === 'SAFETY');
   const incidents = document.safetyIncidents ?? [];
-  const oce = document.oce;
   const notes = NOTE_ORDER
     .map((group) => ({
       ...group,
@@ -167,8 +164,8 @@ export default function HandoverDocumentView({
     .filter((group) => group.entries.length > 0);
 
   return (
-    <article className="handover-print-document bg-white text-slate-900">
-      <header className="border-b-4 border-slate-900 pb-3">
+    <article className="handover-print-document bg-white text-slate-900 print:overflow-visible">
+      <header className={`border-b-4 border-slate-900 pb-3 ${isLivePreview ? 'hidden print:block' : ''}`}>
         <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Maintenance shift handover</p>
         <h2 className="text-2xl font-black tracking-tight mt-1">{shiftName}{outgoingCrew ? ` · ${outgoingCrew}` : ''}</h2>
         <p className="text-sm mt-1">
@@ -179,13 +176,26 @@ export default function HandoverDocumentView({
         </p>
       </header>
 
-      {document.summary && (
-        <Section title="Shift briefing" className="handover-briefing break-inside-avoid">
-          <BriefingNotes text={document.summary} />
-        </Section>
-      )}
+      <div className={`mt-4 grid gap-3 ${shiftSummary && oceSummary ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+        {(shiftSummary || !oceSummary) && (
+          <section className="handover-briefing break-inside-avoid rounded-lg border-2 border-slate-300 bg-slate-50/50 p-4">
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Shift Summary</h3>
+            <div className="mt-2">
+              <BriefingNotes text={shiftSummary || 'No summary recorded.'} />
+            </div>
+          </section>
+        )}
+        {oceSummary && (
+          <section className="handover-briefing break-inside-avoid rounded-lg border-2 border-slate-300 bg-slate-50/50 p-4">
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">OCE Summary</h3>
+            <div className="mt-2">
+              <BriefingNotes text={oceSummary} />
+            </div>
+          </section>
+        )}
+      </div>
 
-      <Section title="Safety and incidents">
+      <Section title="Safety and incidents" className={isLivePreview ? 'hidden print:block' : ''}>
         {incidents.length === 0 && safetyLog.length === 0 ? (
           <p className="text-sm text-slate-500">Nothing reported this shift.</p>
         ) : (
@@ -208,7 +218,7 @@ export default function HandoverDocumentView({
         )}
       </Section>
 
-      <Section title="Safety focus / share">
+      <Section title="Safety focus / share" className={isLivePreview ? 'hidden print:block' : ''}>
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{document.safetyFocus || 'No safety share recorded.'}</p>
       </Section>
 
@@ -229,20 +239,6 @@ export default function HandoverDocumentView({
         <p className="text-sm"><strong>ERT. </strong>{(document.ertOnSite ?? []).join(', ') || 'No ERT member is on this crew.'}</p>
       </Section>
 
-      <Section title="OCE report">
-        {!oce ? (
-          <p className="text-sm text-slate-500">No OCE report uploaded for this shift.</p>
-        ) : (
-          <div className="text-sm space-y-2">
-            {oce.fileName && <p className="font-bold">{oce.fileName}</p>}
-            <p className="whitespace-pre-wrap">{oce.briefing.summary || 'The report is attached. No briefing was written.'}</p>
-            {oce.briefing.restrictions.length > 0 && <p><strong>Restrictions. </strong>{oce.briefing.restrictions.join(' ')}</p>}
-            {oce.briefing.hazards.length > 0 && <p><strong>Hazards. </strong>{oce.briefing.hazards.join(' ')}</p>}
-            {oce.briefing.conditions.length > 0 && <p><strong>Conditions. </strong>{oce.briefing.conditions.join(' ')}</p>}
-          </div>
-        )}
-      </Section>
-
       {(document.machineNotes ?? []).length > 0 && (
         <Section title="What was noted this shift" className="break-inside-avoid">
           <ul className="text-sm space-y-1">
@@ -261,8 +257,6 @@ export default function HandoverDocumentView({
             <li><strong>Overtime and labour hire. </strong>{document.manning.overtime.join(', ') || 'None.'}</li>
             <li><strong>Unallocated. </strong>{document.manning.unallocated.join(', ') || 'None.'}</li>
             <li><strong>Bay-assigned. </strong>{document.manning.assigned.join(', ') || 'None.'}</li>
-            <li><strong>Outgoing. </strong><SignoffMetadata value={document.manning.outgoing} /></li>
-            <li><strong>Oncoming. </strong><SignoffMetadata value={document.manning.oncoming} /></li>
           </ul>
         </Section>
       )}
@@ -467,6 +461,26 @@ export default function HandoverDocumentView({
           </div>
         </div>
       </Section>
+
+      <footer className="mt-8 break-inside-avoid border-t-2 border-slate-900 pt-4">
+        <h3 className="text-sm font-black uppercase tracking-wide">Statutory sign-off</h3>
+        <p className="mt-2 text-sm">
+          <strong>Outgoing:</strong>{' '}
+          {outgoingSignedBy && outgoingSignedAt
+            ? `${outgoingSignedBy} · ${formatDateTime(outgoingSignedAt)}`
+            : 'Pending outgoing sign-off'}
+        </p>
+        <p className="text-sm">
+          <strong>Oncoming:</strong>{' '}
+          {oncomingSignedBy && oncomingSignedAt
+            ? `${oncomingSignedBy} · ${formatDateTime(oncomingSignedAt)}`
+            : 'Pending oncoming sign-off'}
+        </p>
+        <div className="mt-6 hidden grid-cols-2 gap-10 print:grid">
+          <div className="border-t border-slate-700 pt-1 text-xs">Outgoing supervisor signature</div>
+          <div className="border-t border-slate-700 pt-1 text-xs">Oncoming supervisor signature</div>
+        </div>
+      </footer>
     </article>
   );
 }

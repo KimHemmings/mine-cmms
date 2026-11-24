@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  FileSpreadsheet, Printer, Presentation, RotateCw,
+  ArrowLeft, FileSpreadsheet, Mic, MicOff, PenLine, Printer, Presentation, RotateCw,
 } from 'lucide-react';
 import { 
   Asset, 
@@ -38,6 +38,34 @@ import { fallbackMachineSummaries, HandoverAiMachineContext } from '@/utils/hand
 import { getHandoverCrewsForShift } from '@/utils/rosterCycle';
 import { useRosterCycleSettings } from '@/hooks/useRosterCycleSettings';
 import { leaveCovers, shiftDateIso } from '@/utils/crewLeave';
+import { exportHandoverPdf, handoverPdfFilename, printHandoverDocument } from '@/utils/exportHandoverPdf';
+
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  0: { transcript: string };
+}
+
+interface SpeechRecognitionEventLike {
+  results: ArrayLike<SpeechRecognitionResultLike>;
+}
+
+interface SpeechRecognitionLike {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: new () => SpeechRecognitionLike;
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+  }
+}
 
 const LOG_CATEGORIES: HandoverLogCategory[] = [
   'SAFETY', 'WEATHER', 'MANNING', 'WATCHLIST', 'BRAKE_TEST', 'TOOLING', 'PRIORITY',
@@ -57,6 +85,7 @@ interface HandoverReportTabProps {
   onRolloverShift: (nextCrew?: string) => Promise<boolean>;
   readOnly?: boolean;
   accessLevel?: number;
+  signedByName?: string | null;
   homeCrew?: string | null;
   coveringCrew?: string | null;
 }
@@ -105,17 +134,23 @@ export default function HandoverReportTab({
   onRolloverShift,
   readOnly = false,
   accessLevel = 2,
+  signedByName = null,
   homeCrew = null,
   coveringCrew = null,
 }: HandoverReportTabProps) {
   const [isExporting, setIsExporting] = useState(false);
+  const [isSavingPdf, setIsSavingPdf] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showRollover, setShowRollover] = useState(false);
   const [view, setView] = useState<'current' | 'history'>('current');
   const [opened, setOpened] = useState<SavedHandover | null>(null);
   const [handovers, setHandovers] = useState<SavedHandover[]>([]);
   const [slides, setSlides] = useState<HandoverSlide[]>([]);
-  const [summary, setSummary] = useState('');
+  const [shiftSummary, setShiftSummary] = useState('');
+  const [oceSummary, setOceSummary] = useState('');
+  const [isDictating, setIsDictating] = useState(false);
+  const [speechAvailable, setSpeechAvailable] = useState(false);
+  const [isRefiningSummary, setIsRefiningSummary] = useState(false);
   const [machineNotes, setMachineNotes] = useState<HandoverMachineNote[]>([]);
   const [machineSummaries, setMachineSummaries] = useState<Record<string, string[]>>({});
   const [aiRefreshRequest, setAiRefreshRequest] = useState(0);
@@ -125,6 +160,7 @@ export default function HandoverReportTab({
   const [oceReport, setOceReport] = useState<OceReport | null>(null);
   const importedShift = React.useRef<string | null>(null);
   const slidesLoadedFor = React.useRef<string | null>(null);
+  const speechRecognition = React.useRef<SpeechRecognitionLike | null>(null);
 
   const supabase = React.useMemo(() => createClient(), []);
   const { showToast } = useFeedback();
@@ -165,8 +201,17 @@ export default function HandoverReportTab({
   const outgoingCrew = rosterCrewPlan?.outgoingCrew ?? null;
   const incomingDate = rosterCrewPlan?.incomingDate ?? activeShiftDate;
   const supervisorName = activeShift?.supervisor || 'Workshop Management';
+  const outgoingSignerName = signedByName?.trim() || '';
+  const reliefSignoffSuffix = coveringCrew && homeCrew && coveringCrew !== homeCrew
+    ? ` (Relief Coverage — Home: ${homeCrew})`
+    : '';
+  const signedByLabel = (name: string) => `${name}${reliefSignoffSuffix}`;
   const handedOver = shiftJobs.filter((asset) => asset.in_shift && asset.status !== 'OPERATIONAL');
   const currentSaved = handovers.find((handover) => handover.shift_id === activeShift?.id) ?? null;
+  const currentLocked = Boolean(currentSaved?.outgoing_signed_at);
+  const pendingPrevious = accessLevel >= 3 && !readOnly
+    ? handovers.find((handover) => Boolean(handover.outgoing_signed_at) && !handover.oncoming_signed_at)
+    : undefined;
 
   const bounds = windowFor('12h');
   const inReport = (iso?: string | null) => inWindow(iso, bounds.start, bounds.end);
@@ -251,7 +296,8 @@ export default function HandoverReportTab({
     notes,
     shiftId: activeShift?.id ?? null,
     shiftStartedAt: activeShift?.started_at ?? null,
-    summary,
+    summary: shiftSummary,
+    oceSummary,
     outgoingCrew,
     incomingCrew: incomingPanel,
     machineNotes,
@@ -269,24 +315,69 @@ export default function HandoverReportTab({
   });
 
   const loadHandovers = React.useCallback(async () => {
-    const { data, error } = await supabase
+    const optionalColumns = [
+      'outgoing_signed_by',
+      'outgoing_signed_at',
+      'oncoming_signed_by',
+      'oncoming_signed_at',
+      'shift_summary',
+      'oce_summary',
+    ];
+    const baseColumns = ['id', 'shift_id', 'shift_name', 'shift_date', 'shift_type', 'crew', 'supervisor', 'document', 'saved_at', 'saved_by'];
+    let columns = [...baseColumns, ...optionalColumns];
+    let result = await supabase
       .from('shift_handovers')
-      .select('id, shift_id, shift_name, shift_date, shift_type, crew, supervisor, document, saved_at, saved_by')
+      .select(columns.join(', '))
       .order('saved_at', { ascending: false });
+    while (
+      result.error
+      && (result.error.code === 'PGRST204' || result.error.code === '42703')
+    ) {
+      const missingColumn = optionalColumns.find((column) =>
+        columns.includes(column) && result.error?.message.includes(column));
+      if (!missingColumn) break;
+      columns = columns.filter((column) => column !== missingColumn);
+      result = await supabase
+        .from('shift_handovers')
+        .select(columns.join(', '))
+        .order('saved_at', { ascending: false });
+    }
+    const data = result.data as SavedHandover[] | null;
+    const error = result.error;
     if (error) {
       console.error('Handover history load failed:', error.message);
       return;
     }
-    const rows = ((data ?? []) as SavedHandover[]).map((handover) => ({
-      ...handover,
-      document: normalizeHandoverDocument(handover.document),
-    }));
+    const rows = ((data ?? []) as SavedHandover[]).map((handover) => {
+      const document = normalizeHandoverDocument(handover.document);
+      const shiftSummary = handover.shift_summary ?? document.shift_summary ?? document.summary;
+      const oceSummary = handover.oce_summary ?? document.oce_summary ?? document.oce?.briefing.summary ?? null;
+      return {
+        ...handover,
+        outgoing_signed_by: handover.outgoing_signed_by ?? null,
+        outgoing_signed_at: handover.outgoing_signed_at ?? null,
+        oncoming_signed_by: handover.oncoming_signed_by ?? null,
+        oncoming_signed_at: handover.oncoming_signed_at ?? null,
+        shift_summary: shiftSummary,
+        oce_summary: oceSummary,
+        document: {
+          ...document,
+          summary: shiftSummary,
+          shift_summary: shiftSummary,
+          oce_summary: oceSummary,
+          oce: document.oce
+            ? { ...document.oce, briefing: { ...document.oce.briefing, summary: oceSummary ?? '' } }
+            : null,
+        },
+      };
+    });
     setHandovers(rows);
     const savedForShift = rows.find((handover) => handover.shift_id === activeShift?.id);
     if (savedForShift && slidesLoadedFor.current !== savedForShift.id) {
       slidesLoadedFor.current = savedForShift.id;
       setSlides(savedForShift.document.customSlides ?? []);
-      setSummary(savedForShift.document.summary ?? '');
+      setShiftSummary(savedForShift.shift_summary ?? savedForShift.document.summary ?? '');
+      setOceSummary(savedForShift.oce_summary ?? savedForShift.document.oce?.briefing.summary ?? '');
       setMachineNotes(savedForShift.document.machineNotes ?? []);
       setMachineSummaries(savedForShift.document.machine_summaries ?? {});
       setIncidents(savedForShift.document.safetyIncidents ?? []);
@@ -315,12 +406,21 @@ export default function HandoverReportTab({
     setIncomingOverride(null);
     setOutgoingId('');
     setOncomingId('');
-    setSummary('');
+    setShiftSummary('');
+    setOceSummary('');
     setMachineNotes([]);
     setMachineSummaries({});
   }
 
   const saveHandover = async () => {
+    if (accessLevel < 3 || readOnly) {
+      alert('A Level 3+ supervisor must save the handover.');
+      return false;
+    }
+    if (currentLocked) {
+      alert('This handover is locked after outgoing sign-off.');
+      return false;
+    }
     if (!activeShift?.id) {
       alert('There is no active shift to save.');
       return false;
@@ -335,6 +435,8 @@ export default function HandoverReportTab({
         crew: outgoingCrew ?? activeShift.crew,
         supervisor: supervisorName,
         document: liveSnapshot,
+        shift_summary: shiftSummary.trim() || null,
+        oce_summary: oceSummary.trim() || null,
       },
       { onConflict: 'shift_id' }
     );
@@ -347,6 +449,90 @@ export default function HandoverReportTab({
     await loadHandovers();
     return true;
   };
+
+  const toggleDictation = () => {
+    if (isDictating) {
+      speechRecognition.current?.stop();
+      return;
+    }
+    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!Recognition) return;
+
+    const recognition = new Recognition();
+    recognition.lang = 'en-AU';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .filter((result) => result.isFinal)
+        .map((result) => result[0].transcript.trim())
+        .filter(Boolean)
+        .join(' ');
+      if (!transcript) return;
+      setShiftSummary((current) => {
+        const existing = current.trimEnd();
+        return `${existing}${existing && !/\s$/.test(existing) ? ' ' : ''}${transcript}`;
+      });
+    };
+    recognition.onerror = () => {
+      setIsDictating(false);
+      showToast({ message: 'Voice dictation stopped. Check microphone access and try again.', tone: 'error' });
+    };
+    recognition.onend = () => setIsDictating(false);
+    speechRecognition.current = recognition;
+    try {
+      recognition.start();
+      setIsDictating(true);
+    } catch (error) {
+      speechRecognition.current = null;
+      console.error('Voice dictation failed to start:', error);
+      showToast({ message: 'Could not start voice dictation.', tone: 'error' });
+    }
+  };
+
+  const refineShiftSummary = async () => {
+    if (!shiftSummary.trim()) return;
+    setIsRefiningSummary(true);
+    try {
+      const response = await fetch('/api/refine-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ summary: shiftSummary }),
+      });
+      const result = await response.json() as { text?: string; error?: string };
+      if (!response.ok || !result.text) {
+        showToast({ message: result.error || 'Could not refine the shift summary.', tone: 'error' });
+        return;
+      }
+      setShiftSummary(result.text);
+      showToast({ message: 'Shift summary refined' });
+    } catch (error) {
+      console.error('Shift summary refinement failed:', error);
+      showToast({ message: 'Could not refine the shift summary.', tone: 'error' });
+    } finally {
+      setIsRefiningSummary(false);
+    }
+  };
+
+  React.useEffect(() => () => {
+    const recognition = speechRecognition.current;
+    if (recognition) {
+      recognition.onend = null;
+      recognition.stop();
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(
+      () => setSpeechAvailable(Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)),
+      0,
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  React.useEffect(() => {
+    speechRecognition.current?.stop();
+  }, [rosterShiftKey]);
 
   const exportBriefing = async (handover: { shiftName: string; shiftDate: string | null; crew: string | null; supervisor: string | null; document: typeof liveSnapshot }) => {
     setIsExporting(true);
@@ -436,10 +622,84 @@ export default function HandoverReportTab({
   };
 
   const handleFinalizeAndRoll = async (nextCrew: string) => {
-    const saved = await saveHandover();
-    if (!saved) return;
+    if (accessLevel < 3 || readOnly) {
+      alert('A Level 3+ supervisor must finish and sign off this shift.');
+      return;
+    }
+    if (!currentSaved?.outgoing_signed_at) {
+      if (!activeShift?.id) {
+        alert('There is no active shift to finish.');
+        return;
+      }
+      if (!outgoingSignerName) {
+        alert('Your supervisor name is not available for statutory sign-off.');
+        return;
+      }
+      setSaving(true);
+      const signedAt = new Date().toISOString();
+      const { error } = await supabase.from('shift_handovers').upsert(
+        {
+          shift_id: activeShift.id,
+          shift_name: activeShift.shift_name,
+          shift_date: activeShift.shift_date,
+          shift_type: activeShift.shift_type,
+          crew: outgoingCrew ?? activeShift.crew,
+          supervisor: supervisorName,
+          document: liveSnapshot,
+          shift_summary: shiftSummary.trim() || null,
+          oce_summary: oceSummary.trim() || null,
+          outgoing_signed_by: signedByLabel(outgoingSignerName),
+          outgoing_signed_at: signedAt,
+        },
+        { onConflict: 'shift_id' },
+      );
+      setSaving(false);
+      if (error) {
+        alert(`Couldn't sign off the handover: ${error.message}`);
+        return;
+      }
+      await loadHandovers();
+    }
     const ok = await onRolloverShift(nextCrew);
     if (ok) setShowRollover(false);
+  };
+
+  const acknowledgeOncoming = async (handover: SavedHandover) => {
+    if (accessLevel < 3 || readOnly) return;
+    if (!outgoingSignerName) {
+      alert('Your supervisor name is not available for statutory sign-off.');
+      return;
+    }
+    const signedAt = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('shift_handovers')
+      .update({
+        oncoming_signed_by: signedByLabel(outgoingSignerName),
+        oncoming_signed_at: signedAt,
+      })
+      .eq('id', handover.id)
+      .not('outgoing_signed_at', 'is', null)
+      .is('oncoming_signed_at', null)
+      .select('id')
+      .maybeSingle();
+    if (error) {
+      alert(`Couldn't acknowledge the previous handover: ${error.message}`);
+      return;
+    }
+    if (!data) {
+      alert('This handover has already been acknowledged.');
+      await loadHandovers();
+      return;
+    }
+    const signedHandover = {
+      ...handover,
+      oncoming_signed_by: signedByLabel(outgoingSignerName),
+      oncoming_signed_at: signedAt,
+    };
+    setHandovers((current) => current.map((item) => item.id === handover.id ? signedHandover : item));
+    setOpened(signedHandover);
+    showToast({ message: 'Oncoming handover acknowledged' });
+    await loadHandovers();
   };
 
   const handleIncomingCrewOverride = (panel: string | null) => {
@@ -455,6 +715,10 @@ export default function HandoverReportTab({
         savedAt: opened.saved_at,
         savedBy: opened.saved_by,
         document: opened.document,
+        outgoingSignedBy: opened.outgoing_signed_by,
+        outgoingSignedAt: opened.outgoing_signed_at,
+        oncomingSignedBy: opened.oncoming_signed_by,
+        oncomingSignedAt: opened.oncoming_signed_at,
       }
     : {
         shiftName: activeShift?.shift_name || 'Active shift',
@@ -463,16 +727,69 @@ export default function HandoverReportTab({
         supervisor: supervisorName,
         savedAt: currentSaved?.saved_at ?? null,
         savedBy: currentSaved?.saved_by ?? null,
-        document: liveSnapshot,
+        document: currentLocked && currentSaved ? currentSaved.document : liveSnapshot,
+        outgoingSignedBy: currentSaved?.outgoing_signed_by ?? null,
+        outgoingSignedAt: currentSaved?.outgoing_signed_at ?? null,
+        oncomingSignedBy: currentSaved?.oncoming_signed_by ?? null,
+        oncomingSignedAt: currentSaved?.oncoming_signed_at ?? null,
       };
 
   const actionClass = 'min-h-11 px-4 rounded-xl text-sm font-bold flex items-center gap-1.5 disabled:opacity-50';
+  const returnToCurrentShift = () => {
+    setOpened(null);
+    setView('current');
+  };
+  const saveHandoverPdf = async () => {
+    setIsSavingPdf(true);
+    try {
+      await exportHandoverPdf({
+        shift_name: printModel.shiftName,
+        shift_date: printModel.shiftDate,
+        crew: printModel.crew,
+        supervisor: printModel.supervisor,
+        document: printModel.document,
+        outgoing_signed_by: printModel.outgoingSignedBy,
+        outgoing_signed_at: printModel.outgoingSignedAt,
+        oncoming_signed_by: printModel.oncomingSignedBy,
+        oncoming_signed_at: printModel.oncomingSignedAt,
+      });
+    } catch (error) {
+      console.error('Handover PDF export failed:', error);
+      alert('Could not create the handover PDF. Please try again.');
+    } finally {
+      setIsSavingPdf(false);
+    }
+  };
+  const printHandover = () => {
+    const printTitle = handoverPdfFilename({
+      shift_name: printModel.shiftName,
+      shift_date: printModel.shiftDate,
+      crew: printModel.crew,
+    });
+    try {
+      printHandoverDocument(printTitle);
+    } catch (error) {
+      console.error('Handover print failed:', error);
+      alert('Could not open the print dialog.');
+    }
+  };
 
   return (
     <div className="font-sans">
       <div className="hidden print:block">
         <HandoverDocumentView {...printModel} />
       </div>
+
+      {view === 'current' && !opened && pendingPrevious && (
+        <SignoffAlert
+          title={`Previous Handover Ready (${pendingPrevious.crew ?? pendingPrevious.document.outgoingCrew ?? 'Outgoing Crew'} · ${pendingPrevious.shift_name} · Signed by ${pendingPrevious.outgoing_signed_by ?? 'Supervisor'})`}
+          action="Review & Sign Oncoming"
+          onClick={() => {
+            setOpened(pendingPrevious);
+            setView('history');
+          }}
+        />
+      )}
 
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm print:hidden">
       
@@ -489,46 +806,78 @@ export default function HandoverReportTab({
               {' · '}{supervisorName}
               {currentSaved ? ` · Last saved ${formatDateTime(currentSaved.saved_at)}` : ' · Not saved yet'}
             </p>
-            <IncomingCrewPicker
-              panel={incomingPanel}
-              shiftType={rosterCrewPlan?.incomingShiftType ?? null}
-              onChange={handleIncomingCrewOverride}
-            />
+            {currentLocked || readOnly ? (
+              <p className="text-sm font-bold text-slate-700">
+                Incoming: <span className="font-black text-slate-900">{incomingPanel ?? 'Crew not matched'} - {rosterCrewPlan?.incomingShiftType === 'NIGHT' ? 'Night' : 'Day'} Shift</span>
+              </p>
+            ) : (
+              <IncomingCrewPicker
+                panel={incomingPanel}
+                shiftType={rosterCrewPlan?.incomingShiftType ?? null}
+                onChange={handleIncomingCrewOverride}
+              />
+            )}
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {(view === 'history' || opened) && (
+            <button type="button" onClick={returnToCurrentShift} className={`${actionClass} bg-white border border-slate-300 text-slate-800`}>
+              <ArrowLeft className="w-4 h-4" /> Back to Current Shift
+            </button>
+          )}
           <button type="button" onClick={() => { setOpened(null); setView('history'); }} className={`${actionClass} ${view === 'history' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-700'}`}>
             Past handovers ({handovers.length})
           </button>
-          {accessLevel >= 3 && (
-            <button type="button" onClick={() => window.print()} className={`${actionClass} bg-slate-900 text-white`}>
+          {accessLevel >= 3 && (view === 'current' || opened) && (
+            <button type="button" onClick={printHandover} className={`${actionClass} bg-slate-900 text-white`}>
               <Printer className="w-4 h-4" /> Print Handover
+            </button>
+          )}
+          {(view === 'current' || opened) && (
+            <button type="button" onClick={() => void saveHandoverPdf()} disabled={isSavingPdf} className={`${actionClass} bg-emerald-700 text-white`}>
+              {isSavingPdf ? 'Saving PDF...' : 'Save PDF'}
             </button>
           )}
         </div>
       </div>
 
+      {currentLocked && currentSaved && (
+        <div className="mb-3 inline-flex flex-wrap items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-bold text-emerald-900">
+          Outgoing Signed Off by {currentSaved.outgoing_signed_by ?? 'Supervisor'} · {formatDateTime(currentSaved.outgoing_signed_at)}
+        </div>
+      )}
+
       {view === 'current' && !opened && !readOnly && (
         <div className="sticky top-0 z-10 bg-white py-3 space-y-3">
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={saveHandover} disabled={saving} className={`${actionClass} bg-emerald-600 text-white`}>
+            {!currentLocked && accessLevel >= 3 && <button type="button" onClick={saveHandover} disabled={saving} className={`${actionClass} bg-emerald-600 text-white`}>
               {saving ? 'Saving...' : 'Save handover'}
-            </button>
-            <button type="button" onClick={() => setShowRollover(true)} className={`${actionClass} border-2 border-slate-900 bg-white text-slate-900`}>
-              <RotateCw className="w-4 h-4" /> Finish shift
-            </button>
+            </button>}
+            {accessLevel >= 3 && (
+              <button
+                type="button"
+                onClick={() => setShowRollover(true)}
+                disabled={saving}
+                className={`${actionClass} border-2 border-slate-900 bg-white text-slate-900`}
+              >
+                <RotateCw className="w-4 h-4" /> {currentLocked ? 'Complete shift rollover' : 'Finish shift'}
+              </button>
+            )}
           </div>
-          <p className="text-sm text-slate-600">Save the handover, then finish the shift for the crew coming on.</p>
+          <p className="text-sm text-slate-600">
+            {currentLocked
+              ? 'Outgoing sign-off is complete. This handover is locked.'
+              : accessLevel >= 3
+                ? 'Save the handover, then finish the shift for the crew coming on.'
+                : 'A Level 3+ supervisor must finish and sign off this shift.'}
+          </p>
         </div>
       )}
       {opened && (
       <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" onClick={() => setOpened(null)} className={`${actionClass} bg-white border border-slate-300 text-slate-800`}>
               Back to history
-            </button>
-            <button type="button" onClick={() => window.print()} className={`${actionClass} bg-slate-900 text-white`}>
-              <Printer className="w-4 h-4" /> Save as PDF
             </button>
             <button
               type="button"
@@ -556,11 +905,18 @@ export default function HandoverReportTab({
 
       {opened && (
         <div className="mt-4">
+          {accessLevel >= 3 && !readOnly && opened.outgoing_signed_at && !opened.oncoming_signed_at && (
+            <SignoffAlert
+              title={`Previous Handover Ready (${opened.crew ?? opened.document.outgoingCrew ?? 'Outgoing Crew'} · ${opened.shift_name} · Signed by ${opened.outgoing_signed_by ?? 'Supervisor'})`}
+              action="Acknowledge & Sign Oncoming"
+              onClick={() => void acknowledgeOncoming(opened)}
+            />
+          )}
           <HandoverDocumentView {...printModel} />
         </div>
       )}
 
-      {view === 'current' && !opened && (
+      {view === 'current' && !opened && !currentLocked && !readOnly && (
         <>
           <details className="mt-4 overflow-hidden rounded-xl border border-slate-800 bg-white shadow-sm">
             <summary className="flex min-h-12 cursor-pointer items-center gap-2 bg-slate-900 px-4 py-3 text-sm font-black text-white">
@@ -583,9 +939,6 @@ export default function HandoverReportTab({
                 >
                   <Presentation className="w-4 h-4" /> {isExporting ? 'Building...' : incomingPanel ? `Briefing for ${incomingPanel}` : 'Crew briefing'}
                 </button>
-                <button type="button" onClick={() => window.print()} className={`${actionClass} bg-white border border-slate-300 text-slate-700`}>
-                  <Printer className="w-4 h-4" /> Save as PDF
-                </button>
               </div>
               <BriefingSlides slides={slides} onChange={setSlides} />
             </div>
@@ -597,10 +950,54 @@ export default function HandoverReportTab({
               </p>
             </div>
           )}
-          <div className="mt-6 space-y-4">
+          {!currentLocked && !readOnly && <div className="mt-6 space-y-4">
             <SafetyBriefingFields incidents={incidents} focus={safetyFocus} onIncidents={setIncidents} onFocus={setSafetyFocus} />
-            <OceReportPanel shiftId={activeShift?.id ?? null} onChange={setOceReport} />
-          </div>
+            <section className="overflow-hidden rounded-xl border border-slate-300 border-l-4 border-l-slate-700 bg-white">
+              <div className="border-b border-slate-200 bg-slate-50/90 px-5 py-3.5">
+                <h3 className="text-base font-black text-slate-900">Shift summary</h3>
+              </div>
+              <div className="space-y-3 p-4">
+                <textarea
+                  value={shiftSummary}
+                  onChange={(event) => setShiftSummary(event.target.value)}
+                  rows={4}
+                  placeholder="Record the key work completed, outstanding risks and priorities for the next crew."
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm leading-relaxed"
+                />
+                <div className="flex flex-wrap gap-2">
+                  {speechAvailable && (
+                    <button
+                      type="button"
+                      onClick={toggleDictation}
+                      className={`${actionClass} ${isDictating ? 'animate-pulse bg-rose-700 text-white' : 'border border-slate-300 bg-white text-slate-700'}`}
+                      aria-label={isDictating ? 'Stop dictating' : 'Dictate'}
+                    >
+                      {isDictating ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                      {isDictating ? 'Listening... · Stop dictating' : 'Dictate'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void refineShiftSummary()}
+                    disabled={!shiftSummary.trim() || isRefiningSummary}
+                    className={`${actionClass} border border-slate-200 bg-slate-50 text-slate-600`}
+                  >
+                    <PenLine className="h-4 w-4" />
+                    {isRefiningSummary ? 'Refining...' : 'Refine notes'}
+                  </button>
+                </div>
+              </div>
+            </section>
+            <OceReportPanel
+              shiftId={activeShift?.id ?? null}
+              onChange={setOceReport}
+              savedOce={currentSaved?.document.oce ?? null}
+              summaryText={currentSaved && (currentSaved.oce_summary != null || Boolean(currentSaved.document.oce))
+                ? oceSummary
+                : undefined}
+              onSummaryChange={setOceSummary}
+            />
+          </div>}
 
           <div className="mt-6">
             <HandoverDocumentView
@@ -610,14 +1007,19 @@ export default function HandoverReportTab({
               supervisor={supervisorName}
               savedAt={currentSaved?.saved_at}
               savedBy={currentSaved?.saved_by}
-              document={liveSnapshot}
+              document={currentLocked && currentSaved ? currentSaved.document : liveSnapshot}
               emptyCrewMessage="Choose the crew coming on. Their names and current jobs will show here."
+              isLivePreview={true}
+              outgoingSignedBy={currentSaved?.outgoing_signed_by ?? null}
+              outgoingSignedAt={currentSaved?.outgoing_signed_at ?? null}
+              oncomingSignedBy={currentSaved?.oncoming_signed_by ?? null}
+              oncomingSignedAt={currentSaved?.oncoming_signed_at ?? null}
             />
           </div>
 
-          <div className="mt-6">
+          {!currentLocked && <div className="mt-6">
             <ShiftHandoverLog
-              readOnly={readOnly}
+              readOnly={readOnly || currentLocked}
               shiftDate={activeShift?.shift_date ?? null}
               shiftName={activeShift?.shift_name ?? null}
               department="workshop"
@@ -646,19 +1048,19 @@ export default function HandoverReportTab({
                 notes={notes}
                 logEntries={shiftLog}
                 crew={workshopCrew}
-                summaryText={summary}
+                summaryText={shiftSummary}
                 machineSummaries={machineSummaries}
                 generateRequest={aiRefreshRequest}
                 onGeneratingChange={setAiNotesLoading}
                 onMachineSummariesChange={setMachineSummaries}
                 onSummaryGenerated={(text, summaries) => {
-                  setSummary(text);
+                  setShiftSummary(text);
                   setMachineSummaries(summaries);
                   setMachineNotes([]);
                 }}
               />
             </ShiftHandoverLog>
-          </div>
+          </div>}
 
         </>
       )}
@@ -676,6 +1078,29 @@ export default function HandoverReportTab({
         />
       )}
       </div>
+    </div>
+  );
+}
+
+function SignoffAlert({
+  title,
+  action,
+  onClick,
+}: {
+  title: string;
+  action: string;
+  onClick: () => void;
+}) {
+  return (
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 print:hidden">
+      <p className="text-sm font-black text-amber-950">{title}</p>
+      <button
+        type="button"
+        onClick={onClick}
+        className="min-h-10 rounded-lg bg-amber-700 px-3 text-sm font-black text-white hover:bg-amber-800"
+      >
+        {action}
+      </button>
     </div>
   );
 }

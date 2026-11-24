@@ -110,6 +110,8 @@ export interface HandoverMachineNote {
 
 export interface HandoverSnapshot {
   summary: string | null;
+  shift_summary?: string | null;
+  oce_summary?: string | null;
   outgoingCrew?: string | null;
   incomingCrew?: string | null;
   machineNotes: HandoverMachineNote[];
@@ -147,6 +149,12 @@ export interface SavedHandover {
   crew: string | null;
   supervisor: string | null;
   document: HandoverSnapshot;
+  shift_summary?: string | null;
+  oce_summary?: string | null;
   saved_at: string;
   saved_by: string | null;
+  outgoing_signed_by: string | null;
+  outgoing_signed_at: string | null;
+  oncoming_signed_by: string | null;
+  oncoming_signed_at: string | null;
 }

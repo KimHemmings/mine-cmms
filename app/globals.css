@@ -48,6 +48,13 @@ body {
 
   .handover-print-document {
     page: handover-landscape;
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .handover-print-document section {
+    overflow: visible !important;
   }
 
   .handover-print-document tr {
