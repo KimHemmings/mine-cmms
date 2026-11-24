@@ -539,7 +539,7 @@ export default function CrewTab({
           </p>
         ) : (
           <div className="overflow-x-auto">
-          <ul className="min-w-[720px] divide-y divide-slate-200 border border-slate-200 rounded-lg">
+          <ul className="min-w-180 divide-y divide-slate-200 border border-slate-200 rounded-lg">
             {shown.map((member) => {
               const covering = coveringLetter(member);
               return (

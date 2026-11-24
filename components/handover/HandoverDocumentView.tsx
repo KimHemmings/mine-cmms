@@ -343,34 +343,34 @@ export default function HandoverDocumentView({
           <table className="w-full table-fixed text-sm text-left">
             <thead>
               <tr className="text-xs uppercase text-slate-500">
-                <th className="w-[16%] py-1 pr-4 align-top break-words font-bold">Unit</th>
-                <th className="w-[56%] py-1 pr-4 align-top break-words font-bold">Job & shift notes</th>
-                <th className="w-[16%] py-1 pr-4 align-top break-words font-bold">Crew</th>
-                <th className="w-[12%] py-1 pr-4 align-top break-words font-bold">Expected back</th>
+                <th className="w-[16%] py-1 pr-4 align-top wrap-break-word font-bold">Unit</th>
+                <th className="w-[56%] py-1 pr-4 align-top wrap-break-word font-bold">Job & shift notes</th>
+                <th className="w-[16%] py-1 pr-4 align-top wrap-break-word font-bold">Crew</th>
+                <th className="w-[12%] py-1 pr-4 align-top wrap-break-word font-bold">Expected back</th>
               </tr>
             </thead>
             <tbody>
               {handedOverMachines.map((machine) => (
                 <tr key={machine.fleetId} className="break-inside-avoid border-t border-slate-200 align-top">
-                  <td className="w-[16%] py-2 pr-4 align-top break-words leading-snug print:py-1.5">
-                    <div className="break-words">
+                  <td className="w-[16%] py-2 pr-4 align-top wrap-break-word leading-snug print:py-1.5">
+                    <div className="wrap-break-word">
                       <strong>{machine.fleetId}</strong>{' '}
                       <span className={`inline-flex items-center rounded border px-1.5 py-0.5 align-middle text-[10px] ${priorityBadgeClass(machine.priority)} print:bg-white print:text-black print:border-black`}>
                         [{normalizePriority(machine.priority)}]
                       </span>
                     </div>
-                    <span className="block break-words text-xs text-slate-700">{machine.makeModel || 'Model not recorded'}</span>
-                    <span className="block break-words text-xs text-slate-500">{machine.location || 'Location not recorded'}</span>
+                    <span className="block wrap-break-word text-xs text-slate-700">{machine.makeModel || 'Model not recorded'}</span>
+                    <span className="block wrap-break-word text-xs text-slate-500">{machine.location || 'Location not recorded'}</span>
                   </td>
-                  <td className="w-[56%] py-2 pr-4 align-top break-words print:py-1.5">
+                  <td className="w-[56%] py-2 pr-4 align-top wrap-break-word print:py-1.5">
                     <MachineJobNotes machine={machine} summaries={document.machine_summaries} log={document.log} />
                   </td>
-                  <td className="w-[16%] py-2 pr-4 align-top break-words print:py-1.5">
+                  <td className="w-[16%] py-2 pr-4 align-top wrap-break-word print:py-1.5">
                     {machine.orders.map((order) => order.fitter).filter(Boolean).join(', ') || (
                       <span className="font-bold text-amber-800">Unassigned</span>
                     )}
                   </td>
-                  <td className="w-[12%] py-2 pr-4 align-top break-words print:py-1.5">{formatDateTime(machine.expectedUp)}</td>
+                  <td className="w-[12%] py-2 pr-4 align-top wrap-break-word print:py-1.5">{formatDateTime(machine.expectedUp)}</td>
                 </tr>
               ))}
             </tbody>
@@ -385,34 +385,34 @@ export default function HandoverDocumentView({
           <table className="w-full table-fixed text-sm text-left">
             <thead>
               <tr className="text-xs uppercase text-slate-500">
-                <th className="w-[16%] py-1 pr-4 align-top break-words font-bold">Unit</th>
-                <th className="w-[56%] py-1 pr-4 align-top break-words font-bold">Job & shift notes</th>
-                <th className="w-[16%] py-1 pr-4 align-top break-words font-bold">Crew</th>
-                <th className="w-[12%] py-1 pr-4 align-top break-words font-bold">Release time</th>
+                <th className="w-[16%] py-1 pr-4 align-top wrap-break-word font-bold">Unit</th>
+                <th className="w-[56%] py-1 pr-4 align-top wrap-break-word font-bold">Job & shift notes</th>
+                <th className="w-[16%] py-1 pr-4 align-top wrap-break-word font-bold">Crew</th>
+                <th className="w-[12%] py-1 pr-4 align-top wrap-break-word font-bold">Release time</th>
               </tr>
             </thead>
             <tbody>
               {releasedMachines.map((machine) => (
                 <tr key={machine.fleetId} className="break-inside-avoid border-t border-slate-200 align-top">
-                  <td className="w-[16%] py-2 pr-4 align-top break-words leading-snug print:py-1.5">
-                    <div className="break-words">
+                  <td className="w-[16%] py-2 pr-4 align-top wrap-break-word leading-snug print:py-1.5">
+                    <div className="wrap-break-word">
                       <strong>{machine.fleetId}</strong>{' '}
                       <span className={`inline-flex items-center rounded border px-1.5 py-0.5 align-middle text-[10px] ${priorityBadgeClass(machine.priority)} print:bg-white print:text-black print:border-black`}>
                         [{normalizePriority(machine.priority)}]
                       </span>
                     </div>
-                    <span className="block break-words text-xs text-slate-700">{machine.makeModel || 'Model not recorded'}</span>
-                    <span className="block break-words text-xs text-slate-500">{machine.location || 'Location not recorded'}</span>
+                    <span className="block wrap-break-word text-xs text-slate-700">{machine.makeModel || 'Model not recorded'}</span>
+                    <span className="block wrap-break-word text-xs text-slate-500">{machine.location || 'Location not recorded'}</span>
                   </td>
-                  <td className="w-[56%] py-2 pr-4 align-top break-words print:py-1.5">
+                  <td className="w-[56%] py-2 pr-4 align-top wrap-break-word print:py-1.5">
                     <MachineJobNotes machine={machine} summaries={document.machine_summaries} log={document.log} />
                   </td>
-                  <td className="w-[16%] py-2 pr-4 align-top break-words print:py-1.5">
+                  <td className="w-[16%] py-2 pr-4 align-top wrap-break-word print:py-1.5">
                     {machine.orders.map((order) => order.fitter).filter(Boolean).join(', ') || (
                       <span className="font-bold text-amber-800">Unassigned</span>
                     )}
                   </td>
-                  <td className="w-[12%] py-2 pr-4 align-top break-words print:py-1.5">{formatDateTime(machine.actualUp ?? null)}</td>
+                  <td className="w-[12%] py-2 pr-4 align-top wrap-break-word print:py-1.5">{formatDateTime(machine.actualUp ?? null)}</td>
                 </tr>
               ))}
             </tbody>
