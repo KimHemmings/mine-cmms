@@ -110,6 +110,8 @@ export interface HandoverMachineNote {
 
 export interface HandoverSnapshot {
   summary: string | null;
+  outgoingCrew?: string | null;
+  incomingCrew?: string | null;
   machineNotes: HandoverMachineNote[];
   machine_summaries: Record<string, string[]>;
   log: {

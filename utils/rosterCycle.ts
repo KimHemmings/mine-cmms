@@ -48,6 +48,13 @@ export function addRosterWeeks(wednesday: string, weeks: number) {
   return toIsoDate(new Date(start.getTime() + weeks * 7 * DAY_MS));
 }
 
+export function addRosterDays(date: string, days: number) {
+  if (!Number.isInteger(days)) throw new Error('Roster day offset must be an integer.');
+  const parsed = parseIsoDate(date);
+  if (!parsed) throw new Error('Roster date must be a valid ISO date.');
+  return toIsoDate(new Date(parsed.getTime() + days * DAY_MS));
+}
+
 function normalizeRotationOrder(value: unknown): RosterCrewName[] {
   if (!Array.isArray(value) || value.length !== DEFAULT_CREW_ROTATION_ORDER.length) {
     return [...DEFAULT_CREW_ROTATION_ORDER];
@@ -146,6 +153,34 @@ export function getActiveCrewsForDate(
     swingEndTue,
     dayOfSwing,
   };
+}
+
+export function getHandoverCrewsForShift(
+  shiftType: string,
+  shiftDate: string,
+  anchorDate = DEFAULT_ROSTER_ANCHOR,
+  rotationOrder: readonly RosterCrewName[] = DEFAULT_CREW_ROTATION_ORDER,
+) {
+  const current = getActiveCrewsForDate(shiftDate, anchorDate, rotationOrder);
+  if (shiftType === 'DAY') {
+    return {
+      outgoingCrew: current.dayCrew,
+      incomingCrew: current.nightCrew,
+      incomingShiftType: 'NIGHT' as const,
+      incomingDate: shiftDate,
+    };
+  }
+  if (shiftType === 'NIGHT') {
+    const incomingDate = addRosterDays(shiftDate, 1);
+    const nextDayCrew = getActiveCrewsForDate(incomingDate, anchorDate, rotationOrder);
+    return {
+      outgoingCrew: current.nightCrew,
+      incomingCrew: nextDayCrew.dayCrew,
+      incomingShiftType: 'DAY' as const,
+      incomingDate,
+    };
+  }
+  throw new Error(`Unknown shift type "${shiftType}". Expected DAY or NIGHT.`);
 }
 
 export function getCrewStatusForDate(

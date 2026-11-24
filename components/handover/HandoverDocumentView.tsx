@@ -153,6 +153,8 @@ export default function HandoverDocumentView({
 }: HandoverDocumentViewProps) {
   const dateLabel = shiftDate ? new Date(shiftDate).toLocaleDateString() : '';
   const allocation = document.allocation ?? { panel: null, people: [], withOutgoing: [], needsName: [] };
+  const outgoingCrew = document.outgoingCrew ?? crew;
+  const incomingCrew = document.incomingCrew ?? allocation.panel;
   const handedOverMachines = [...document.handedOver].sort(compareHandoverMachines);
   const releasedMachines = [...document.released].sort(compareHandoverMachines);
   const parts = document.parts ?? [];
@@ -170,11 +172,11 @@ export default function HandoverDocumentView({
     <article className="handover-print-document bg-white text-slate-900">
       <header className="border-b-4 border-slate-900 pb-3">
         <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Maintenance shift handover</p>
-        <h2 className="text-2xl font-black tracking-tight mt-1">{shiftName}{crew ? ` · ${crew}` : ''}</h2>
+        <h2 className="text-2xl font-black tracking-tight mt-1">{shiftName}{outgoingCrew ? ` · ${outgoingCrew}` : ''}</h2>
         <p className="text-sm mt-1">
           {dateLabel && <span>{dateLabel} · </span>}
           Supervisor: <strong>{supervisor || 'Not recorded'}</strong>
-          {allocation.panel && <span> · Prepared for <strong>{allocation.panel}</strong></span>}
+          {incomingCrew && <span> · Incoming crew: <strong>{incomingCrew}</strong></span>}
           {savedAt && <span> · Saved {formatDateTime(savedAt)}{savedBy ? ` by ${savedBy}` : ''}</span>}
         </p>
       </header>

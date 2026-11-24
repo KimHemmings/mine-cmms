@@ -25,7 +25,7 @@ import { formatDateTime } from '@/utils/helpers';
 import { formatStartDay, shiftIsPast } from '@/utils/crewStanding';
 import { generateHandoverPptx } from '@/utils/handoverPptx';
 import { buildHandoverSnapshot, normalizeHandoverDocument } from '@/utils/handoverDocument';
-import { CREW_PANELS, HandoverMachineNote, HandoverManning, HandoverSlide, OceReport, SafetyIncident, SavedHandover } from '@/types';
+import { HandoverMachineNote, HandoverManning, HandoverSlide, OceReport, SafetyIncident, SavedHandover } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import IncomingCrewDialog from './crew/IncomingCrewDialog';
@@ -35,6 +35,9 @@ import { IncomingCrewPicker } from './handover/IncomingCrewPicker';
 import { inWindow, windowFor } from '@/utils/shiftClock';
 import { isWorkshopHandoverMember, workshopHandoverManning, workshopSigners } from '@/utils/workshopHandover';
 import { fallbackMachineSummaries, HandoverAiMachineContext } from '@/utils/handoverMachineSummaries';
+import { getHandoverCrewsForShift } from '@/utils/rosterCycle';
+import { useRosterCycleSettings } from '@/hooks/useRosterCycleSettings';
+import { leaveCovers, shiftDateIso } from '@/utils/crewLeave';
 
 const LOG_CATEGORIES: HandoverLogCategory[] = [
   'SAFETY', 'WEATHER', 'MANNING', 'WATCHLIST', 'BRAKE_TEST', 'TOOLING', 'PRIORITY',
@@ -126,7 +129,8 @@ export default function HandoverReportTab({
 
   const supabase = React.useMemo(() => createClient(), []);
   const { showToast } = useFeedback();
-  const { crew, onShiftIds, authorisations, holdings, supervision } = useCrewData();
+  const { crew, leave, onShiftIds, authorisations, holdings, supervision } = useCrewData();
+  const rosterSettings = useRosterCycleSettings();
   const workshopCrew = crew.filter((member) => isWorkshopHandoverMember(member));
   const cover = siteCover(
     workshopCrew.filter((member) => onShiftIds.has(member.id)),
@@ -135,10 +139,32 @@ export default function HandoverReportTab({
     holdings,
     workshopCrew,
   );
-  const [incomingPanel, setIncomingPanel] = useState<string | null>(null);
+  const [incomingOverride, setIncomingOverride] = useState<{ key: string; panel: string } | null>(null);
   const [outgoingId, setOutgoingId] = useState('');
   const [oncomingId, setOncomingId] = useState('');
-  const [choiceShiftId, setChoiceShiftId] = useState<string | null>(null);
+  const activeShiftDate = shiftDateIso(activeShift?.shift_date);
+  const shiftId = activeShift?.id ?? null;
+  const shiftType = activeShift?.shift_type;
+  const rosterCrewPlan = shiftType === 'DAY' || shiftType === 'NIGHT'
+    ? getHandoverCrewsForShift(
+        shiftType,
+        activeShiftDate,
+        rosterSettings.roster_anchor_date,
+        rosterSettings.crew_rotation_order,
+      )
+    : null;
+  const rosterContextKey = [
+    shiftId,
+    activeShiftDate,
+    shiftType,
+    rosterSettings.roster_anchor_date,
+    rosterSettings.crew_rotation_order.join(','),
+  ].join(':');
+  const incomingPanel = incomingOverride?.key === rosterContextKey
+    ? incomingOverride.panel
+    : rosterCrewPlan?.incomingCrew ?? null;
+  const outgoingCrew = rosterCrewPlan?.outgoingCrew ?? null;
+  const incomingDate = rosterCrewPlan?.incomingDate ?? activeShiftDate;
   const supervisorName = activeShift?.supervisor || 'Workshop Management';
   const handedOver = shiftJobs.filter((asset) => asset.in_shift && asset.status !== 'OPERATIONAL');
   const currentSaved = handovers.find((handover) => handover.shift_id === activeShift?.id) ?? null;
@@ -152,15 +178,18 @@ export default function HandoverReportTab({
     && (!activeShift?.started_at || entry.logged_at >= activeShift.started_at)
   );
   const windowedReleased = completedJobs.filter((asset) => inReport(asset.actual_up));
-  const viewedPanel = incomingPanel ?? activeShift?.crew ?? null;
-  const manning = useMemo(
-    () => workshopHandoverManning(crew, viewedPanel, workOrders, assets),
-    [crew, viewedPanel, workOrders, assets],
-  );
-  const crewCounts = useMemo(
-    () => CREW_PANELS.map((panel) => ({ panel, count: workshopHandoverManning(crew, panel, workOrders, assets).onShift.length })),
-    [crew, workOrders, assets],
-  );
+  const incomingCrewForManning = workshopCrew
+    .filter((member) => member.panel === incomingPanel)
+    .map((member) => {
+      const leaveRow = leave.find((row) => row.crew_member_id === member.id && leaveCovers(row, incomingDate, true));
+      return {
+        ...member,
+        away: leaveRow ? true : member.on_leave ? false : member.away,
+        on_leave: Boolean(leaveRow),
+        leave_type: leaveRow?.leave_type ?? null,
+      };
+    });
+  const manning = workshopHandoverManning(incomingCrewForManning, incomingPanel, workOrders, assets);
   const signers = useMemo(() => workshopSigners(crew), [crew]);
   const outgoingSigner = signers.find((person) => person.id === outgoingId)?.name ?? null;
   const oncomingSigner = signers.find((person) => person.id === oncomingId)?.name ?? null;
@@ -224,10 +253,12 @@ export default function HandoverReportTab({
     shiftId: activeShift?.id ?? null,
     shiftStartedAt: activeShift?.started_at ?? null,
     summary,
+    outgoingCrew,
+    incomingCrew: incomingPanel,
     machineNotes,
     machine_summaries: populatedMachineSummaries,
     customSlides: slides,
-    crew: workshopCrew,
+    crew: incomingCrewForManning,
     incomingPanel,
     manning: manningRecord,
     safetyIncidents: incidents,
@@ -278,39 +309,17 @@ export default function HandoverReportTab({
     };
   }, [loadHandovers, supabase]);
 
-  const shiftId = activeShift?.id ?? null;
-  const shiftType = activeShift?.shift_type;
-  const [trackedShiftId, setTrackedShiftId] = useState(shiftId);
-  if (shiftId !== trackedShiftId) {
-    setTrackedShiftId(shiftId);
-    setChoiceShiftId(null);
-    setIncomingPanel(null);
+  const [trackedRosterShiftKey, setTrackedRosterShiftKey] = useState(`${shiftId}:${activeShiftDate}:${shiftType}`);
+  const rosterShiftKey = `${shiftId}:${activeShiftDate}:${shiftType}`;
+  if (rosterShiftKey !== trackedRosterShiftKey) {
+    setTrackedRosterShiftKey(rosterShiftKey);
+    setIncomingOverride(null);
     setOutgoingId('');
     setOncomingId('');
     setSummary('');
     setMachineNotes([]);
     setMachineSummaries({});
   }
-
-  useEffect(() => {
-    if (!shiftId || !shiftType || choiceShiftId === shiftId) return;
-    let cancelled = false;
-    const nextType = shiftType === 'DAY' ? 'NIGHT' : 'DAY';
-    supabase
-      .from('shift_records')
-      .select('crew')
-      .eq('shift_type', nextType)
-      .neq('id', shiftId)
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle<{ crew: string | null }>()
-      .then(({ data }) => {
-        if (!cancelled && data?.crew) setIncomingPanel(data.crew);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [shiftId, shiftType, choiceShiftId, supabase]);
 
   const saveHandover = async () => {
     if (!activeShift?.id) {
@@ -324,7 +333,7 @@ export default function HandoverReportTab({
         shift_name: activeShift.shift_name,
         shift_date: activeShift.shift_date,
         shift_type: activeShift.shift_type,
-        crew: activeShift.crew,
+        crew: outgoingCrew ?? activeShift.crew,
         supervisor: supervisorName,
         document: liveSnapshot,
       },
@@ -434,6 +443,10 @@ export default function HandoverReportTab({
     if (ok) setShowRollover(false);
   };
 
+  const handleIncomingCrewOverride = (panel: string | null) => {
+    setIncomingOverride(panel ? { key: rosterContextKey, panel } : null);
+  };
+
   const printModel = opened
     ? {
         shiftName: opened.shift_name,
@@ -447,7 +460,7 @@ export default function HandoverReportTab({
     : {
         shiftName: activeShift?.shift_name || 'Active shift',
         shiftDate: activeShift?.shift_date ?? null,
-        crew: activeShift?.crew ?? null,
+        crew: outgoingCrew ?? activeShift?.crew ?? null,
         supervisor: supervisorName,
         savedAt: currentSaved?.saved_at ?? null,
         savedBy: currentSaved?.saved_by ?? null,
@@ -472,7 +485,7 @@ export default function HandoverReportTab({
             <h2 className="text-xl font-black text-slate-900">Shift handover</h2>
           </div>
           <p className="text-sm text-slate-600 mt-1">
-            <strong>{activeShift?.shift_name}{activeShift?.crew ? ` · ${activeShift.crew}` : ''}</strong>
+            <strong>{activeShift?.shift_name}{(outgoingCrew ?? activeShift?.crew) ? ` · ${outgoingCrew ?? activeShift?.crew}` : ''}</strong>
             {' · '}{supervisorName}
             {currentSaved ? ` · Last saved ${formatDateTime(currentSaved.saved_at)}` : ' · Not saved yet'}
           </p>
@@ -563,7 +576,7 @@ export default function HandoverReportTab({
                 onClick={() => exportBriefing({
                   shiftName: activeShift?.shift_name || 'Active shift',
                   shiftDate: activeShift?.shift_date ?? null,
-                  crew: activeShift?.crew ?? null,
+                  crew: outgoingCrew ?? activeShift?.crew ?? null,
                   supervisor: supervisorName,
                   document: liveSnapshot,
                 })}
@@ -588,11 +601,8 @@ export default function HandoverReportTab({
           )}
           <IncomingCrewPicker
             panel={incomingPanel}
-            counts={crewCounts}
-            onChange={(panel) => {
-              setChoiceShiftId(shiftId);
-              setIncomingPanel(panel);
-            }}
+            shiftType={rosterCrewPlan?.incomingShiftType ?? null}
+            onChange={handleIncomingCrewOverride}
           />
 
           <div className="mt-6 space-y-4">
@@ -604,7 +614,7 @@ export default function HandoverReportTab({
             <HandoverDocumentView
               shiftName={activeShift?.shift_name || 'Active shift'}
               shiftDate={activeShift?.shift_date ?? null}
-              crew={activeShift?.crew ?? null}
+              crew={outgoingCrew ?? activeShift?.crew ?? null}
               supervisor={supervisorName}
               savedAt={currentSaved?.saved_at}
               savedBy={currentSaved?.saved_by}
@@ -665,11 +675,10 @@ export default function HandoverReportTab({
         <IncomingCrewDialog
           activeShift={activeShift}
           openJobsCount={workOrders.filter((w) => w.status === 'OPEN').length}
+          outgoingCrew={outgoingCrew}
           nextCrew={incomingPanel}
-          onNextCrew={(panel) => {
-            setChoiceShiftId(shiftId);
-            setIncomingPanel(panel);
-          }}
+          automaticNextCrew={rosterCrewPlan?.incomingCrew ?? null}
+          onNextCrew={handleIncomingCrewOverride}
           onCancel={() => setShowRollover(false)}
           onConfirm={handleFinalizeAndRoll}
         />

@@ -15,6 +15,8 @@ interface BuildHandoverInput {
   shiftId?: string | null;
   shiftStartedAt?: string | null;
   summary: string | null;
+  outgoingCrew?: string | null;
+  incomingCrew?: string | null;
   machineNotes?: HandoverSnapshot['machineNotes'];
   machine_summaries?: HandoverSnapshot['machine_summaries'];
   customSlides: HandoverSnapshot['customSlides'];
@@ -109,6 +111,8 @@ export function buildHandoverSnapshot({
   shiftId = null,
   shiftStartedAt = null,
   summary,
+  outgoingCrew = null,
+  incomingCrew = null,
   machineNotes = [],
   machine_summaries = {},
   customSlides,
@@ -183,6 +187,8 @@ export function buildHandoverSnapshot({
 
   return {
     summary: summary?.trim() || null,
+    outgoingCrew,
+    incomingCrew: incomingCrew ?? incomingPanel,
     machineNotes: machineNotes.filter((note) => note.fleetId.trim() && note.summary.trim()),
     machine_summaries,
     log,
@@ -240,6 +246,8 @@ export function buildHandoverSnapshot({
 export function normalizeHandoverDocument(document: Partial<HandoverSnapshot> | null | undefined): HandoverSnapshot {
   return {
     summary: document?.summary ?? null,
+    outgoingCrew: document?.outgoingCrew ?? null,
+    incomingCrew: document?.incomingCrew ?? document?.allocation?.panel ?? null,
     machineNotes: document?.machineNotes ?? [],
     machine_summaries: document?.machine_summaries ?? {},
     log: document?.log ?? [],
