@@ -49,7 +49,7 @@ export default function DepartmentLens({
   const theme = THEME[department];
   const [action, setAction] = useState<'directive' | 'rates' | null>(null);
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 print:hidden">
       <section className={`rounded-xl px-4 py-3 text-white ${theme.bar}`}>
         <p className="text-[11px] font-black uppercase tracking-wide">Viewing department</p>
         <div className="mt-2 flex flex-wrap gap-2" role="tablist" aria-label="Viewing department">

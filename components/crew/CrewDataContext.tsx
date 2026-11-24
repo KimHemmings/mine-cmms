@@ -2,10 +2,12 @@
 
 import { createContext, useContext } from 'react';
 import { Authorisation, CrewAuthorisation, CrewMember, CrewSupervision } from '@/types';
+import { CrewLeave } from '@/utils/crewLeave';
 import type { CrewJob } from '@/utils/crew';
 
 export interface CrewData {
   crew: CrewMember[];
+  leave: CrewLeave[];
   onShiftIds: Set<string>;
   openJobsByCrew: Map<string, CrewJob[]>;
   openJobCounts: Map<string, number>;
@@ -17,6 +19,7 @@ export interface CrewData {
 
 export const CrewDataContext = createContext<CrewData>({
   crew: [],
+  leave: [],
   onShiftIds: new Set(),
   openJobsByCrew: new Map(),
   openJobCounts: new Map(),

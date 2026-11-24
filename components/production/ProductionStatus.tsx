@@ -86,6 +86,7 @@ export default function ProductionStatus({
 
   const suitableFor = (assetId: string) =>
     operators.filter((member) => {
+      if (member.away || member.on_leave) return false;
       const held = passoutFor(member.id, assetId);
       const state = authorisationState(held?.expires_on ?? null);
       return state === 'current' || state === 'due';

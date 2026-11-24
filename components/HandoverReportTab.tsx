@@ -52,6 +52,7 @@ interface HandoverReportTabProps {
   onRefresh: () => void;
   onRolloverShift: (nextCrew?: string) => Promise<boolean>;
   readOnly?: boolean;
+  accessLevel?: number;
 }
 
 function isLogCategory(value: unknown): value is HandoverLogCategory {
@@ -97,6 +98,7 @@ export default function HandoverReportTab({
   onRefresh,
   onRolloverShift,
   readOnly = false,
+  accessLevel = 2,
 }: HandoverReportTabProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -432,6 +434,11 @@ export default function HandoverReportTab({
           <button type="button" onClick={() => { setOpened(null); setView('history'); }} className={`${actionClass} ${view === 'history' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-700'}`}>
             Past handovers ({handovers.length})
           </button>
+          {accessLevel >= 3 && (
+            <button type="button" onClick={() => window.print()} className={`${actionClass} bg-slate-900 text-white`}>
+              <Printer className="w-4 h-4" /> Print Handover
+            </button>
+          )}
         </div>
       </div>
 
@@ -564,6 +571,7 @@ export default function HandoverReportTab({
               onOutgoing={setOutgoingId}
               onOncoming={setOncomingId}
               actorName={supervisorName}
+              canPrint={accessLevel >= 3}
             />
           </div>
 

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { HandoverLogEntry, HandoverLogCategory } from '@/types';
-import { Plus, Trash2, ClipboardList, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, ClipboardList, AlertTriangle, Printer } from 'lucide-react';
 import DictationMicButton, { useDictationTarget } from '@/components/ui/DictationMicButton';
 import ManagementDirectives from '@/components/ManagementDirectives';
 import { clearHandoverDraft, handoverDraftKey, readHandoverDraft, writeHandoverDraft } from '@/utils/handoverDraft';
@@ -43,6 +43,7 @@ interface ShiftHandoverLogProps {
   shiftDate?: string | null;
   shiftName?: string | null;
   department?: string;
+  canPrint?: boolean;
 }
 
 export default function ShiftHandoverLog({
@@ -61,6 +62,7 @@ export default function ShiftHandoverLog({
   shiftDate = null,
   shiftName = null,
   department = 'workshop',
+  canPrint = false,
 }: ShiftHandoverLogProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [category, setCategory] = useState<HandoverLogCategory>('SAFETY');
@@ -143,13 +145,24 @@ export default function ShiftHandoverLog({
             Shift Handover & Compliance Register
           </h3>
         </div>
-        {!readOnly && <button
-          type="button"
-          onClick={() => setIsAdding(true)}
-          className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide bg-white border border-slate-300 text-slate-700 px-2.5 py-1 rounded hover:bg-slate-100 transition print:hidden cursor-pointer"
-        >
-          <Plus className="w-3.5 h-3.5 text-amber-600" /> Add Entry
-        </button>}
+        <div className="flex items-center gap-2 print:hidden">
+          {canPrint && (
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide bg-slate-900 text-white px-2.5 py-1 rounded cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5" /> Print Handover
+            </button>
+          )}
+          {!readOnly && <button
+            type="button"
+            onClick={() => setIsAdding(true)}
+            className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide bg-white border border-slate-300 text-slate-700 px-2.5 py-1 rounded hover:bg-slate-100 transition cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 text-amber-600" /> Add Entry
+          </button>}
+        </div>
       </div>
 
       {isAdding && (

@@ -11,7 +11,6 @@ import {
   ClipboardList,
   Users,
   GraduationCap,
-  Presentation,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
@@ -25,7 +24,6 @@ import { getShiftClock, type ShiftClock } from '@/utils/shiftClock';
 import { formatStartDay, shiftIsPast } from '@/utils/crewStanding';
 import type { SyncStatus } from '@/hooks/useRealtimeWorkboard';
 import { useSiteBrand } from '@/components/SiteBrand';
-import { DEMO_PERSONAS, type DemoPersonaId } from '@/utils/demoPersonas';
 
 type Tab = 'management' | 'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status';
 
@@ -49,10 +47,6 @@ interface TopHeaderProps {
   onSetShiftCrew?: (panel: string) => void;
   profileId?: string | null;
   lensDepartment?: Department | null;
-  demoOn?: boolean;
-  demoPersonaId?: DemoPersonaId | null;
-  onToggleDemo?: () => void;
-  onPickDemo?: (id: DemoPersonaId | null) => void;
 }
 
 function screenTitle(tab: Tab, department: Department, siteCommand = false, lens = false) {
@@ -106,10 +100,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onSetShiftCrew,
   profileId = null,
   lensDepartment = null,
-  demoOn = false,
-  demoPersonaId = null,
-  onToggleDemo,
-  onPickDemo,
 }) => {
   const { name: siteName } = useSiteBrand();
   const router = useRouter();
@@ -157,23 +147,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
   return (
     <header className="space-y-3 pb-4 border-b border-slate-300 print:hidden">
-      {demoOn && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2">
-          <span className="text-xs font-black uppercase tracking-wide text-amber-950">Demo Mode</span>
-          {DEMO_PERSONAS.map((persona) => (
-            <button
-              key={persona.id}
-              type="button"
-              aria-pressed={demoPersonaId === persona.id}
-              onClick={() => onPickDemo?.(persona.id)}
-              className={`min-h-9 rounded-full px-3 text-xs font-black ${demoPersonaId === persona.id ? 'bg-slate-900 text-white' : 'border border-amber-400 bg-white text-slate-800'}`}
-            >
-              {persona.label}
-            </button>
-          ))}
-          <button type="button" onClick={() => onPickDemo?.(null)} className="min-h-9 rounded-full px-3 text-xs font-black text-slate-600 underline">My login</button>
-        </div>
-      )}
       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-black tracking-tight text-slate-900">{screenTitle(currentTab, lensDepartment ?? permissions.department, permissions.canViewManagementDashboard, Boolean(lensDepartment))}</h1>
@@ -268,16 +241,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               callouts={workshopDesk || (permissions.department === 'production' && (permissions.accessLevel === 3 || permissions.accessLevel === 4))}
             />
           )}
-          <button
-            type="button"
-            aria-pressed={demoOn}
-            aria-label="Demo Mode"
-            title="Demo Mode"
-            onClick={onToggleDemo}
-            className={`min-h-11 min-w-11 flex items-center justify-center rounded-xl border text-sm font-bold ${demoOn ? 'border-amber-400 bg-amber-50 text-amber-900' : 'border-slate-300 bg-white text-slate-500 hover:text-slate-900'}`}
-          >
-            <Presentation className="w-4 h-4" />
-          </button>
           <ChangePasswordButton />
           <HelpButton userRole={userRole} shiftId={activeShift?.id ?? null} fleetChoices={fleetChoices} />
           <button

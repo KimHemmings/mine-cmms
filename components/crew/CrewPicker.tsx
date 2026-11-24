@@ -22,7 +22,7 @@ export default function CrewPicker({ crew, onShiftIds, openJobCounts, selectedId
   const { authorisations, holdings, supervision, canCheckAuthorisations } = useCrewData();
 
   const activeCrew = useMemo(
-    () => crew.filter((c) => c.active || selectedIds.includes(c.id)),
+    () => crew.filter((c) => ((c.active && !c.away && !c.on_leave) || selectedIds.includes(c.id))),
     [crew, selectedIds]
   );
   const term = search.trim().toLowerCase();

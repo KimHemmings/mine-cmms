@@ -10,6 +10,8 @@ import { getShiftClock } from '@/utils/shiftClock';
 import { AllocationChoice, defaultAllocationRole, memberAssignments, operatorEquipmentModels, preStartLocation, preStartUnit } from '@/utils/crewAllocation';
 import { crewLetter, coveringLetter, rosterRoleNote, visibleOnCrewTab } from '@/utils/shiftRoster';
 import { OvertimeReason, fatigueGate } from '@/utils/statutoryCompliance';
+import { approvedLeaveOn, shiftDateIso } from '@/utils/crewLeave';
+import LeavePlanner from './LeavePlanner';
 import { createClient } from '@/utils/supabase/client';
 import { latestSafetyAwareness } from '@/utils/productionHandoverRecord';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
@@ -83,7 +85,7 @@ export default function CrewTab({
   workOrders,
   onRefresh,
 }: CrewTabProps) {
-  const { crew } = useCrewData();
+  const { crew, leave } = useCrewData();
   const { name: siteName } = useSiteBrand();
   const [showImport, setShowImport] = useState(false);
   const { confirm, showToast } = useFeedback();
@@ -97,6 +99,8 @@ export default function CrewTab({
   const [showExtra, setShowExtra] = useState(false);
   const [trainingView, setTrainingView] = useState<'passouts' | 'team'>(accessLevel >= 3 ? 'team' : 'passouts');
   const [departmentFilter, setDepartmentFilter] = useState<Department | 'all'>('all');
+  const [showPlanner, setShowPlanner] = useState(false);
+  const [loggingLeave, setLoggingLeave] = useState(false);
 
   const clearExpiredRef = useRef(clearExpiredShiftExtras);
   clearExpiredRef.current = clearExpiredShiftExtras;
@@ -129,7 +133,8 @@ export default function CrewTab({
     if (member.allocated_machine_id || member.shift_duty) return true;
     return !production && memberAssignments(member.id, workOrders, assets).length > 0;
   };
-  const dueOnSheet = shown.filter((member) => !member.away);
+  const dueOnSheet = shown.filter((member) => !member.away && !member.on_leave);
+  const shiftDay = shiftDateIso(activeShift?.shift_date);
   const onRoster = dueOnSheet;
   const unassigned = onRoster.filter((member) => !isAssigned(member)).length;
   const printLabel = selected === 'all' ? 'Print All Crews Pre-Start (PDF)' : `Print ${selected} Pre-Start (PDF)`;
@@ -174,6 +179,42 @@ export default function CrewTab({
 
   const saveForDepartment = (input: CrewMemberInput, id?: string) =>
     saveCrewMember({ ...input, department }, id);
+
+  const markSickToday = async (member: CrewMember) => {
+    if (approvedLeaveOn(leave, member.id, shiftDay)) {
+      showToast({ message: `${member.display_name} is already on approved leave today.` });
+      return;
+    }
+    const supabase = createClient();
+    const { error } = await supabase.from('crew_leave').insert({
+      crew_member_id: member.id,
+      leave_type: 'Sick / Personal',
+      start_date: shiftDay,
+      end_date: shiftDay,
+      status: 'Approved',
+      created_by: signerName,
+    });
+    if (error) {
+      showToast({ message: error.message || 'Sick leave was not saved.', tone: 'error' });
+      return;
+    }
+    showToast({ message: `${member.display_name} is away • Sick / Personal` });
+    onRefresh?.();
+  };
+
+  const undoLeave = async (member: CrewMember) => {
+    const record = approvedLeaveOn(leave, member.id, shiftDay);
+    const id = record?.id ?? member.leave_id;
+    if (!id) return;
+    const supabase = createClient();
+    const { error } = await supabase.from('crew_leave').delete().eq('id', id);
+    if (error) {
+      showToast({ message: error.message || 'Leave was not removed.', tone: 'error' });
+      return;
+    }
+    showToast({ message: `${member.display_name} is back on shift` });
+    onRefresh?.();
+  };
 
   const fatigueDecision = async (member: CrewMember) => {
     const gate = fatigueGate(member.last_shift_ended_at);
@@ -296,6 +337,23 @@ export default function CrewTab({
                 Bulk Import (CSV / Paste)
               </button>
             )}
+            {accessLevel >= 3 && !showPlanner && (
+              <button
+                type="button"
+                onClick={() => setLoggingLeave(true)}
+                className="min-h-11 px-4 rounded-lg border-2 border-slate-300 bg-white text-sm font-bold text-slate-800 hover:bg-slate-50"
+              >
+                + Log Leave
+              </button>
+            )}
+            <button
+              type="button"
+              aria-pressed={showPlanner}
+              onClick={() => setShowPlanner((open) => !open)}
+              className={`min-h-11 px-4 rounded-lg border-2 text-sm font-bold ${showPlanner ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'}`}
+            >
+              {showPlanner ? 'Crew list' : '14-Day Leave Planner'}
+            </button>
             {canManageCrew && (
             <button
               type="button"
@@ -342,6 +400,19 @@ export default function CrewTab({
           </div>
         )}
 
+        {showPlanner ? (
+          <LeavePlanner
+            members={accessLevel >= 4 ? crew : departmentCrew}
+            leave={leave}
+            accessLevel={accessLevel}
+            department={department}
+            crossDepartment={accessLevel >= 4}
+            signerName={signerName}
+            onChanged={() => onRefresh?.()}
+          />
+        ) : null}
+
+        {!showPlanner && <>
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Crew">
           {FILTERS.map((filter) => {
             const active = selected === filter.id;
@@ -395,10 +466,30 @@ export default function CrewTab({
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="text-base font-bold text-slate-900 truncate">{member.display_name}</span>
                     <span className="shrink-0 text-sm text-slate-500">{member.trade}</span>
+                    {member.on_leave && member.leave_type && (
+                      <span className="shrink-0 rounded-full bg-rose-700 px-2 py-0.5 text-[11px] font-black text-white">Away • {member.leave_type}</span>
+                    )}
                     {covering && <span className="shrink-0 text-xs font-bold text-indigo-700">OT</span>}
                     {member.is_contractor && <span className="shrink-0 text-xs font-bold text-violet-700">Contractor</span>}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {accessLevel >= 3 && (member.on_leave ? (
+                      <button
+                        type="button"
+                        onClick={() => void undoLeave(member)}
+                        className="min-h-10 px-3 rounded-full border border-slate-400 bg-white text-xs font-black text-slate-800"
+                      >
+                        Undo Leave
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void markSickToday(member)}
+                        className="min-h-10 px-3 rounded-full border border-rose-300 bg-rose-50 text-xs font-black text-rose-800"
+                      >
+                        Sick Today
+                      </button>
+                    ))}
                     {canManageCrew && (
                     <button
                       type="button"
@@ -414,7 +505,7 @@ export default function CrewTab({
                     </button>
                     )}
                     <AllocationPill
-                      readOnly={!canManageCrew}
+                      readOnly={!canManageCrew || !!member.on_leave}
                       member={member}
                       assets={assets}
                       fleetAssets={fleet}
@@ -487,6 +578,7 @@ export default function CrewTab({
             )}
           </div>
         )}
+        </>}
       </section>
       )}
 
@@ -509,6 +601,19 @@ export default function CrewTab({
           department={department}
           onClose={() => setShowImport(false)}
           onImported={() => onRefresh?.()}
+        />
+      )}
+      {loggingLeave && (
+        <LeavePlanner
+          logOnly
+          members={accessLevel >= 4 ? crew : departmentCrew}
+          leave={leave}
+          accessLevel={accessLevel}
+          department={department}
+          crossDepartment={accessLevel >= 4}
+          signerName={signerName}
+          onChanged={() => onRefresh?.()}
+          onClose={() => setLoggingLeave(false)}
         />
       )}
       {showExtra && (

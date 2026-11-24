@@ -50,7 +50,10 @@ export function workshopHandoverManning(
   return {
     panel,
     onShift: onShift.map((member) => person(member)),
-    away: away.map((member) => person(member)),
+    away: away.map((member) => {
+      const row = person(member);
+      return member.leave_type ? { ...row, name: `${member.display_name} (${member.leave_type})` } : row;
+    }),
     overtime: overtime.map((member) => person(member)),
     unallocated: placed.filter((row) => row.detail === 'Unassigned').map((row) => person(row.member, 'Unassigned')),
     assigned: placed.filter((row) => row.detail !== 'Unassigned').map((row) => person(row.member, row.detail)),

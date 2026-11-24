@@ -9,6 +9,7 @@ import { beginStageFlush, dropQueuedStage, endStageFlush, isNetworkError, readSt
 import { beginNoteFlush, dropQueuedNote, endNoteFlush, readNoteQueue, withQueuedNotes } from '@/utils/noteQueue';
 import { logAssetHistory } from '@/utils/helpers';
 import { useWorkboardActions } from '@/hooks/useWorkboardActions';
+import { applyShiftLeave, CrewLeave } from '@/utils/crewLeave';
 
 interface UseWorkboardDataOptions {
   activeFitter: string;
@@ -35,7 +36,8 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   const [defects, setDefects] = useState<DefectItem[]>([]);
   const [notes, setNotes] = useState<HistoryNote[]>([]);
   const [activeShift, setActiveShift] = useState<ShiftRecord | null>(null);
-  const [crew, setCrew] = useState<CrewMember[]>([]);
+  const [crewRows, setCrewRows] = useState<CrewMember[]>([]);
+  const [crewLeave, setCrewLeave] = useState<CrewLeave[]>([]);
   const [onShiftCrewIds, setOnShiftCrewIds] = useState<Set<string>>(new Set());
   const [handoverLog, setHandoverLog] = useState<HandoverLogEntry[]>([]);
   const [authorisations, setAuthorisations] = useState<Authorisation[]>([]);
@@ -112,16 +114,18 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
   }, [supabase]);
 
   const fetchCrew = useCallback(async () => {
-    const [{ data: members }, { data: onShift }] = await Promise.all([
+    const [{ data: members }, { data: onShift }, { data: leave }] = await Promise.all([
       supabase.from('crew_members').select('*').order('display_name', { ascending: true }),
       supabase
         .from('shift_crew')
         .select('crew_member_id, shift_records!inner(status)')
         .eq('shift_records.status', 'ACTIVE'),
+      supabase.from('crew_leave').select('id, crew_member_id, leave_type, start_date, end_date, status, notes, created_by').order('start_date', { ascending: true }),
     ]);
 
-    if (members) setCrew(members as CrewMember[]);
+    if (members) setCrewRows(members as CrewMember[]);
     if (onShift) setOnShiftCrewIds(new Set(onShift.map((r) => r.crew_member_id as string)));
+    setCrewLeave((leave ?? []) as CrewLeave[]);
   }, [supabase]);
 
   const fetchHandoverLog = useCallback(async () => {
@@ -318,6 +322,11 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     fetchAllData,
   });
 
+  const crew = useMemo(
+    () => applyShiftLeave(crewRows, crewLeave, activeShift?.shift_date ?? null),
+    [crewRows, crewLeave, activeShift?.shift_date],
+  );
+
   const shiftJobs = useMemo(() => {
     return allAssets.filter((a) => {
       const hasWorkOrder = workOrders.some((wo) => wo.asset_id === a.id);
@@ -351,6 +360,7 @@ export function useWorkboardData({ activeFitter }: UseWorkboardDataOptions) {
     notes,
     activeShift,
     crew,
+    crewLeave,
     onShiftCrewIds,
     handoverLog,
     authorisations,

@@ -56,6 +56,9 @@ export interface CrewMember {
   standard11_expiry?: string | null;
   fatigue_override_by?: string | null;
   fatigue_override_at?: string | null;
+  on_leave?: boolean;
+  leave_type?: string | null;
+  leave_id?: string | null;
   active: boolean;
   created_at: string;
 }

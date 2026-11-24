@@ -13,10 +13,9 @@ import PitChecksCard from '@/components/production/PitChecksCard';
 import OceHandoverSections from '@/components/production/OceHandoverSections';
 import { useProductionHandoverRecord } from '@/hooks/useProductionHandoverRecord';
 import { pitCheckLines } from '@/utils/productionHandoverRecord';
-import { isProductionDepartment } from '@/utils/permissions';
+import { Printer, FileText, Presentation } from 'lucide-react';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import DictationMicButton, { useDictationTarget } from '@/components/ui/DictationMicButton';
-import { FileText, Presentation } from 'lucide-react';
 import { generateProductionShiftPptx } from '@/utils/productionShiftPptx';
 import TidyNotesButton from '@/components/ui/TidyNotesButton';
 import ManagementDirectives from '@/components/ManagementDirectives';
@@ -27,6 +26,10 @@ import { handoverDraftKey, readHandoverDraft, updateHandoverDraft } from '@/util
 
 function isReleased(asset: Asset) {
   return asset.status === 'OPERATIONAL' && !asset.in_shift;
+}
+
+function isExactProduction(member: { department?: string | null }) {
+  return (member.department ?? '').trim().toLowerCase() === 'production';
 }
 
 export default function ProductionShiftHandover({
@@ -72,7 +75,12 @@ export default function ProductionShiftHandover({
     .sort((a, b) => (a.priority || 'P9').localeCompare(b.priority || 'P9') || a.fleet_id.localeCompare(b.fleet_id, undefined, { numeric: true }));
 
   const operators = crew
-    .filter((member) => member.active && !member.away && isProductionDepartment(member.department))
+    .filter((member) => member.active && !member.away && isExactProduction(member))
+    .filter((member) => visibleOnCrewTab(member, activeShift?.crew || 'all', now))
+    .slice()
+    .sort((a, b) => a.display_name.localeCompare(b.display_name));
+  const awayOperators = crew
+    .filter((member) => member.active && (member.away || member.on_leave) && isExactProduction(member))
     .filter((member) => visibleOnCrewTab(member, activeShift?.crew || 'all', now))
     .slice()
     .sort((a, b) => a.display_name.localeCompare(b.display_name));
@@ -219,22 +227,22 @@ export default function ProductionShiftHandover({
     }
   };
 
-  if (showReport) {
-    return (
-      <div className="space-y-4 font-sans">
+  return (
+    <div className="space-y-4 font-sans">
+      <div className={showReport ? 'space-y-4' : 'hidden print:block'}>
         <div className="print:hidden flex flex-wrap gap-2">
           {!readOnly && <button type="button" onClick={() => setShowReport(false)} className="min-h-11 px-4 rounded-lg border border-slate-300 bg-white text-sm font-bold text-slate-800">Back to handover</button>}
-          <button type="button" onClick={() => window.print()} className="min-h-11 px-4 rounded-lg bg-slate-900 text-white text-sm font-black">Print report</button>
+          {accessLevel >= 3 && <button type="button" onClick={() => window.print()} className="min-h-11 px-4 rounded-lg bg-slate-900 text-white text-sm font-black inline-flex items-center gap-1.5"><Printer className="w-4 h-4" /> Print Handover</button>}
           <button type="button" onClick={() => void exportDeck()} disabled={exporting} className="min-h-11 px-4 rounded-lg bg-amber-600 text-white text-sm font-black disabled:opacity-50 inline-flex items-center gap-1.5">
             <Presentation className="w-4 h-4" /> {exporting ? 'Building...' : 'Export PowerPoint'}
           </button>
         </div>
         <article className="bg-white border border-slate-300 rounded-xl p-6 space-y-6">
-          <header>
+          <div>
             <p className="text-xs font-black uppercase tracking-wide text-slate-500">Production Shift Handover</p>
             <h2 className="text-2xl font-black text-slate-900">{clock.shiftName}</h2>
             <p className="text-sm font-bold text-slate-600">{clock.shiftName === 'Day Shift' ? '06:00–18:00' : '18:00–06:00'} · {dateLabel} · {activeShift?.crew || 'Crew not set'} · {supervisorName || 'Production Supervisor'}</p>
-          </header>
+          </div>
           <section>
             <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">OCE report status</h3>
             <p className="mt-2 text-sm"><span className="font-black">{handover.record.oce_inspection_status}</span>{handover.record.oce_report_filename ? ` — ${handover.record.oce_report_filename}` : ''}</p>
@@ -294,6 +302,12 @@ export default function ProductionShiftHandover({
             )}
           </section>
           <section>
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Away</h3>
+            {awayOperators.length === 0 ? <p className="mt-2 text-sm text-slate-500">No one from this production crew is away.</p> : (
+              <ul className="mt-2 space-y-1 text-sm">{awayOperators.map((member) => <li key={member.id}><span className="font-black">{member.display_name}</span>{member.leave_type ? ` · Away • ${member.leave_type}` : ' · Away'}</li>)}</ul>
+            )}
+          </section>
+          <section>
             <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Pit and production handover notes</h3>
             {notes.length === 0 ? <p className="mt-2 text-sm text-slate-500">No pit notes for this shift yet.</p> : (
               <ul className="mt-2 space-y-2">{notes.map((entry) => <li key={entry.id}><p className="text-sm text-slate-900 whitespace-pre-wrap">{entry.details}</p><p className="text-[11px] font-bold text-slate-400">{formatDateTime(entry.logged_at)}</p></li>)}</ul>
@@ -309,11 +323,7 @@ export default function ProductionShiftHandover({
           )}
         </article>
       </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4 font-sans">
+      <div className={showReport ? 'hidden' : 'space-y-4 print:hidden'}>
       <section className="bg-white border border-slate-300 rounded-xl p-4 shadow-2xs">
         <p className="text-xs font-black uppercase tracking-wide text-slate-500">Production shift</p>
         <h2 className="text-xl font-black text-slate-900">{clock.shiftName}</h2>
@@ -327,10 +337,28 @@ export default function ProductionShiftHandover({
           <button type="button" onClick={() => setShowReport(true)} className="min-h-11 px-4 rounded-lg bg-slate-900 text-white text-sm font-black inline-flex items-center gap-1.5">
             <FileText className="w-4 h-4" /> Generate Report
           </button>
+          {accessLevel >= 3 && (
+            <button type="button" onClick={() => window.print()} className="min-h-11 px-4 rounded-lg border border-slate-300 bg-white text-sm font-black text-slate-900 inline-flex items-center gap-1.5">
+              <Printer className="w-4 h-4" /> Print Handover
+            </button>
+          )}
           <button type="button" onClick={() => void exportDeck()} disabled={exporting} className="min-h-11 px-4 rounded-lg bg-amber-600 text-white text-sm font-black disabled:opacity-50 inline-flex items-center gap-1.5">
             <Presentation className="w-4 h-4" /> {exporting ? 'Building...' : 'Export PowerPoint'}
           </button>
         </div>
+      </section>
+
+      <section className="rounded-xl border border-slate-300 bg-white p-4">
+        <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Away</h3>
+        {awayOperators.length === 0 ? (
+          <p className="mt-2 text-sm text-slate-500">No one from this crew is away.</p>
+        ) : (
+          <ul className="mt-2 space-y-1 text-sm text-slate-800">
+            {awayOperators.map((member) => (
+              <li key={member.id}><span className="font-black">{member.display_name}</span>{member.leave_type ? ` · Away • ${member.leave_type}` : ' · Away'}</li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <ManagementDirectives actorName={supervisorName} department="production" />
@@ -498,6 +526,7 @@ export default function ProductionShiftHandover({
         handoverId={handover.handoverId}
         accessLevel={accessLevel}
       />}
+      </div>
     </div>
   );
 }

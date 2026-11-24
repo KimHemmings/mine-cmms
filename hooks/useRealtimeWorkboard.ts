@@ -71,6 +71,11 @@ export function useRealtimeWorkboard({
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'crew_leave' },
+        () => triggerChange()
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'shift_crew' },
         () => triggerChange()
       )

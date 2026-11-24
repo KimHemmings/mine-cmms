@@ -18,8 +18,7 @@ import WorkboardTab from '@/components/WorkboardTab';
 import FleetDossierTab from '@/components/FleetDossierTab';
 import HandoverReportTab from '@/components/HandoverReportTab';
 import WorkboardModals from '@/components/WorkboardModals';
-import { getPermissions, operationalLens, roleForAccess, type Department } from '@/utils/permissions';
-import { demoModeRequested, demoPersona, type DemoPersonaId } from '@/utils/demoPersonas';
+import { getPermissions, operationalLens, type Department } from '@/utils/permissions';
 import { SiteBrandProvider } from '@/components/SiteBrand';
 import { crewTabAttention } from '@/utils/shiftRoster';
 import { TopHeader } from '@/components/TopHeader';
@@ -45,23 +44,12 @@ function Workboard() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const { profile, displayName: activeFitter, loading: profileLoading, reload } = useCurrentUser();
-  const [demoOn, setDemoOn] = useState(false);
-  const [demoPersonaId, setDemoPersonaId] = useState<DemoPersonaId | null>(null);
-  useEffect(() => {
-    setDemoOn(demoModeRequested());
-    const saved = demoPersona(window.sessionStorage.getItem('mine-cmms-demo-persona'));
-    if (saved) setDemoPersonaId(saved.id);
-  }, []);
-  const persona = demoOn ? demoPersona(demoPersonaId) : null;
-  const sessionUser = profile && persona
-    ? { ...profile, department: persona.department, access_level: persona.accessLevel, role: roleForAccess(persona.department, persona.accessLevel) }
-    : profile;
-  const userRole: UserRole = sessionUser?.role ?? 'fitter';
-  const permissions = getPermissions(sessionUser);
+  const userRole: UserRole = profile?.role ?? 'fitter';
+  const permissions = getPermissions(profile);
   const showLens = permissions.accessLevel >= 4;
   const [viewedDepartment, setViewedDepartment] = useState<Department>(permissions.accessLevel >= 5 ? 'production' : permissions.department);
   const [lensProfileId, setLensProfileId] = useState<string | null>(null);
-  const routeKey = profile ? `${profile.id}:${persona?.id ?? 'self'}` : null;
+  const routeKey = profile?.id ?? null;
   if (profile && showLens && lensProfileId !== routeKey) {
     setLensProfileId(routeKey);
     setViewedDepartment(permissions.accessLevel >= 5 ? 'production' : permissions.department);
@@ -76,23 +64,6 @@ function Workboard() {
     setRoutedProfile(routeKey);
     setCurrentTab(homeTab);
   }
-  const toggleDemo = () => {
-    setDemoOn((on) => {
-      const next = !on;
-      window.sessionStorage.setItem('mine-cmms-demo', next ? '1' : '0');
-      if (!next) {
-        setDemoPersonaId(null);
-        window.sessionStorage.removeItem('mine-cmms-demo-persona');
-      }
-      return next;
-    });
-  };
-  const pickDemo = (id: DemoPersonaId | null) => {
-    setDemoPersonaId(id);
-    if (id) window.sessionStorage.setItem('mine-cmms-demo-persona', id);
-    else window.sessionStorage.removeItem('mine-cmms-demo-persona');
-  };
-
   useEffect(() => {
     if (!profile) return;
     const allowed =
@@ -124,6 +95,7 @@ function Workboard() {
     handoverLog,
     activeShift,
     crew,
+    crewLeave,
     onShiftCrewIds,
     authorisations,
     holdings,
@@ -167,6 +139,7 @@ function Workboard() {
     const openJobCounts = new Map([...openJobsByCrew].map(([id, jobs]) => [id, jobs.length]));
     return {
       crew,
+      leave: crewLeave,
       onShiftIds: onShiftCrewIds,
       openJobsByCrew,
       openJobCounts,
@@ -175,7 +148,7 @@ function Workboard() {
       supervision,
       canCheckAuthorisations: permissions.accessLevel === 3 || permissions.accessLevel === 4,
     };
-  }, [crew, onShiftCrewIds, workOrders, allAssets, authorisations, holdings, supervision, permissions.accessLevel]);
+  }, [crew, crewLeave, onShiftCrewIds, workOrders, allAssets, authorisations, holdings, supervision, permissions.accessLevel]);
 
   const crewAttention = useMemo(
     () => crewTabAttention(crew, permissions.department, permissions.accessLevel, activeShift?.crew),
@@ -257,10 +230,6 @@ function Workboard() {
         onLinkCrew={permissions.department === 'workshop' && permissions.accessLevel === 2 ? linkMyCrew : undefined}
         onSetShiftCrew={setShiftPanel}
         profileId={profile?.id ?? null}
-        demoOn={demoOn}
-        demoPersonaId={demoPersonaId}
-        onToggleDemo={toggleDemo}
-        onPickDemo={pickDemo}
         lensDepartment={showLens ? viewedDepartment : null}
       />
 
@@ -335,6 +304,7 @@ function Workboard() {
             {showLens && <DepartmentLens surface="handover" department={viewedDepartment} onChange={setViewedDepartment} actorName={activeFitter} canEditRates={permissions.accessLevel >= 4} />}
           <HandoverReportTab
             readOnly={showLens}
+            accessLevel={permissions.accessLevel}
             activeShift={activeShift}
             shiftJobs={shiftJobs}
             completedJobs={completedJobs}
