@@ -155,19 +155,10 @@ export default function OceReportPanel({
   }
 
   return (
-    <section className="rounded-xl border border-slate-300 bg-white p-4 space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-base font-black text-slate-900">OCE report</h3>
-          <p className="text-sm text-slate-600 mt-1">
-            One report for the shift. The original stays attached. The written briefing is optional and stays in Australia when you ask for it.
-          </p>
-          <label className="mt-2 flex items-center gap-2 text-sm font-bold text-slate-800">
-            <input type="checkbox" checked={writeBriefing} onChange={(event) => setWriteBriefing(event.target.checked)} />
-            Write the crew briefing from this report
-          </label>
-        </div>
-        <label className={`min-h-11 px-4 rounded-lg bg-slate-900 text-white text-sm font-bold inline-flex items-center gap-1.5 cursor-pointer ${busy ? 'opacity-50 pointer-events-none' : ''}`}>
+    <section className="overflow-hidden rounded-xl border border-slate-300 border-l-4 border-l-slate-700 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/90 px-5 py-3.5">
+        <h3 className="text-base font-black text-slate-900">OCE report</h3>
+        <label className={`min-h-10 px-3 rounded-lg bg-slate-900 text-white text-sm font-bold inline-flex items-center gap-1.5 cursor-pointer ${busy ? 'opacity-50 pointer-events-none' : ''}`}>
           <FileUp className="w-4 h-4" /> {busy ? 'Reading...' : 'Upload report'}
           <input
             type="file"
@@ -181,6 +172,16 @@ export default function OceReportPanel({
           />
         </label>
       </div>
+      <div className="space-y-3 p-4">
+        <div>
+          <p className="text-sm text-slate-600 mt-1">
+            One report for the shift. The original stays attached. The written briefing is optional and stays in Australia when you ask for it.
+          </p>
+          <label className="mt-2 flex items-center gap-2 text-sm font-bold text-slate-800">
+            <input type="checkbox" checked={writeBriefing} onChange={(event) => setWriteBriefing(event.target.checked)} />
+            Write the crew briefing from this report
+          </label>
+        </div>
 
       {!report ? (
         <p className="text-sm text-slate-500">No OCE report for this shift yet.</p>
@@ -207,6 +208,7 @@ export default function OceReportPanel({
           )}
         </div>
       )}
+      </div>
     </section>
   );
 }

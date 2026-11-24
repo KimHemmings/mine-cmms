@@ -2,7 +2,7 @@
 
 import React, { ReactNode, useState, useEffect, useRef } from 'react';
 import { HandoverLogEntry, HandoverLogCategory } from '@/types';
-import { Plus, Trash2, ClipboardList, AlertTriangle, Printer, Sparkles } from 'lucide-react';
+import { Plus, Trash2, ClipboardList, Printer, Sparkles } from 'lucide-react';
 import DictationMicButton, { useDictationTarget } from '@/components/ui/DictationMicButton';
 import ManagementDirectives from '@/components/ManagementDirectives';
 import { clearHandoverDraft, handoverDraftKey, readHandoverDraft, writeHandoverDraft } from '@/utils/handoverDraft';
@@ -128,15 +128,16 @@ export default function ShiftHandoverLog({
   };
 
   return (
-    <div aria-busy={aiNotesLoading} className="bg-white border border-slate-200 rounded-xl shadow-sm print:border-black print:shadow-none overflow-hidden font-sans">
-      <div className="p-3 border-b border-slate-200">
+    <div aria-busy={aiNotesLoading} className="bg-white border border-slate-200 border-l-4 border-l-slate-700 rounded-xl shadow-sm print:border-black print:shadow-none overflow-hidden font-sans">
+      <div className="p-3 border-b border-slate-200 bg-white">
         <ManagementDirectives actorName={actorName} department="workshop" />
       </div>
       {manning && (
-        <div className="p-3 border-b border-slate-200 bg-white space-y-3">
-          <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">
+        <div className="border-b border-slate-200 bg-white">
+          <h3 className="border-b border-slate-200 bg-slate-50/90 px-5 py-3.5 text-xs font-black uppercase tracking-wider text-slate-800">
             Workshop crew{manning.panel ? ` · ${manning.panel}` : ''}
           </h3>
+          <div className="space-y-3 p-3">
           <ManningLine title={`On-shift trades (${manning.onShift.length})`} names={manning.onShift} empty="No workshop trades are on this crew." />
           <ManningLine title="Away / sick / leave" names={manning.away} empty="No one from the workshop is away." />
           <ManningLine title="Overtime and labour hire" names={manning.overtime} empty="No workshop overtime or labour hire on this crew." />
@@ -145,6 +146,7 @@ export default function ShiftHandoverLog({
           <div className="grid gap-3 sm:grid-cols-2">
             <SignOffSelect label="Outgoing" people={signers} value={outgoingId} disabled={readOnly} onChange={onOutgoing} />
             <SignOffSelect label="Oncoming" people={signers} value={oncomingId} disabled={readOnly} onChange={onOncoming} />
+          </div>
           </div>
         </div>
       )}
@@ -264,7 +266,7 @@ export default function ShiftHandoverLog({
       <div className="overflow-x-auto">
         {entries.length === 0 ? (
           <div className="p-4 text-xs text-slate-500 italic text-center">
-            Zero compliance or situational items logged. Click "+ Add Entry" or flag equipment from the Workboard.
+            Zero compliance or situational items logged. Click &quot;+ Add Entry&quot; or flag equipment from the Workboard.
           </div>
         ) : (
           <table className="w-full text-left text-xs text-slate-800 print:text-[10px]">

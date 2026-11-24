@@ -112,7 +112,6 @@ export default function HandoverReportTab({
   const [saving, setSaving] = useState(false);
   const [showRollover, setShowRollover] = useState(false);
   const [view, setView] = useState<'current' | 'history'>('current');
-  const [reportWindow, setReportWindow] = useState<'12h' | '24h'>('12h');
   const [opened, setOpened] = useState<SavedHandover | null>(null);
   const [handovers, setHandovers] = useState<SavedHandover[]>([]);
   const [slides, setSlides] = useState<HandoverSlide[]>([]);
@@ -169,7 +168,7 @@ export default function HandoverReportTab({
   const handedOver = shiftJobs.filter((asset) => asset.in_shift && asset.status !== 'OPERATIONAL');
   const currentSaved = handovers.find((handover) => handover.shift_id === activeShift?.id) ?? null;
 
-  const bounds = windowFor(reportWindow);
+  const bounds = windowFor('12h');
   const inReport = (iso?: string | null) => inWindow(iso, bounds.start, bounds.end);
   const windowedLog = handoverLog.filter((entry) => inReport(entry.logged_at) && entry.department !== 'production' && entry.department !== 'training');
   const shiftLog = handoverLog.filter((entry) =>
@@ -479,30 +478,26 @@ export default function HandoverReportTab({
       
       {/* Handover Toolbar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between pb-6 border-b border-slate-200 gap-4 print:hidden">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-amber-600" />
             <h2 className="text-xl font-black text-slate-900">Shift handover</h2>
           </div>
-          <p className="text-sm text-slate-600 mt-1">
-            <strong>{activeShift?.shift_name}{(outgoingCrew ?? activeShift?.crew) ? ` · ${outgoingCrew ?? activeShift?.crew}` : ''}</strong>
-            {' · '}{supervisorName}
-            {currentSaved ? ` · Last saved ${formatDateTime(currentSaved.saved_at)}` : ' · Not saved yet'}
-          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <p className="text-sm text-slate-600">
+              <strong>{activeShift?.shift_name}{(outgoingCrew ?? activeShift?.crew) ? ` · ${outgoingCrew ?? activeShift?.crew}` : ''}</strong>
+              {' · '}{supervisorName}
+              {currentSaved ? ` · Last saved ${formatDateTime(currentSaved.saved_at)}` : ' · Not saved yet'}
+            </p>
+            <IncomingCrewPicker
+              panel={incomingPanel}
+              shiftType={rosterCrewPlan?.incomingShiftType ?? null}
+              onChange={handleIncomingCrewOverride}
+            />
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 rounded-full border border-slate-300 bg-slate-50 p-1" role="group" aria-label="Handover window">
-            <button type="button" onClick={() => setReportWindow('12h')} aria-pressed={reportWindow === '12h'} className={`min-h-9 px-3 rounded-full text-xs font-black ${reportWindow === '12h' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}>
-              Current 12h Shift
-            </button>
-            <button type="button" onClick={() => setReportWindow('24h')} aria-pressed={reportWindow === '24h'} className={`min-h-9 px-3 rounded-full text-xs font-black ${reportWindow === '24h' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}>
-              Last 24 Hours
-            </button>
-          </div>
-          <button type="button" onClick={() => { setOpened(null); setView('current'); }} className={`${actionClass} ${view === 'current' && !opened ? 'bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-700'}`}>
-            This shift
-          </button>
           <button type="button" onClick={() => { setOpened(null); setView('history'); }} className={`${actionClass} ${view === 'history' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-700'}`}>
             Past handovers ({handovers.length})
           </button>
@@ -567,28 +562,31 @@ export default function HandoverReportTab({
 
       {view === 'current' && !opened && (
         <>
-          <details className="mt-4 rounded-xl border border-slate-200 px-4 py-3">
-            <summary className="text-sm font-black text-slate-800 cursor-pointer">Make the briefing</summary>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={isExporting}
-                onClick={() => exportBriefing({
-                  shiftName: activeShift?.shift_name || 'Active shift',
-                  shiftDate: activeShift?.shift_date ?? null,
-                  crew: outgoingCrew ?? activeShift?.crew ?? null,
-                  supervisor: supervisorName,
-                  document: liveSnapshot,
-                })}
-                className={`${actionClass} bg-amber-600 text-white`}
-              >
-                <Presentation className="w-4 h-4" /> {isExporting ? 'Building...' : incomingPanel ? `Briefing for ${incomingPanel}` : 'Crew briefing'}
-              </button>
-              <button type="button" onClick={() => window.print()} className={`${actionClass} bg-white border border-slate-300 text-slate-700`}>
-                <Printer className="w-4 h-4" /> Save as PDF
-              </button>
-            </div>
-            <div className="mt-4">
+          <details className="mt-4 overflow-hidden rounded-xl border border-slate-800 bg-white shadow-sm">
+            <summary className="flex min-h-12 cursor-pointer items-center gap-2 bg-slate-900 px-4 py-3 text-sm font-black text-white">
+              <Presentation className="h-4 w-4" />
+              Make the briefing
+            </summary>
+            <div className="space-y-4 p-4">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={isExporting}
+                  onClick={() => exportBriefing({
+                    shiftName: activeShift?.shift_name || 'Active shift',
+                    shiftDate: activeShift?.shift_date ?? null,
+                    crew: outgoingCrew ?? activeShift?.crew ?? null,
+                    supervisor: supervisorName,
+                    document: liveSnapshot,
+                  })}
+                  className={`${actionClass} bg-amber-600 text-white`}
+                >
+                  <Presentation className="w-4 h-4" /> {isExporting ? 'Building...' : incomingPanel ? `Briefing for ${incomingPanel}` : 'Crew briefing'}
+                </button>
+                <button type="button" onClick={() => window.print()} className={`${actionClass} bg-white border border-slate-300 text-slate-700`}>
+                  <Printer className="w-4 h-4" /> Save as PDF
+                </button>
+              </div>
               <BriefingSlides slides={slides} onChange={setSlides} />
             </div>
           </details>
@@ -599,12 +597,6 @@ export default function HandoverReportTab({
               </p>
             </div>
           )}
-          <IncomingCrewPicker
-            panel={incomingPanel}
-            shiftType={rosterCrewPlan?.incomingShiftType ?? null}
-            onChange={handleIncomingCrewOverride}
-          />
-
           <div className="mt-6 space-y-4">
             <SafetyBriefingFields incidents={incidents} focus={safetyFocus} onIncidents={setIncidents} onFocus={setSafetyFocus} />
             <OceReportPanel shiftId={activeShift?.id ?? null} onChange={setOceReport} />

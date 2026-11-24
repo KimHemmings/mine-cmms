@@ -27,12 +27,13 @@ const NOTE_ORDER: { category: HandoverLogCategory; title: string }[] = [
 ];
 
 function Section({ title, children, className = '' }: { title: string; children: ReactNode; className?: string }) {
+  const accent = title.toLowerCase().includes('safety') ? 'border-l-amber-500' : 'border-l-slate-700';
   return (
-    <section className={`mt-6 ${className}`}>
-      <h3 className="text-sm font-black uppercase tracking-wide text-slate-800 border-b-2 border-slate-900 pb-1 mb-3">
+    <section className={`mt-6 overflow-hidden rounded-xl border border-slate-200 border-l-4 ${accent} bg-white ${className}`}>
+      <h3 className="border-b border-slate-200 bg-slate-50/90 px-5 py-3.5 text-sm font-black uppercase tracking-wide text-slate-800">
         {title}
       </h3>
-      {children}
+      <div className="p-4">{children}</div>
     </section>
   );
 }
@@ -121,10 +122,7 @@ function MachineJobNotes({
       ))}
       {machineSummary && machineSummary.length > 0 && (
         <div className="break-inside-avoid rounded-md bg-indigo-50/70 px-2.5 py-2 print:bg-transparent print:p-0">
-          <span className="mr-2 inline-flex rounded border border-indigo-200 px-1.5 py-0.5 align-middle text-[9px] font-black uppercase tracking-wide text-indigo-700 print:text-black">
-            AI
-          </span>
-          <ul className="inline-block list-disc pl-4 align-top text-sm">
+          <ul className="list-disc pl-4 text-sm">
             {machineSummary.map((bullet, index) => <li key={`${machine.fleetId}-summary-${index}`}>{bullet}</li>)}
           </ul>
         </div>
