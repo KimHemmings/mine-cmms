@@ -30,6 +30,9 @@ import { useRosterCycleSettings } from '@/hooks/useRosterCycleSettings';
 
 interface CrewTabProps {
   activeShift: ShiftRecord | null;
+  personalOnly?: boolean;
+  personalCrewMemberId?: string | null;
+  personalDisplayName?: string | null;
   homeCrew?: string | null;
   activeCrew?: string | null;
   coveringCrew?: string | null;
@@ -82,10 +85,10 @@ function formatSwingDate(date: string, weekday: 'short' | null = null) {
 
 export default function CrewTab({
   activeShift,
-  homeCrew = null,
+  personalOnly = false,
+  personalCrewMemberId = null,
+  personalDisplayName = null,
   activeCrew = null,
-  coveringCrew = null,
-  onSetCoveringCrew,
   canManageCrew,
   crossDepartment = false,
   canManageCompetencies = false,
@@ -130,7 +133,7 @@ export default function CrewTab({
   const [trainingView, setTrainingView] = useState<'passouts' | 'team'>(accessLevel >= 3 ? 'team' : 'passouts');
   const [departmentFilter, setDepartmentFilter] = useState<Department | 'all'>('all');
   const [showPlanner, setShowPlanner] = useState(false);
-  const [loggingLeave, setLoggingLeave] = useState(false);
+  const [loggingLeaveForMember, setLoggingLeaveForMember] = useState<string | null>(null);
 
   const clearExpiredRef = useRef(clearExpiredShiftExtras);
   useEffect(() => {
@@ -138,8 +141,9 @@ export default function CrewTab({
   }, [clearExpiredShiftExtras]);
 
   useEffect(() => {
+    if (personalOnly) return;
     void clearExpiredRef.current(crew);
-  }, [crew]);
+  }, [crew, personalOnly]);
 
   const inDepartment = (member: CrewMember) => {
     const memberDepartment = normalizeDepartment(member.department);
@@ -175,6 +179,20 @@ export default function CrewTab({
   const printLabel = selected === 'all' ? 'Print All Crews Pre-Start (PDF)' : `Print ${selected} Pre-Start (PDF)`;
   const extraPanel = selected === 'all' ? (onShiftPanel ?? 'A Crew') : selected;
   const defaultPanel = selected === 'all' ? (onShiftPanel ?? 'A Crew') : selected;
+  const personalMember = personalOnly
+    ? crew.find((member) => member.id === personalCrewMemberId
+        && normalizeDepartment(member.department) === department)
+      ?? crew.find((member) => !!personalDisplayName
+        && normalizeDepartment(member.department) === department
+        && member.display_name.trim().toLocaleLowerCase() === personalDisplayName.trim().toLocaleLowerCase())
+      ?? null
+    : null;
+  const personalLeave = personalMember
+    ? leave.filter((row) => row.crew_member_id === personalMember.id)
+    : [];
+  const personalRosterStatus = personalMember?.panel
+    ? getCrewStatusForDate(personalMember.panel, rosterDate, rosterSettings.roster_anchor_date, rosterSettings.crew_rotation_order)
+    : null;
 
   const printPreStart = async () => {
     const { generatePreStartSheet } = await import('@/utils/generatePreStartPDF');
@@ -333,6 +351,39 @@ export default function CrewTab({
     setEditor(null);
   };
 
+  if (personalOnly) {
+    return (
+      <section className="space-y-4 rounded-xl border border-slate-300 bg-white p-4 shadow-2xs">
+        <div>
+          <h2 className="text-lg font-black text-slate-900">My Leave &amp; Roster</h2>
+          {personalMember ? (
+            <p className="mt-1 text-sm font-bold text-slate-600">
+              {personalMember.display_name} · {personalMember.trade} · {personalMember.panel ?? 'No crew'}
+              {personalRosterStatus && (
+                <span className="ml-2 inline-flex rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-black text-slate-800">
+                  {personalRosterStatus === 'Day' ? 'Day Shift' : personalRosterStatus === 'Night' ? 'Night Shift' : 'R&R'}
+                </span>
+              )}
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-slate-600">No linked crew roster found for your profile.</p>
+          )}
+        </div>
+        <LeavePlanner
+          members={personalMember ? [personalMember] : []}
+          leave={personalLeave}
+          accessLevel={2}
+          department={department}
+          signerName={signerName}
+          onChanged={() => onRefresh?.()}
+          personalOnly
+          anchorDate={rosterSettings.roster_anchor_date}
+          rotationOrder={rosterSettings.crew_rotation_order}
+        />
+      </section>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {training && accessLevel >= 3 && !matrixOnly && (
@@ -368,65 +419,14 @@ export default function CrewTab({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {accessLevel === 3 && homeCrew && onSetCoveringCrew && (
-              <div className="inline-flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1">
-                <label className="inline-flex items-center gap-2 text-xs font-black text-amber-950">
-                  Covering Crew
-                  <select
-                    aria-label="Covering Crew"
-                    value={coveringCrew ?? ''}
-                    onChange={(event) => onSetCoveringCrew(event.target.value || null)}
-                    className="min-h-9 rounded-lg border border-amber-300 bg-white px-2 text-xs font-black text-slate-900"
-                  >
-                    <option value="">Not covering</option>
-                    {CREW_PANELS.filter((panel) => panel !== homeCrew).map((panel) => <option key={panel} value={panel}>{panel}</option>)}
-                  </select>
-                </label>
-                {coveringCrew ? (
-                  <>
-                    <span className="rounded-full bg-amber-200 px-2 py-1 text-[10px] font-black text-amber-950">Covering {coveringCrew}</span>
-                    <button type="button" onClick={() => onSetCoveringCrew(null)} className="rounded-full border border-amber-400 bg-white px-2 py-1 text-[10px] font-black text-amber-950">
-                      Back to {homeCrew}
-                    </button>
-                  </>
-                ) : <span className="text-[10px] font-bold text-amber-900">Home Crew: {homeCrew}</span>}
-              </div>
-            )}
-            {canManageCrew && (
-              <button
-                type="button"
-                onClick={() => setShowImport(true)}
-                className="min-h-11 px-4 rounded-lg border-2 border-slate-300 bg-white text-sm font-bold text-slate-800 hover:bg-slate-50"
-              >
-                Bulk Import (CSV / Paste)
-              </button>
-            )}
-            {accessLevel >= 3 && !showPlanner && (
-              <button
-                type="button"
-                onClick={() => setLoggingLeave(true)}
-                className="min-h-11 px-4 rounded-lg border-2 border-slate-300 bg-white text-sm font-bold text-slate-800 hover:bg-slate-50"
-              >
-                + Log Leave
-              </button>
-            )}
             <button
               type="button"
               aria-pressed={showPlanner}
               onClick={() => setShowPlanner((open) => !open)}
               className={`min-h-11 px-4 rounded-lg border-2 text-sm font-bold ${showPlanner ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'}`}
             >
-              {showPlanner ? 'Crew list' : '14-Day Leave Planner'}
+              {showPlanner ? 'Crew list' : 'Leave Planner'}
             </button>
-            {canManageCrew && (
-            <button
-              type="button"
-              onClick={() => setEditor('new')}
-              className="min-h-11 px-4 rounded-lg border-2 border-slate-300 bg-white text-sm font-bold text-slate-800 hover:bg-slate-50 flex items-center gap-2"
-            >
-              <UserPlus className="w-4 h-4" /> + Add Crew
-            </button>
-            )}
             {canManageCrew && (
               <button
                 type="button"
@@ -444,6 +444,35 @@ export default function CrewTab({
               >
                 <Printer className="w-4 h-4" /> {printLabel}
               </button>
+            )}
+            {canManageCrew && (
+              <details className="relative">
+                <summary className="inline-flex min-h-11 cursor-pointer list-none items-center rounded-lg border-2 border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 hover:bg-slate-50">
+                  Manage Roster ▾
+                </summary>
+                <div className="absolute right-0 top-full z-20 mt-2 min-w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      setShowImport(true);
+                      event.currentTarget.closest('details')?.removeAttribute('open');
+                    }}
+                    className="block min-h-10 w-full whitespace-nowrap rounded-lg px-3 text-left text-sm font-bold text-slate-800 hover:bg-slate-100"
+                  >
+                    Bulk Import (CSV / Paste)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      setEditor('new');
+                      event.currentTarget.closest('details')?.removeAttribute('open');
+                    }}
+                    className="inline-flex min-h-10 w-full items-center gap-2 whitespace-nowrap rounded-lg px-3 text-left text-sm font-bold text-slate-800 hover:bg-slate-100"
+                  >
+                    <UserPlus className="h-4 w-4" /> + Add Crew
+                  </button>
+                </div>
+              </details>
             )}
           </div>
         </div>
@@ -490,10 +519,6 @@ export default function CrewTab({
         <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Crew">
           {(accessLevel >= 4 ? FILTERS : FILTERS.filter((filter) => filter.id === selected)).map((filter) => {
             const active = selected === filter.id;
-            const onShift = filter.id !== 'all' && filter.id === onShiftPanel;
-            const rosterStatus = filter.id === 'all'
-              ? null
-              : getCrewStatusForDate(filter.id, rosterDate, rosterSettings.roster_anchor_date, rosterSettings.crew_rotation_order);
             return (
               <button
                 key={filter.id}
@@ -511,17 +536,6 @@ export default function CrewTab({
                 <span className={`min-w-6 px-1.5 rounded-full text-xs font-black text-center ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
                   {countFor(filter.id)}
                 </span>
-                {onShift && (
-                  <span className={`inline-flex items-center gap-1 text-xs font-bold ${active ? 'text-emerald-300' : 'text-emerald-700'}`}>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    On Shift
-                  </span>
-                )}
-                {rosterStatus && (
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${active ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-700'}`}>
-                    {rosterStatus === 'Day' ? 'On Shift · Day' : rosterStatus === 'Night' ? 'Night Shift' : 'R&R'}
-                  </span>
-                )}
               </button>
             );
           })}
@@ -542,49 +556,54 @@ export default function CrewTab({
           <ul className="min-w-180 divide-y divide-slate-200 border border-slate-200 rounded-lg">
             {shown.map((member) => {
               const covering = coveringLetter(member);
+              const panel = shiftCrew(member.panel);
+              const rosterStatus = panel
+                ? getCrewStatusForDate(panel, rosterDate, rosterSettings.roster_anchor_date, rosterSettings.crew_rotation_order)
+                : null;
+              const memberStatus = member.on_leave
+                ? (/sick|personal/i.test(member.leave_type ?? '') ? 'Sick' : 'Leave')
+                : member.away
+                  ? 'Leave'
+                  : rosterStatus === 'R&R'
+                    ? 'R&R'
+                    : 'On Shift';
+              const statusTone = memberStatus === 'On Shift'
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                : memberStatus === 'Sick'
+                  ? 'border-rose-300 bg-rose-50 text-rose-800'
+                  : memberStatus === 'Leave'
+                    ? 'border-amber-300 bg-amber-50 text-amber-900'
+                    : 'border-slate-300 bg-slate-100 text-slate-700';
               return (
               <li key={member.id} className={`px-3 min-h-14 ${member.away ? 'bg-slate-50' : ''}`}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="text-base font-bold text-slate-900 truncate">{member.display_name}</span>
                     <span className="shrink-0 text-sm text-slate-500">{member.trade}</span>
-                    {member.on_leave && member.leave_type && (
-                      <span className="shrink-0 rounded-full bg-rose-700 px-2 py-0.5 text-[11px] font-black text-white">Away • {member.leave_type}</span>
-                    )}
                     {covering && <span className="shrink-0 text-xs font-bold text-indigo-700">OT</span>}
                     {member.is_contractor && <span className="shrink-0 text-xs font-bold text-violet-700">Contractor</span>}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {accessLevel >= 3 && (member.on_leave ? (
-                      <button
-                        type="button"
-                        onClick={() => void undoLeave(member)}
-                        className="min-h-10 px-3 rounded-full border border-slate-400 bg-white text-xs font-black text-slate-800"
+                    {accessLevel >= 3 && (
+                      <select
+                        aria-label={`${member.display_name} shift status`}
+                        value={memberStatus}
+                        onChange={(event) => {
+                          const nextStatus = event.target.value;
+                          if (nextStatus === 'Sick') void markSickToday(member);
+                          if (nextStatus === 'Leave') setLoggingLeaveForMember(member.id);
+                          if (nextStatus === 'On Shift') {
+                            if (member.on_leave) void undoLeave(member);
+                            else if (member.away && canManageCrew) void setCrewMemberAway(member, false);
+                          }
+                        }}
+                        className={`min-h-10 rounded-full border px-3 text-xs font-black ${statusTone}`}
                       >
-                        Undo Leave
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => void markSickToday(member)}
-                        className="min-h-10 px-3 rounded-full border border-rose-300 bg-rose-50 text-xs font-black text-rose-800"
-                      >
-                        Sick Today
-                      </button>
-                    ))}
-                    {canManageCrew && (
-                    <button
-                      type="button"
-                      onClick={() => void setCrewMemberAway(member, !member.away)}
-                      className={`min-h-10 px-3 rounded-full text-xs font-black border ${
-                        member.away
-                          ? 'bg-slate-200 text-slate-600 border-slate-300'
-                          : 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                      }`}
-                      aria-pressed={member.away}
-                    >
-                      {member.away ? 'Away' : 'On Roster'}
-                    </button>
+                        <option value="On Shift" disabled={member.away && !canManageCrew}>On Shift</option>
+                        <option value="Sick">Sick</option>
+                        <option value="Leave">Leave</option>
+                        <option value="R&R" disabled={memberStatus !== 'R&R'}>R&amp;R</option>
+                      </select>
                     )}
                     <AllocationPill
                       readOnly={!canManageCrew || !!member.on_leave}
@@ -685,17 +704,18 @@ export default function CrewTab({
           onImported={() => onRefresh?.()}
         />
       )}
-      {loggingLeave && (
+      {loggingLeaveForMember !== null && (
         <LeavePlanner
           logOnly
           members={accessLevel >= 4 ? crew : accessLevel === 3 ? crew.filter((member) => member.panel === activeCrew) : departmentCrew}
+          initialMemberId={loggingLeaveForMember || undefined}
           leave={leave}
           accessLevel={accessLevel}
           department={department}
           crossDepartment={accessLevel >= 4}
           signerName={signerName}
           onChanged={() => onRefresh?.()}
-          onClose={() => setLoggingLeave(false)}
+          onClose={() => setLoggingLeaveForMember(null)}
           anchorDate={rosterSettings.roster_anchor_date}
           rotationOrder={rosterSettings.crew_rotation_order}
           crewScope={accessLevel === 3 ? activeCrew : undefined}

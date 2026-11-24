@@ -34,6 +34,20 @@ function toIsoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+export function getSwingStartWednesday(date: string) {
+  const parsed = parseIsoDate(date);
+  if (!parsed) throw new Error('Roster date must be a valid ISO date.');
+  const daysSinceWednesday = (parsed.getUTCDay() - 3 + 7) % 7;
+  return toIsoDate(new Date(parsed.getTime() - daysSinceWednesday * DAY_MS));
+}
+
+export function addRosterWeeks(wednesday: string, weeks: number) {
+  if (!Number.isInteger(weeks)) throw new Error('Roster week offset must be an integer.');
+  const start = parseIsoDate(wednesday);
+  if (!start || !isWednesday(wednesday)) throw new Error('Roster navigation must start on a Wednesday.');
+  return toIsoDate(new Date(start.getTime() + weeks * 7 * DAY_MS));
+}
+
 function normalizeRotationOrder(value: unknown): RosterCrewName[] {
   if (!Array.isArray(value) || value.length !== DEFAULT_CREW_ROTATION_ORDER.length) {
     return [...DEFAULT_CREW_ROTATION_ORDER];

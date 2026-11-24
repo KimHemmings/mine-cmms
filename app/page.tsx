@@ -64,7 +64,7 @@ function Workboard() {
   }
   const viewDepartment = showLens ? viewedDepartment : permissions.department;
   const viewPermissions = showLens ? operationalLens(permissions, viewedDepartment) : permissions;
-  const [currentTab, setCurrentTab] = useState<'management' | 'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status'>('board');
+  const [currentTab, setCurrentTab] = useState<'management' | 'board' | 'myLeave' | 'handover' | 'dossier' | 'crew' | 'training' | 'status'>('board');
   const [trainingSection, setTrainingSection] = useState<'tickets' | 'passouts' | 'supervision'>('tickets');
   const [routedProfile, setRoutedProfile] = useState<string | null>(null);
   const homeTab = permissions.canViewManagementDashboard ? 'management' : permissions.department === 'training' ? 'training' : 'board';
@@ -77,6 +77,7 @@ function Workboard() {
     const allowed =
       (currentTab === 'management' && permissions.canViewManagementDashboard)
       || (currentTab === 'board' && permissions.canViewWhiteboard)
+      || (currentTab === 'myLeave' && permissions.accessLevel === 2 && permissions.department === 'workshop')
       || (currentTab === 'dossier' && permissions.canViewFleetDirectory)
       || (currentTab === 'handover' && permissions.canViewHandover)
       || (currentTab === 'crew' && permissions.canViewCrew)
@@ -517,6 +518,32 @@ function Workboard() {
             onRefresh={fetchAllData}
           />
           </div>
+        )}
+        {currentTab === 'myLeave' && permissions.accessLevel === 2 && permissions.department === 'workshop' && (
+          <CrewTab
+            activeShift={activeShift}
+            personalOnly
+            personalCrewMemberId={profile?.crew_member_id ?? null}
+            personalDisplayName={profile?.display_name ?? activeFitter}
+            canManageCrew={false}
+            accessLevel={2}
+            signerName={activeFitter}
+            department="workshop"
+            saveCrewMember={saveCrewMember}
+            setCrewMemberActive={setCrewMemberActive}
+            setCrewMemberAway={setCrewMemberAway}
+            setCrewAllocation={setCrewAllocation}
+            addOvertimeCover={addOvertimeCover}
+            addContractor={addContractor}
+            endShiftExtra={endShiftExtra}
+            clearExpiredShiftExtras={clearExpiredShiftExtras}
+            assets={shiftJobs}
+            fleetAssets={allAssets}
+            downAssetIds={shiftJobs.filter((asset) => !(asset.status === 'OPERATIONAL' && !asset.in_shift)).map((asset) => asset.id)}
+            workOrders={workOrders}
+            updateOperatorCompetencies={updateOperatorCompetencies}
+            onRefresh={fetchAllData}
+          />
         )}
       </section>
 

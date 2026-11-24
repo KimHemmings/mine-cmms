@@ -46,7 +46,7 @@ export function ChangePasswordButton() {
           setError(null);
           setOpen(true);
         }}
-        className="min-h-11 flex items-center gap-1.5 px-4 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-sm font-bold rounded-xl transition"
+        className="min-h-11 flex items-center gap-1.5 whitespace-nowrap px-4 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-sm font-bold rounded-xl transition"
       >
         <KeyRound className="w-4 h-4" /> Password
       </button>

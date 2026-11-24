@@ -211,7 +211,7 @@ export function HelpButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="relative min-h-11 flex items-center gap-1.5 px-4 bg-white hover:bg-amber-50 border border-slate-300 hover:border-amber-300 text-slate-700 text-sm font-bold rounded-xl transition"
+        className="relative min-h-11 flex items-center gap-1.5 whitespace-nowrap px-4 bg-white hover:bg-amber-50 border border-slate-300 hover:border-amber-300 text-slate-700 text-sm font-bold rounded-xl transition"
       >
         <LifeBuoy className="w-4 h-4" />
         Help

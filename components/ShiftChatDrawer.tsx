@@ -465,7 +465,7 @@ export default function ShiftChatDrawer({
         type="button"
         onClick={() => (open ? setOpen(false) : openChat())}
         aria-expanded={open}
-        className={`relative inline-flex min-h-11 items-center gap-2 rounded-xl border-2 px-4 text-sm font-black shadow-sm ${
+        className={`relative inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-xl border-2 px-4 text-sm font-black shadow-sm ${
           unread.length > 0
             ? 'border-amber-700 bg-amber-400 text-amber-950'
             : 'border-slate-900 bg-slate-900 text-white'

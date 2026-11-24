@@ -1,6 +1,6 @@
 import { CrewMember } from '@/types';
 
-export const LEAVE_TYPES = ['Annual Leave', 'Sick / Personal', 'Training / Medical', 'LSL / Parental', 'Other'] as const;
+export const LEAVE_TYPES = ['Annual Leave', 'Sick / Personal', 'Training / Medical', 'Long Service Leave', 'LSL / Parental', 'Other'] as const;
 export type LeaveType = (typeof LEAVE_TYPES)[number];
 
 export interface CrewLeave {
@@ -53,11 +53,12 @@ export function applyShiftLeave(members: CrewMember[], rows: CrewLeave[], shiftD
 }
 
 export function leaveTone(type: string) {
-  if (type === 'Annual Leave') return 'bg-blue-600 text-white';
-  if (type === 'Sick / Personal') return 'bg-rose-600 text-white';
-  if (type === 'Training / Medical') return 'bg-amber-500 text-slate-950';
-  if (type === 'LSL / Parental') return 'bg-slate-600 text-white';
-  return 'bg-violet-700 text-white';
+  const normalized = type.toLowerCase();
+  if (normalized.includes('annual')) return 'bg-blue-100 text-blue-900 border border-blue-300';
+  if (normalized.includes('sick') || normalized.includes('personal')) return 'bg-rose-100 text-rose-900 border border-rose-300';
+  if (normalized.includes('training') || normalized.includes('medical')) return 'bg-teal-100 text-teal-900 border border-teal-300';
+  if (normalized.includes('long service') || normalized.includes('lsl')) return 'bg-purple-100 text-purple-900 border border-purple-300';
+  return 'bg-slate-100 text-slate-800 border border-slate-300';
 }
 
 export function shortDay(iso: string) {
