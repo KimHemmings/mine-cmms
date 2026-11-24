@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { useWorkboardData } from '@/hooks/useWorkboardData';
@@ -30,6 +30,11 @@ import ManagementTab from '@/components/ManagementTab';
 import AssignCrewModal from '@/components/crew/AssignCrewModal';
 import { CrewDataContext, CrewData } from '@/components/crew/CrewDataContext';
 import { getOpenJobsByCrew } from '@/utils/crew';
+import { getActiveCrewsForDate } from '@/utils/rosterCycle';
+import { useRosterCycleSettings } from '@/hooks/useRosterCycleSettings';
+import { useReliefCoverage } from '@/hooks/useReliefCoverage';
+import { localDateIso, shiftDateIso } from '@/utils/crewLeave';
+import { CREW_PANELS } from '@/types';
 export default function Home() {
   return (
     <FeedbackProvider>
@@ -46,6 +51,9 @@ function Workboard() {
   const { profile, displayName: activeFitter, loading: profileLoading, reload } = useCurrentUser();
   const userRole: UserRole = profile?.role ?? 'fitter';
   const permissions = getPermissions(profile);
+  const rosterSettings = useRosterCycleSettings();
+  const { coveringCrew, setCoveringCrew } = useReliefCoverage(profile?.id ?? null);
+  const syncedRosterShift = useRef<string | null>(null);
   const showLens = permissions.accessLevel >= 4;
   const [viewedDepartment, setViewedDepartment] = useState<Department>(permissions.accessLevel >= 5 ? 'production' : permissions.department);
   const [lensProfileId, setLensProfileId] = useState<string | null>(null);
@@ -130,6 +138,50 @@ function Workboard() {
     setWorkOrderCrew,
     setShiftPanel,
   } = useWorkboardData({ activeFitter });
+
+  const activeRosterCrews = getActiveCrewsForDate(
+    activeShift?.shift_date ? shiftDateIso(activeShift.shift_date) : localDateIso(),
+    rosterSettings.roster_anchor_date,
+    rosterSettings.crew_rotation_order,
+  );
+  const homeCrew = profile?.crew_name ?? null;
+  const activeCrew = permissions.accessLevel === 3
+    ? coveringCrew ?? homeCrew
+    : permissions.accessLevel >= 4
+      ? activeShift?.shift_type === 'NIGHT' ? activeRosterCrews.nightCrew : activeRosterCrews.dayCrew
+      : homeCrew ?? activeShift?.crew ?? null;
+
+  const saveHomeCrew = async (crewName: string) => {
+    if (!(CREW_PANELS as readonly string[]).includes(crewName)) return;
+    const { error } = await supabase.rpc('set_home_crew', { p_crew: crewName });
+    if (error) {
+      showToast({ message: error.message || 'Home Crew could not be saved.', tone: 'error' });
+      return;
+    }
+    await reload();
+    showToast({ message: `Home Crew set to ${crewName}` });
+  };
+
+  useEffect(() => {
+    if (!activeShift || (permissions.accessLevel !== 3 && permissions.accessLevel !== 4)) return;
+    const orderKey = rosterSettings.crew_rotation_order.join(',');
+    const syncKey = `${activeShift.id}:${activeShift.shift_date}:${activeShift.shift_type}:${rosterSettings.roster_anchor_date}:${orderKey}`;
+    if (syncedRosterShift.current === syncKey) return;
+    syncedRosterShift.current = syncKey;
+    const activeCrews = getActiveCrewsForDate(
+      activeShift.shift_date,
+      rosterSettings.roster_anchor_date,
+      rosterSettings.crew_rotation_order,
+    );
+    const rosteredCrew = activeShift.shift_type === 'NIGHT' ? activeCrews.nightCrew : activeCrews.dayCrew;
+    if (activeShift.crew !== rosteredCrew) void setShiftPanel(rosteredCrew);
+  }, [
+    activeShift,
+    rosterSettings.roster_anchor_date,
+    rosterSettings.crew_rotation_order,
+    setShiftPanel,
+    permissions.accessLevel,
+  ]);
 
   const targetPartsWo = targetPartsWoId ? workOrders.find((w) => w.id === targetPartsWoId) ?? null : null;
   const targetCrewWo = targetCrewWoId ? workOrders.find((w) => w.id === targetCrewWoId) ?? null : null;
@@ -229,6 +281,11 @@ function Workboard() {
         crew={crew}
         onLinkCrew={permissions.department === 'workshop' && permissions.accessLevel === 2 ? linkMyCrew : undefined}
         onSetShiftCrew={setShiftPanel}
+        homeCrew={homeCrew}
+        activeCrew={activeCrew}
+        coveringCrew={coveringCrew}
+        onSetCoveringCrew={setCoveringCrew}
+        onSaveHomeCrew={saveHomeCrew}
         profileId={profile?.id ?? null}
         lensDepartment={showLens ? viewedDepartment : null}
       />
@@ -316,6 +373,8 @@ function Workboard() {
             loading={loading}
             onRefresh={fetchAllData}
             onRolloverShift={handleRolloverShift}
+            homeCrew={homeCrew}
+            coveringCrew={coveringCrew}
           />
           </div>
         )}
@@ -428,6 +487,10 @@ function Workboard() {
           {showLens && <DepartmentLens surface="crew" department={viewedDepartment} onChange={setViewedDepartment} actorName={activeFitter} canEditRates={permissions.accessLevel >= 4} />}
           <CrewTab
             activeShift={activeShift}
+            homeCrew={homeCrew}
+            activeCrew={activeCrew}
+            coveringCrew={coveringCrew}
+            onSetCoveringCrew={setCoveringCrew}
             canManageCrew={showLens ? false : permissions.canManageCrew}
             crossDepartment={showLens ? false : permissions.isSiteExecutive}
             canManageCompetencies={showLens ? false : permissions.canManageCompetencies}

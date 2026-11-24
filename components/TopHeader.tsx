@@ -24,6 +24,9 @@ import { getShiftClock, type ShiftClock } from '@/utils/shiftClock';
 import { formatStartDay, shiftIsPast } from '@/utils/crewStanding';
 import type { SyncStatus } from '@/hooks/useRealtimeWorkboard';
 import { useSiteBrand } from '@/components/SiteBrand';
+import { getCrewStatusForDate, type CrewStatus } from '@/utils/rosterCycle';
+import { useRosterCycleSettings } from '@/hooks/useRosterCycleSettings';
+import { shiftDateIso } from '@/utils/crewLeave';
 
 type Tab = 'management' | 'board' | 'handover' | 'dossier' | 'crew' | 'training' | 'status';
 
@@ -45,6 +48,11 @@ interface TopHeaderProps {
   crew?: CrewMember[];
   onLinkCrew?: (crewMemberId: string) => void;
   onSetShiftCrew?: (panel: string) => void;
+  homeCrew?: string | null;
+  activeCrew?: string | null;
+  coveringCrew?: string | null;
+  onSetCoveringCrew?: (panel: string | null) => void;
+  onSaveHomeCrew?: (panel: string) => void;
   profileId?: string | null;
   lensDepartment?: Department | null;
 }
@@ -80,6 +88,12 @@ function workshopPeople(crew: CrewMember[]) {
   return crew.filter((member) => member.active && isWorkshopRoster(member));
 }
 
+function rosterStatusLabel(status: CrewStatus) {
+  if (status === 'Day') return 'On Shift · Day';
+  if (status === 'Night') return 'Night Shift';
+  return 'R&R';
+}
+
 export const TopHeader: React.FC<TopHeaderProps> = ({
   activeShift,
   syncStatus,
@@ -98,10 +112,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   crew = [],
   onLinkCrew,
   onSetShiftCrew,
+  homeCrew = null,
+  activeCrew = null,
+  coveringCrew = null,
+  onSetCoveringCrew,
+  onSaveHomeCrew,
   profileId = null,
   lensDepartment = null,
 }) => {
   const { name: siteName } = useSiteBrand();
+  const rosterSettings = useRosterCycleSettings();
   const router = useRouter();
   const supabase = createClient();
   const { confirm } = useFeedback();
@@ -115,9 +135,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     return () => clearInterval(timer);
   }, []);
   const people = workshopPeople(crew);
+  const rosterDate = shiftDateIso(activeShift?.shift_date);
   const linked = myCrewMemberId;
   const workshopCrew = permissions.department === 'workshop' && permissions.accessLevel === 2;
   const workshopDesk = permissions.department === 'workshop' && (permissions.accessLevel === 3 || permissions.accessLevel === 4);
+  const [homeCrewChoice, setHomeCrewChoice] = useState('');
+  const showReliefControls = permissions.accessLevel === 3 && Boolean(onSetCoveringCrew);
 
   async function handleSignOut() {
     const ok = await confirm({
@@ -202,17 +225,82 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 >
                   {!activeShift?.crew && <option value="">Active crew</option>}
                   {CREW_PANELS.map((panel) => (
-                    <option key={panel} value={panel}>{panel}</option>
+                    <option key={panel} value={panel}>
+                      {panel} · {rosterStatusLabel(getCrewStatusForDate(panel, rosterDate, rosterSettings.roster_anchor_date, rosterSettings.crew_rotation_order))}
+                    </option>
                   ))}
                   {activeShift?.crew && !(CREW_PANELS as readonly string[]).includes(activeShift.crew) && (
                     <option value={activeShift.crew}>{activeShift.crew}</option>
                   )}
                 </select>
+                {activeShift?.crew && (
+                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-slate-700">
+                    {rosterStatusLabel(getCrewStatusForDate(activeShift.crew, rosterDate, rosterSettings.roster_anchor_date, rosterSettings.crew_rotation_order))}
+                  </span>
+                )}
               </label>
             ) : (
               <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-700">
                 {activeShift?.crew || 'No crew'}
+                {activeShift?.crew && (
+                  <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-700">
+                    {rosterStatusLabel(getCrewStatusForDate(activeShift.crew, rosterDate, rosterSettings.roster_anchor_date, rosterSettings.crew_rotation_order))}
+                  </span>
+                )}
               </span>
+            )}
+            {!homeCrew && onSaveHomeCrew && (
+              <label className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-950">
+                <span>Set Home Crew</span>
+                <select
+                  value={homeCrewChoice}
+                  onChange={(event) => {
+                    setHomeCrewChoice(event.target.value);
+                    if (event.target.value) onSaveHomeCrew(event.target.value);
+                  }}
+                  className="min-h-8 rounded border border-amber-300 bg-white px-2 text-xs font-black text-slate-900"
+                  aria-label="Choose your Home Crew"
+                >
+                  <option value="">Choose crew</option>
+                  {CREW_PANELS.map((panel) => <option key={panel} value={panel}>{panel}</option>)}
+                </select>
+              </label>
+            )}
+            {showReliefControls && homeCrew && (
+              <div className="inline-flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-1 text-xs font-bold text-slate-600">
+                  <span className="sr-only">Covering Crew</span>
+                  <select
+                    value={coveringCrew ?? ''}
+                    onChange={(event) => onSetCoveringCrew?.(event.target.value || null)}
+                    className="min-h-9 rounded-full border border-amber-300 bg-white px-3 text-xs font-black text-slate-900"
+                    aria-label="Covering Crew"
+                  >
+                    <option value="">Covering Crew</option>
+                    {CREW_PANELS.filter((panel) => panel !== homeCrew).map((panel) => (
+                      <option key={panel} value={panel}>{panel}</option>
+                    ))}
+                  </select>
+                </label>
+                {coveringCrew ? (
+                  <>
+                    <span className="rounded-full border border-amber-400 bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-950">
+                      Covering {coveringCrew}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onSetCoveringCrew?.(null)}
+                      className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-black text-slate-700"
+                    >
+                      Back to {homeCrew}
+                    </button>
+                  </>
+                ) : (
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
+                    Home: {activeCrew || homeCrew}
+                  </span>
+                )}
+              </div>
             )}
             <span className="text-slate-500">
               {permissions.department === 'training'

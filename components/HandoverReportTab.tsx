@@ -34,6 +34,7 @@ import { siteCover } from '@/utils/crewStanding';
 import { IncomingCrewPicker } from './handover/IncomingCrewPicker';
 import { inWindow, windowFor } from '@/utils/shiftClock';
 import { isWorkshopHandoverMember, workshopHandoverManning, workshopSigners } from '@/utils/workshopHandover';
+import { fallbackMachineSummaries, HandoverAiMachineContext } from '@/utils/handoverMachineSummaries';
 
 const LOG_CATEGORIES: HandoverLogCategory[] = [
   'SAFETY', 'WEATHER', 'MANNING', 'WATCHLIST', 'BRAKE_TEST', 'TOOLING', 'PRIORITY',
@@ -53,6 +54,8 @@ interface HandoverReportTabProps {
   onRolloverShift: (nextCrew?: string) => Promise<boolean>;
   readOnly?: boolean;
   accessLevel?: number;
+  homeCrew?: string | null;
+  coveringCrew?: string | null;
 }
 
 function isLogCategory(value: unknown): value is HandoverLogCategory {
@@ -99,6 +102,8 @@ export default function HandoverReportTab({
   onRolloverShift,
   readOnly = false,
   accessLevel = 2,
+  homeCrew = null,
+  coveringCrew = null,
 }: HandoverReportTabProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -157,6 +162,11 @@ export default function HandoverReportTab({
     [crew, workOrders, assets],
   );
   const signers = useMemo(() => workshopSigners(crew), [crew]);
+  const outgoingSigner = signers.find((person) => person.id === outgoingId)?.name ?? null;
+  const oncomingSigner = signers.find((person) => person.id === oncomingId)?.name ?? null;
+  const reliefSuffix = coveringCrew && homeCrew && coveringCrew !== homeCrew
+    ? ` (Relief Coverage — Home: ${homeCrew})`
+    : '';
   const manningRecord: HandoverManning = {
     panel: manning.panel,
     onShift: manning.onShift.map((person) => person.name),
@@ -164,9 +174,45 @@ export default function HandoverReportTab({
     overtime: manning.overtime.map((person) => person.name),
     unallocated: manning.unallocated.map((person) => person.name),
     assigned: manning.assigned.map((person) => `${person.name} — ${person.detail}`),
-    outgoing: signers.find((person) => person.id === outgoingId)?.name ?? null,
-    oncoming: signers.find((person) => person.id === oncomingId)?.name ?? null,
+    outgoing: outgoingSigner ? `${outgoingSigner}${reliefSuffix}` : null,
+    oncoming: oncomingSigner ? `${oncomingSigner}${reliefSuffix}` : null,
   };
+  const fallbackMachines: HandoverAiMachineContext[] = [...handedOver, ...windowedReleased]
+    .filter((asset, index, list) => list.findIndex((candidate) => candidate.id === asset.id) === index)
+    .map((asset) => {
+      const released = windowedReleased.some((candidate) => candidate.id === asset.id);
+      return {
+        machine_id: asset.id,
+        fleet_id: asset.fleet_id,
+        model: asset.make_model,
+        priority: asset.priority ?? 'P3',
+        expected_up: asset.expected_up,
+        status: released ? 'RELEASED' : 'DOWN',
+        jobs: [],
+        parts: [],
+        shift_notes: notes
+          .filter((note) => note.asset_id === asset.id
+            && (!activeShift?.started_at || note.created_at >= activeShift.started_at))
+          .sort((a, b) => a.created_at.localeCompare(b.created_at))
+          .map((note) => ({ at: note.created_at, by: note.fitter_name ?? '', note: note.note })),
+        updates: shiftLog
+          .filter((entry) => entry.fleet_id?.trim().toUpperCase() === asset.fleet_id.toUpperCase())
+          .sort((a, b) => a.logged_at.localeCompare(b.logged_at))
+          .map((entry) => ({
+            at: entry.logged_at,
+            category: entry.category,
+            details: entry.details,
+            action_required: entry.action_required ?? null,
+          })),
+      };
+    });
+  const fallbackSummaries = fallbackMachineSummaries(fallbackMachines);
+  const populatedMachineSummaries = Object.fromEntries(
+    fallbackMachines.map(({ machine_id }) => [
+      machine_id,
+      machineSummaries[machine_id]?.length ? machineSummaries[machine_id] : fallbackSummaries[machine_id],
+    ]),
+  );
   const liveSnapshot = buildHandoverSnapshot({
     assets,
     handedOver,
@@ -179,7 +225,7 @@ export default function HandoverReportTab({
     shiftStartedAt: activeShift?.started_at ?? null,
     summary,
     machineNotes,
-    machine_summaries: machineSummaries,
+    machine_summaries: populatedMachineSummaries,
     customSlides: slides,
     crew: workshopCrew,
     incomingPanel,
@@ -586,6 +632,8 @@ export default function HandoverReportTab({
               actorName={supervisorName}
               canPrint={accessLevel >= 3}
               aiNotesLoading={aiNotesLoading}
+              homeCrew={homeCrew}
+              coveringCrew={coveringCrew}
               onRefreshAiNotes={() => setAiRefreshRequest((request) => request + 1)}
             >
               <AiHandoverDigest

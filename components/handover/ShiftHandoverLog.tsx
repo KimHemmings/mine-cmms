@@ -45,6 +45,8 @@ interface ShiftHandoverLogProps {
   department?: string;
   canPrint?: boolean;
   aiNotesLoading?: boolean;
+  homeCrew?: string | null;
+  coveringCrew?: string | null;
   onRefreshAiNotes?: () => void;
   children?: ReactNode;
 }
@@ -67,6 +69,8 @@ export default function ShiftHandoverLog({
   department = 'workshop',
   canPrint = false,
   aiNotesLoading = false,
+  homeCrew = null,
+  coveringCrew = null,
   onRefreshAiNotes,
   children,
 }: ShiftHandoverLogProps) {
@@ -150,6 +154,11 @@ export default function ShiftHandoverLog({
           <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 print:text-black">
             Shift Handover & Compliance Register
           </h3>
+          {coveringCrew && homeCrew && coveringCrew !== homeCrew && (
+            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-950 print:border-black print:bg-white">
+              Relief Coverage · Home: {homeCrew}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 print:hidden">
           {!readOnly && onRefreshAiNotes && (

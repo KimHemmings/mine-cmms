@@ -19,6 +19,7 @@ export interface UserProfile {
   access_level: number;
   active: boolean;
   crew_member_id: string | null;
+  crew_name: string | null;
 }
 
 export interface ShiftRecord {

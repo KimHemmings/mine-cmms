@@ -18,7 +18,7 @@ export function useCurrentUser() {
       const { data } = user
         ? await supabase
             .from('profiles')
-            .select('id, display_name, employee_id, role, department, access_level, active, crew_member_id')
+            .select('id, display_name, employee_id, role, department, access_level, active, crew_member_id, crew_name')
             .eq('id', user.id)
             .maybeSingle()
         : { data: null };

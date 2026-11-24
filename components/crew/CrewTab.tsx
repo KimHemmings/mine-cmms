@@ -10,7 +10,7 @@ import { getShiftClock } from '@/utils/shiftClock';
 import { AllocationChoice, defaultAllocationRole, memberAssignments, operatorEquipmentModels, preStartLocation, preStartUnit } from '@/utils/crewAllocation';
 import { crewLetter, coveringLetter, rosterRoleNote, visibleOnCrewTab } from '@/utils/shiftRoster';
 import { OvertimeReason, fatigueGate } from '@/utils/statutoryCompliance';
-import { approvedLeaveOn, shiftDateIso } from '@/utils/crewLeave';
+import { approvedLeaveOn, localDateIso, shiftDateIso } from '@/utils/crewLeave';
 import LeavePlanner from './LeavePlanner';
 import { createClient } from '@/utils/supabase/client';
 import { latestSafetyAwareness } from '@/utils/productionHandoverRecord';
@@ -20,9 +20,20 @@ import CrewMemberForm from './CrewMemberForm';
 import AllocationPill from './AllocationPill';
 import CompetencyBoard from './CompetencyBoard';
 import ShiftExtraModal from './ShiftExtraModal';
+import {
+  getActiveCrewsForDate,
+  getCrewStatusForDate,
+  RosterCrewName,
+  saveRosterCycleSettings,
+} from '@/utils/rosterCycle';
+import { useRosterCycleSettings } from '@/hooks/useRosterCycleSettings';
 
 interface CrewTabProps {
   activeShift: ShiftRecord | null;
+  homeCrew?: string | null;
+  activeCrew?: string | null;
+  coveringCrew?: string | null;
+  onSetCoveringCrew?: (panel: string | null) => void;
   canManageCrew: boolean;
   crossDepartment?: boolean;
   canManageCompetencies?: boolean;
@@ -61,8 +72,20 @@ function shiftCrew(crew: string | null | undefined): CrewPanel | null {
   return (CREW_PANELS as readonly string[]).includes(crew ?? '') ? (crew as CrewPanel) : null;
 }
 
+function formatSwingDate(date: string, weekday: 'short' | null = null) {
+  return new Date(`${date}T12:00:00`).toLocaleDateString('en-AU', {
+    ...(weekday ? { weekday } : {}),
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
 export default function CrewTab({
   activeShift,
+  homeCrew = null,
+  activeCrew = null,
+  coveringCrew = null,
+  onSetCoveringCrew,
   canManageCrew,
   crossDepartment = false,
   canManageCompetencies = false,
@@ -86,13 +109,20 @@ export default function CrewTab({
   onRefresh,
 }: CrewTabProps) {
   const { crew, leave } = useCrewData();
+  const rosterSettings = useRosterCycleSettings();
   const { name: siteName } = useSiteBrand();
   const [showImport, setShowImport] = useState(false);
   const { confirm, showToast } = useFeedback();
   const [pinged, setPinged] = useState<Record<string, true>>({});
   const [pingingId, setPingingId] = useState<string | null>(null);
   const onShiftPanel = shiftCrew(activeShift?.crew);
-  const [selected, setSelected] = useState<CrewFilter>(onShiftPanel ?? 'all');
+  const [selection, setSelection] = useState<{ forCrew: CrewPanel | null; filter: CrewFilter }>(() => ({
+    forCrew: onShiftPanel,
+    filter: onShiftPanel ?? 'all',
+  }));
+  const selected = accessLevel === 3
+    ? shiftCrew(activeCrew) ?? 'all'
+    : selection.forCrew === onShiftPanel ? selection.filter : onShiftPanel ?? 'all';
   const [editor, setEditor] = useState<CrewMember | 'new' | null>(null);
   const [showRemoved, setShowRemoved] = useState(false);
   const [savingAllocation, setSavingAllocation] = useState<string | null>(null);
@@ -103,11 +133,9 @@ export default function CrewTab({
   const [loggingLeave, setLoggingLeave] = useState(false);
 
   const clearExpiredRef = useRef(clearExpiredShiftExtras);
-  clearExpiredRef.current = clearExpiredShiftExtras;
-
   useEffect(() => {
-    if (onShiftPanel) setSelected(onShiftPanel);
-  }, [onShiftPanel]);
+    clearExpiredRef.current = clearExpiredShiftExtras;
+  }, [clearExpiredShiftExtras]);
 
   useEffect(() => {
     void clearExpiredRef.current(crew);
@@ -115,6 +143,7 @@ export default function CrewTab({
 
   const inDepartment = (member: CrewMember) => {
     const memberDepartment = normalizeDepartment(member.department);
+    if (accessLevel === 3 && member.panel !== activeCrew) return false;
     if (!crossDepartment) return memberDepartment === department;
     return departmentFilter === 'all' || memberDepartment === departmentFilter;
   };
@@ -135,6 +164,12 @@ export default function CrewTab({
   };
   const dueOnSheet = shown.filter((member) => !member.away && !member.on_leave);
   const shiftDay = shiftDateIso(activeShift?.shift_date);
+  const rosterDate = activeShift?.shift_date ? shiftDateIso(activeShift.shift_date) : localDateIso();
+  const activeCrews = getActiveCrewsForDate(
+    rosterDate,
+    rosterSettings.roster_anchor_date,
+    rosterSettings.crew_rotation_order,
+  );
   const onRoster = dueOnSheet;
   const unassigned = onRoster.filter((member) => !isAssigned(member)).length;
   const printLabel = selected === 'all' ? 'Print All Crews Pre-Start (PDF)' : `Print ${selected} Pre-Start (PDF)`;
@@ -326,8 +361,37 @@ export default function CrewTab({
           <div>
             <h3 className="text-lg font-black text-slate-900">{rosterTitle || `${departmentLabel(department)} crew`}</h3>
             <p className="text-sm text-slate-500">{department === 'production' ? 'Operators and the machines they are allocated to.' : 'Trades due on the selected crew. Away stays on the list and off the sign-on sheet.'}</p>
+            <p className="mt-1 text-xs font-bold text-slate-700">
+              {formatSwingDate(activeCrews.swingStartWed, 'short')} – {formatSwingDate(activeCrews.swingEndTue, 'short')}
+              {' · '}{activeShift?.shift_type === 'NIGHT' ? 'Night' : 'Day'} {activeCrews.dayOfSwing}/7
+              {' · Day: '}{activeCrews.dayCrew}{' · Night: '}{activeCrews.nightCrew}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {accessLevel === 3 && homeCrew && onSetCoveringCrew && (
+              <div className="inline-flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1">
+                <label className="inline-flex items-center gap-2 text-xs font-black text-amber-950">
+                  Covering Crew
+                  <select
+                    aria-label="Covering Crew"
+                    value={coveringCrew ?? ''}
+                    onChange={(event) => onSetCoveringCrew(event.target.value || null)}
+                    className="min-h-9 rounded-lg border border-amber-300 bg-white px-2 text-xs font-black text-slate-900"
+                  >
+                    <option value="">Not covering</option>
+                    {CREW_PANELS.filter((panel) => panel !== homeCrew).map((panel) => <option key={panel} value={panel}>{panel}</option>)}
+                  </select>
+                </label>
+                {coveringCrew ? (
+                  <>
+                    <span className="rounded-full bg-amber-200 px-2 py-1 text-[10px] font-black text-amber-950">Covering {coveringCrew}</span>
+                    <button type="button" onClick={() => onSetCoveringCrew(null)} className="rounded-full border border-amber-400 bg-white px-2 py-1 text-[10px] font-black text-amber-950">
+                      Back to {homeCrew}
+                    </button>
+                  </>
+                ) : <span className="text-[10px] font-bold text-amber-900">Home Crew: {homeCrew}</span>}
+              </div>
+            )}
             {canManageCrew && (
               <button
                 type="button"
@@ -384,6 +448,13 @@ export default function CrewTab({
           </div>
         </div>
 
+        {accessLevel >= 5 && (
+          <RosterCycleSettingsEditor
+            key={`${rosterSettings.roster_anchor_date}:${rosterSettings.crew_rotation_order.join(',')}`}
+            settings={rosterSettings}
+          />
+        )}
+
         {crossDepartment && (
           <div className="flex flex-wrap gap-2" role="tablist" aria-label="Department">
             {(['all', 'production', 'workshop', 'training'] as const).map((item) => (
@@ -402,28 +473,34 @@ export default function CrewTab({
 
         {showPlanner ? (
           <LeavePlanner
-            members={accessLevel >= 4 ? crew : departmentCrew}
+            members={accessLevel >= 4 ? crew : accessLevel === 3 ? crew.filter((member) => member.panel === activeCrew) : departmentCrew}
             leave={leave}
             accessLevel={accessLevel}
             department={department}
             crossDepartment={accessLevel >= 4}
             signerName={signerName}
             onChanged={() => onRefresh?.()}
+            anchorDate={rosterSettings.roster_anchor_date}
+            rotationOrder={rosterSettings.crew_rotation_order}
+            crewScope={accessLevel === 3 ? activeCrew : undefined}
           />
         ) : null}
 
         {!showPlanner && <>
-        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Crew">
-          {FILTERS.map((filter) => {
+        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Crew">
+          {(accessLevel >= 4 ? FILTERS : FILTERS.filter((filter) => filter.id === selected)).map((filter) => {
             const active = selected === filter.id;
             const onShift = filter.id !== 'all' && filter.id === onShiftPanel;
+            const rosterStatus = filter.id === 'all'
+              ? null
+              : getCrewStatusForDate(filter.id, rosterDate, rosterSettings.roster_anchor_date, rosterSettings.crew_rotation_order);
             return (
               <button
                 key={filter.id}
                 type="button"
                 role="tab"
                 aria-selected={active}
-                onClick={() => setSelected(filter.id)}
+                onClick={() => setSelection({ forCrew: onShiftPanel, filter: filter.id })}
                 className={`min-h-11 px-3 rounded-full border-2 text-sm font-bold inline-flex items-center gap-2 ${
                   active
                     ? 'bg-slate-900 border-slate-900 text-white'
@@ -438,6 +515,11 @@ export default function CrewTab({
                   <span className={`inline-flex items-center gap-1 text-xs font-bold ${active ? 'text-emerald-300' : 'text-emerald-700'}`}>
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
                     On Shift
+                  </span>
+                )}
+                {rosterStatus && (
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${active ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-700'}`}>
+                    {rosterStatus === 'Day' ? 'On Shift · Day' : rosterStatus === 'Night' ? 'Night Shift' : 'R&R'}
                   </span>
                 )}
               </button>
@@ -606,7 +688,7 @@ export default function CrewTab({
       {loggingLeave && (
         <LeavePlanner
           logOnly
-          members={accessLevel >= 4 ? crew : departmentCrew}
+          members={accessLevel >= 4 ? crew : accessLevel === 3 ? crew.filter((member) => member.panel === activeCrew) : departmentCrew}
           leave={leave}
           accessLevel={accessLevel}
           department={department}
@@ -614,6 +696,9 @@ export default function CrewTab({
           signerName={signerName}
           onChanged={() => onRefresh?.()}
           onClose={() => setLoggingLeave(false)}
+          anchorDate={rosterSettings.roster_anchor_date}
+          rotationOrder={rosterSettings.crew_rotation_order}
+          crewScope={accessLevel === 3 ? activeCrew : undefined}
         />
       )}
       {showExtra && (
@@ -629,5 +714,61 @@ export default function CrewTab({
         />
       )}
     </div>
+  );
+}
+
+function RosterCycleSettingsEditor({ settings }: { settings: { roster_anchor_date: string; crew_rotation_order: RosterCrewName[] } }) {
+  const [anchorDate, setAnchorDate] = useState(settings.roster_anchor_date);
+  const [rotationOrder, setRotationOrder] = useState<RosterCrewName[]>(settings.crew_rotation_order);
+  const { showToast } = useFeedback();
+
+  const save = () => {
+    try {
+      saveRosterCycleSettings({
+        roster_anchor_date: anchorDate,
+        crew_rotation_order: rotationOrder,
+      });
+      showToast({ message: 'Roster cycle settings saved' });
+    } catch (error) {
+      showToast({
+        message: error instanceof Error ? error.message : 'Roster cycle settings could not be saved.',
+        tone: 'error',
+      });
+    }
+  };
+
+  return (
+    <details className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <summary className="cursor-pointer text-sm font-black text-slate-800">Roster cycle settings</summary>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <label className="text-xs font-black uppercase text-slate-600">
+          Wednesday anchor
+          <input
+            type="date"
+            value={anchorDate}
+            onChange={(event) => setAnchorDate(event.target.value)}
+            className="mt-1 block min-h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold normal-case text-slate-900"
+          />
+        </label>
+        {rotationOrder.map((panel, index) => (
+          <label key={`rotation-${index}`} className="text-xs font-black uppercase text-slate-600">
+            Rotation {index + 1}
+            <select
+              value={panel}
+              onChange={(event) => setRotationOrder((current) => current.map((crewName, item) =>
+                item === index ? event.target.value as RosterCrewName : crewName
+              ))}
+              className="mt-1 block min-h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold normal-case text-slate-900"
+            >
+              {CREW_PANELS.map((crewName) => <option key={crewName} value={crewName}>{crewName}</option>)}
+            </select>
+          </label>
+        ))}
+        <button type="button" onClick={save} className="min-h-10 rounded-lg bg-slate-900 px-4 text-sm font-black text-white">
+          Save roster cycle
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-slate-500">Saved in this browser. The anchor must be a Wednesday and each crew must appear once.</p>
+    </details>
   );
 }
