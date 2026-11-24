@@ -60,6 +60,7 @@ export interface MachineWorkOrder {
   stage: WorkOrderStage;
   hold_eta?: string | null;
   status: 'OPEN' | 'COMPLETED';
+  priority?: PriorityLevel;
   completed_at: string | null;
   completed_by: string | null;
   created_at: string;

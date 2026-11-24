@@ -40,6 +40,8 @@ export interface OceReport {
 export interface HandoverOrderLine {
   woNumber: string | null;
   task: string;
+  components?: string[];
+  priority?: string | null;
   stage: string;
   fitter: string | null;
   hotshots: { description: string; eta: string | null }[];
@@ -84,12 +86,15 @@ export interface HandoverManning {
 }
 
 export interface HandoverMachineLine {
+  machineId: string;
   fleetId: string;
   makeModel: string;
   location: string;
-  priority: string | null;
+  priority: string;
   expectedUp: string | null;
+  actualUp?: string | null;
   orders: HandoverOrderLine[];
+  shiftNotes: { at: string; by: string; note: string }[];
 }
 
 export interface HandoverDefectLine {
@@ -106,6 +111,7 @@ export interface HandoverMachineNote {
 export interface HandoverSnapshot {
   summary: string | null;
   machineNotes: HandoverMachineNote[];
+  machine_summaries: Record<string, string[]>;
   log: {
     id: string;
     category: string;
@@ -118,7 +124,7 @@ export interface HandoverSnapshot {
   parts: HandoverPartLine[];
   allocation: HandoverAllocation;
   manning: HandoverManning | null;
-  released: { fleetId: string; makeModel: string }[];
+  released: HandoverMachineLine[];
   defectsFixed: HandoverDefectLine[];
   defectsOpen: HandoverDefectLine[];
   safetyIncidents: SafetyIncident[];

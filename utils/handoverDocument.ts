@@ -1,7 +1,8 @@
-import { Asset, CrewMember, DefectItem, HandoverLogEntry, HandoverManning, HandoverSnapshot, MachineWorkOrder, STAGE_OPTIONS } from '@/types';
+import { Asset, CrewMember, DefectItem, HandoverLogEntry, HandoverManning, HandoverSnapshot, HistoryNote, MachineWorkOrder, STAGE_OPTIONS } from '@/types';
 import { normalizeOceBriefing } from '@/utils/oce';
 import { visibleOnCrewTab } from '@/utils/shiftRoster';
 import { isWorkshopHandoverMember } from '@/utils/workshopHandover';
+import { effectivePriority, normalizePriority } from '@/utils/handoverPriority';
 
 interface BuildHandoverInput {
   assets: Asset[];
@@ -10,9 +11,12 @@ interface BuildHandoverInput {
   workOrders: MachineWorkOrder[];
   defects: DefectItem[];
   log: HandoverLogEntry[];
+  notes?: HistoryNote[];
+  shiftId?: string | null;
   shiftStartedAt?: string | null;
   summary: string | null;
   machineNotes?: HandoverSnapshot['machineNotes'];
+  machine_summaries?: HandoverSnapshot['machine_summaries'];
   customSlides: HandoverSnapshot['customSlides'];
   crew?: CrewMember[];
   incomingPanel?: string | null;
@@ -43,6 +47,11 @@ function openOrders(asset: Asset, workOrders: MachineWorkOrder[]) {
   return workOrders.filter((order) => order.asset_id === asset.id && order.status !== 'COMPLETED');
 }
 
+function componentsForAsset(asset: Asset) {
+  return [...new Set([...(asset.component_systems ?? []), asset.component_system]
+    .filter((component): component is string => Boolean(component?.trim())))];
+}
+
 function peopleOnJob(order: MachineWorkOrder, crew: CrewMember[]) {
   const trades = crew.filter((member) => isWorkshopHandoverMember(member));
   const byId = new Map(trades.map((member) => [member.id, member]));
@@ -58,16 +67,35 @@ function peopleOnJob(order: MachineWorkOrder, crew: CrewMember[]) {
   return [{ id: '', display_name: text, department: 'workshop', access_level: 2, trade: '', panel: null, email: null, away: false, shift_duty: null, allocated_machine_id: null, allocated_role: null, hot_seat_assignments: [], passed_out_equipment: [], in_training_equipment: [], competency_updated_by: null, competency_updated_at: null, is_contractor: false, contractor_company: null, overtime_crew_group: null, shift_expires_at: null, active: true, created_at: '' }];
 }
 
-function ordersFor(asset: Asset, workOrders: MachineWorkOrder[], crew: CrewMember[]): HandoverSnapshot['handedOver'][number]['orders'] {
-  return openOrders(asset, workOrders).map((order) => ({
-    woNumber: order.wo_number,
-    task: order.task_description,
-    stage: order.stage,
-    fitter: peopleOnJob(order, crew).map((member) => member.display_name).join(', ') || null,
-    hotshots: (order.parts ?? [])
-      .filter((part) => part.is_special_run)
-      .map((part) => ({ description: part.description || part.part_number || 'Hotshot part', eta: part.eta ?? null })),
-  }));
+function ordersFor(
+  asset: Asset,
+  workOrders: MachineWorkOrder[],
+  crew: CrewMember[],
+  includeCompleted = false,
+): HandoverSnapshot['handedOver'][number]['orders'] {
+  const lines = workOrders
+    .filter((order) => order.asset_id === asset.id && (includeCompleted ? order.status === 'COMPLETED' : order.status !== 'COMPLETED'))
+    .map((order) => ({
+      woNumber: order.wo_number,
+      task: order.task_description,
+      components: order.component_systems?.length ? order.component_systems : componentsForAsset(asset),
+      priority: order.priority ?? null,
+      stage: order.stage,
+      fitter: peopleOnJob(order, crew).map((member) => member.display_name).join(', ') || null,
+      hotshots: (order.parts ?? [])
+        .filter((part) => part.is_special_run)
+        .map((part) => ({ description: part.description || part.part_number || 'Hotshot part', eta: part.eta ?? null })),
+    }));
+  if (lines.length > 0 || includeCompleted || !asset.shift_task) return lines;
+  return [{
+    woNumber: asset.work_order_num ?? null,
+    task: asset.shift_task,
+    components: componentsForAsset(asset),
+    priority: null,
+    stage: asset.shift_stage || 'IN_PROGRESS',
+    fitter: asset.fitter_assigned || null,
+    hotshots: [],
+  }];
 }
 
 export function buildHandoverSnapshot({
@@ -77,9 +105,12 @@ export function buildHandoverSnapshot({
   workOrders,
   defects,
   log,
+  notes = [],
+  shiftId = null,
   shiftStartedAt = null,
   summary,
   machineNotes = [],
+  machine_summaries = {},
   customSlides,
   crew = [],
   incomingPanel = null,
@@ -97,6 +128,11 @@ export function buildHandoverSnapshot({
     fleetId: fleetOf.get(defect.asset_id) ?? null,
     description: defect.description,
   });
+  const shiftNotesFor = (asset: Asset) =>
+    notes
+      .filter((note) => note.asset_id === asset.id && (!shiftStartedAt || note.created_at >= shiftStartedAt))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+      .map((note) => ({ at: note.created_at, by: note.fitter_name, note: note.note }));
 
   const parts = handedOver.flatMap((asset) =>
     openOrders(asset, workOrders).flatMap((order) =>
@@ -148,19 +184,44 @@ export function buildHandoverSnapshot({
   return {
     summary: summary?.trim() || null,
     machineNotes: machineNotes.filter((note) => note.fleetId.trim() && note.summary.trim()),
+    machine_summaries,
     log,
     handedOver: handedOver.map((asset) => ({
+      machineId: asset.id,
       fleetId: asset.fleet_id,
       makeModel: asset.make_model,
       location: asset.location || 'Workshop',
-      priority: asset.priority,
+      priority: effectivePriority(asset.priority, openOrders(asset, workOrders).map((order) => order.priority)),
       expectedUp: asset.expected_up,
+      actualUp: asset.actual_up,
       orders: ordersFor(asset, workOrders, crew),
+      shiftNotes: shiftNotesFor(asset),
     })),
     parts,
     allocation: { panel: incomingPanel, people, withOutgoing, needsName },
     manning,
-    released: released.map((asset) => ({ fleetId: asset.fleet_id, makeModel: asset.make_model })),
+    released: released.map((asset) => ({
+      machineId: asset.id,
+      fleetId: asset.fleet_id,
+      makeModel: asset.make_model,
+      location: asset.location || 'Workshop',
+      priority: effectivePriority(
+        asset.priority,
+        workOrders
+          .filter((order) => order.asset_id === asset.id
+            && (order.shift_id === shiftId || (shiftStartedAt && order.completed_at && order.completed_at >= shiftStartedAt)))
+          .map((order) => order.priority),
+      ),
+      expectedUp: asset.expected_up,
+      actualUp: asset.actual_up,
+      orders: ordersFor(
+        asset,
+        workOrders.filter((order) => order.shift_id === shiftId || (shiftStartedAt && order.completed_at && order.completed_at >= shiftStartedAt)),
+        crew,
+        true,
+      ),
+      shiftNotes: shiftNotesFor(asset),
+    })),
     defectsFixed: defects.filter((defect) => {
       if (defect.status !== 'FIXED_THIS_SHIFT' || !defect.rectified_at || !shiftStartedAt) return false;
       return new Date(defect.rectified_at) >= new Date(shiftStartedAt);
@@ -180,12 +241,35 @@ export function normalizeHandoverDocument(document: Partial<HandoverSnapshot> | 
   return {
     summary: document?.summary ?? null,
     machineNotes: document?.machineNotes ?? [],
+    machine_summaries: document?.machine_summaries ?? {},
     log: document?.log ?? [],
-    handedOver: document?.handedOver ?? [],
+    handedOver: (document?.handedOver ?? []).map((machine) => ({
+      ...machine,
+      machineId: machine.machineId ?? machine.fleetId,
+      priority: effectivePriority(machine.priority, (machine.orders ?? []).map((order) => order.priority)),
+      orders: (machine.orders ?? []).map((order) => ({
+        ...order,
+        priority: normalizePriority(order.priority),
+        components: order.components ?? [],
+      })),
+      shiftNotes: machine.shiftNotes ?? [],
+    })),
     parts: document?.parts ?? [],
     allocation: document?.allocation ?? { panel: null, people: [], withOutgoing: [], needsName: [] },
     manning: document?.manning ?? null,
-    released: document?.released ?? [],
+    released: (document?.released ?? []).map((machine) => ({
+      ...machine,
+      machineId: machine.machineId ?? machine.fleetId,
+      location: machine.location ?? 'Workshop',
+      priority: effectivePriority(machine.priority, (machine.orders ?? []).map((order) => order.priority)),
+      expectedUp: machine.expectedUp ?? null,
+      orders: (machine.orders ?? []).map((order) => ({
+        ...order,
+        priority: normalizePriority(order.priority),
+        components: order.components ?? [],
+      })),
+      shiftNotes: machine.shiftNotes ?? [],
+    })),
     defectsFixed: document?.defectsFixed ?? [],
     defectsOpen: document?.defectsOpen ?? [],
     safetyIncidents: document?.safetyIncidents ?? [],

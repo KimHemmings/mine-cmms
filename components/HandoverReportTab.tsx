@@ -110,6 +110,9 @@ export default function HandoverReportTab({
   const [slides, setSlides] = useState<HandoverSlide[]>([]);
   const [summary, setSummary] = useState('');
   const [machineNotes, setMachineNotes] = useState<HandoverMachineNote[]>([]);
+  const [machineSummaries, setMachineSummaries] = useState<Record<string, string[]>>({});
+  const [aiRefreshRequest, setAiRefreshRequest] = useState(0);
+  const [aiNotesLoading, setAiNotesLoading] = useState(false);
   const [incidents, setIncidents] = useState<SafetyIncident[]>([]);
   const [safetyFocus, setSafetyFocus] = useState('');
   const [oceReport, setOceReport] = useState<OceReport | null>(null);
@@ -137,9 +140,12 @@ export default function HandoverReportTab({
 
   const bounds = windowFor(reportWindow);
   const inReport = (iso?: string | null) => inWindow(iso, bounds.start, bounds.end);
-  const windowedOrders = workOrders.filter((order) => inReport(order.created_at) || inReport(order.completed_at));
-  const windowedNotes = notes.filter((note) => inReport(note.created_at));
   const windowedLog = handoverLog.filter((entry) => inReport(entry.logged_at) && entry.department !== 'production' && entry.department !== 'training');
+  const shiftLog = handoverLog.filter((entry) =>
+    entry.department !== 'production'
+    && entry.department !== 'training'
+    && (!activeShift?.started_at || entry.logged_at >= activeShift.started_at)
+  );
   const windowedReleased = completedJobs.filter((asset) => inReport(asset.actual_up));
   const viewedPanel = incomingPanel ?? activeShift?.crew ?? null;
   const manning = useMemo(
@@ -165,12 +171,15 @@ export default function HandoverReportTab({
     assets,
     handedOver,
     released: windowedReleased,
-    workOrders: windowedOrders,
+    workOrders,
     defects,
-    log: windowedLog,
+    log: shiftLog,
+    notes,
+    shiftId: activeShift?.id ?? null,
     shiftStartedAt: activeShift?.started_at ?? null,
     summary,
     machineNotes,
+    machine_summaries: machineSummaries,
     customSlides: slides,
     crew: workshopCrew,
     incomingPanel,
@@ -203,6 +212,7 @@ export default function HandoverReportTab({
       setSlides(savedForShift.document.customSlides ?? []);
       setSummary(savedForShift.document.summary ?? '');
       setMachineNotes(savedForShift.document.machineNotes ?? []);
+      setMachineSummaries(savedForShift.document.machine_summaries ?? {});
       setIncidents(savedForShift.document.safetyIncidents ?? []);
       setSafetyFocus(savedForShift.document.safetyFocus ?? '');
     }
@@ -231,6 +241,9 @@ export default function HandoverReportTab({
     setIncomingPanel(null);
     setOutgoingId('');
     setOncomingId('');
+    setSummary('');
+    setMachineNotes([]);
+    setMachineSummaries({});
   }
 
   useEffect(() => {
@@ -572,28 +585,30 @@ export default function HandoverReportTab({
               onOncoming={setOncomingId}
               actorName={supervisorName}
               canPrint={accessLevel >= 3}
-            />
-          </div>
-
-          <details className="mt-6 rounded-xl border border-slate-200 p-4">
-            <summary className="text-sm font-black text-slate-800 cursor-pointer">Add a written summary</summary>
-            <div className="mt-4">
+              aiNotesLoading={aiNotesLoading}
+              onRefreshAiNotes={() => setAiRefreshRequest((request) => request + 1)}
+            >
               <AiHandoverDigest
                 activeShift={activeShift}
                 shiftJobs={shiftJobs}
                 completedJobs={windowedReleased}
-                workOrders={windowedOrders}
-                notes={windowedNotes}
-                logEntries={windowedLog}
+                workOrders={workOrders}
+                notes={notes}
+                logEntries={shiftLog}
+                crew={workshopCrew}
                 summaryText={summary}
-                machineNotes={machineNotes}
-                onSummaryGenerated={(text, notesForMachines) => {
+                machineSummaries={machineSummaries}
+                generateRequest={aiRefreshRequest}
+                onGeneratingChange={setAiNotesLoading}
+                onMachineSummariesChange={setMachineSummaries}
+                onSummaryGenerated={(text, summaries) => {
                   setSummary(text);
-                  setMachineNotes(notesForMachines);
+                  setMachineSummaries(summaries);
+                  setMachineNotes([]);
                 }}
               />
-            </div>
-          </details>
+            </ShiftHandoverLog>
+          </div>
 
         </>
       )}

@@ -77,6 +77,9 @@ export default function HandoverHistory({ handovers, activeShiftId, onOpen }: Ha
                   {' · '}{handover.supervisor || 'Supervisor not recorded'}
                   {' · '}Saved {formatDateTime(handover.saved_at)}
                   {' · '}{handover.document.handedOver.length} still down, {handover.document.released.length} released
+                  {Object.keys(handover.document.machine_summaries ?? {}).length > 0
+                    ? ` · AI notes for ${Object.keys(handover.document.machine_summaries).length} units`
+                    : ''}
                 </span>
               </button>
             </li>

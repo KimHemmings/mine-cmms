@@ -40,4 +40,23 @@ body {
     size: A4 portrait;
     margin: 12mm;
   }
+
+  @page handover-landscape {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  .handover-print-document {
+    page: handover-landscape;
+  }
+
+  .handover-print-document tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .handover-print-document .handover-briefing {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }

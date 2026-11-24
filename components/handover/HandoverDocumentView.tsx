@@ -1,9 +1,10 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { HandoverCarryJob, HandoverLogCategory, HandoverSnapshot } from '@/types';
+import { HandoverCarryJob, HandoverLogCategory, HandoverMachineLine, HandoverSnapshot } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
 import { partStatusLabel, stageLabel } from '@/utils/handoverDocument';
+import { compareHandoverMachines, normalizePriority, priorityBadgeClass } from '@/utils/handoverPriority';
 
 interface HandoverDocumentViewProps {
   shiftName: string;
@@ -25,9 +26,9 @@ const NOTE_ORDER: { category: HandoverLogCategory; title: string }[] = [
   { category: 'TOOLING', title: 'Tooling and rigging' },
 ];
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, children, className = '' }: { title: string; children: ReactNode; className?: string }) {
   return (
-    <section className="mt-6">
+    <section className={`mt-6 ${className}`}>
       <h3 className="text-sm font-black uppercase tracking-wide text-slate-800 border-b-2 border-slate-900 pb-1 mb-3">
         {title}
       </h3>
@@ -37,7 +38,93 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function jobText(job: HandoverCarryJob) {
-  return `${job.woNumber ? `WO ${job.woNumber}: ` : ''}${job.task}`;
+  return `${workOrderLabel(job.woNumber, ': ')}${job.task}`;
+}
+
+function workOrderLabel(value: string | null, suffix: string) {
+  const workOrder = value?.trim().replace(/^WO\s+(WO-)/i, '$1');
+  if (!workOrder) return '';
+  return `${/^WO/i.test(workOrder) ? '' : 'WO '}${workOrder}${suffix}`;
+}
+
+function inlineBriefingText(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={index}>{part.replaceAll('**', '').replaceAll('#', '')}</span>;
+  });
+}
+
+function BriefingNotes({ text }: { text: string }) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  while (lines.length > 0 && /^#{1,6}\s/.test(lines[0])) lines.shift();
+  const bullets = lines.filter((line) => /^-\s+/.test(line));
+  const otherLines = lines.filter((line) => !/^-\s+/.test(line));
+
+  return (
+    <div className="space-y-1 text-sm leading-relaxed">
+      {bullets.length > 0 && (
+        <ul className="list-disc space-y-1 pl-5">
+          {bullets.map((line, index) => (
+            <li key={`bullet-${index}`}>{inlineBriefingText(line.replace(/^-\s+/, ''))}</li>
+          ))}
+        </ul>
+      )}
+      {otherLines.map((line, index) => (
+        <p key={`line-${index}`}>{inlineBriefingText(line.replace(/^#{1,6}\s*/, ''))}</p>
+      ))}
+    </div>
+  );
+}
+
+function MachineJobNotes({
+  machine,
+  summaries,
+  log,
+}: {
+  machine: HandoverMachineLine;
+  summaries: Record<string, string[]>;
+  log: HandoverSnapshot['log'];
+}) {
+  const rawNotes = [
+    ...machine.shiftNotes.map((note) => `${note.at ? `${formatDateTime(note.at)} · ` : ''}${note.by ? `${note.by}: ` : ''}${note.note}`),
+    ...log
+      .filter((entry) => entry.fleet_id?.trim().toUpperCase() === machine.fleetId.toUpperCase())
+      .map((entry) => `${formatDateTime(entry.logged_at)} · ${entry.category}: ${entry.details}${entry.action_required ? ` · Action: ${entry.action_required}` : ''}`),
+  ];
+  const machineSummary = summaries[machine.machineId] ?? summaries[machine.fleetId];
+
+  return (
+    <div className="space-y-2">
+      {machine.orders.length === 0 ? (
+        <p className="font-bold">No job recorded</p>
+      ) : machine.orders.map((order, index) => (
+        <div key={`${machine.fleetId}-${index}`}>
+          <p className="font-bold">{order.components?.join(' / ') || 'Workshop'} — {order.task}</p>
+          <p className="text-xs text-slate-500">{workOrderLabel(order.woNumber, ' · ')}{stageLabel(order.stage)}</p>
+        </div>
+      ))}
+      {machineSummary && machineSummary.length > 0 && (
+        <div className="break-inside-avoid rounded-md bg-indigo-50/70 px-2.5 py-2 print:bg-transparent print:p-0">
+          <span className="mr-2 inline-flex rounded border border-indigo-200 px-1.5 py-0.5 align-middle text-[9px] font-black uppercase tracking-wide text-indigo-700 print:text-black">
+            AI
+          </span>
+          <ul className="inline-block list-disc pl-4 align-top text-sm">
+            {machineSummary.map((bullet, index) => <li key={`${machine.fleetId}-summary-${index}`}>{bullet}</li>)}
+          </ul>
+        </div>
+      )}
+      {rawNotes.length > 0 && (
+        <details className="print:hidden">
+          <summary className="cursor-pointer text-xs font-bold text-slate-500">View raw shift notes ({rawNotes.length})</summary>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-slate-600">
+            {rawNotes.map((note, index) => <li key={`${machine.fleetId}-raw-${index}`}>{note}</li>)}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
 }
 
 export default function HandoverDocumentView({
@@ -52,6 +139,8 @@ export default function HandoverDocumentView({
 }: HandoverDocumentViewProps) {
   const dateLabel = shiftDate ? new Date(shiftDate).toLocaleDateString() : '';
   const allocation = document.allocation ?? { panel: null, people: [], withOutgoing: [], needsName: [] };
+  const handedOverMachines = [...document.handedOver].sort(compareHandoverMachines);
+  const releasedMachines = [...document.released].sort(compareHandoverMachines);
   const parts = document.parts ?? [];
   const safetyLog = document.log.filter((entry) => entry.category === 'SAFETY');
   const incidents = document.safetyIncidents ?? [];
@@ -64,7 +153,7 @@ export default function HandoverDocumentView({
     .filter((group) => group.entries.length > 0);
 
   return (
-    <article className="bg-white text-slate-900">
+    <article className="handover-print-document bg-white text-slate-900">
       <header className="border-b-4 border-slate-900 pb-3">
         <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Maintenance shift handover</p>
         <h2 className="text-2xl font-black tracking-tight mt-1">{shiftName}{crew ? ` · ${crew}` : ''}</h2>
@@ -77,8 +166,8 @@ export default function HandoverDocumentView({
       </header>
 
       {document.summary && (
-        <Section title="Shift briefing">
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">{document.summary}</p>
+        <Section title="Shift briefing" className="handover-briefing break-inside-avoid">
+          <BriefingNotes text={document.summary} />
         </Section>
       )}
 
@@ -141,7 +230,7 @@ export default function HandoverDocumentView({
       </Section>
 
       {(document.machineNotes ?? []).length > 0 && (
-        <Section title="What was noted this shift">
+        <Section title="What was noted this shift" className="break-inside-avoid">
           <ul className="text-sm space-y-1">
             {(document.machineNotes ?? []).map((note) => (
               <li key={note.fleetId}><strong>{note.fleetId}.</strong> {note.summary}</li>
@@ -170,48 +259,32 @@ export default function HandoverDocumentView({
         ) : allocation.people.length === 0 ? (
           <p className="text-sm text-slate-500">No one is rostered on {allocation.panel}.</p>
         ) : (
-          <div className="space-y-3">
-            {allocation.people.map((person) => (
+          <div className="space-y-2">
+            {allocation.people.filter((person) => person.jobs.length > 0).map((person) => (
               <div key={person.name}>
                 <p className="text-sm font-black text-slate-900">
                   {person.name}{person.trade ? <span className="font-bold text-slate-500"> · {person.trade}</span> : null}
                 </p>
-                {person.jobs.length === 0 ? (
-                  <p className="text-sm text-slate-500">No job allocated.</p>
-                ) : (
-                  <ul className="text-sm">
-                    {person.jobs.map((job, index) => (
-                      <li key={`${person.name}-${job.fleetId}-${index}`}>
-                        <strong>{job.fleetId}</strong> · {jobText(job)}
-                        <span className="text-slate-500"> · {stageLabel(job.stage)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <ul className="text-sm">
+                  {person.jobs.map((job, index) => (
+                    <li key={`${person.name}-${job.fleetId}-${index}`}>
+                      <strong>{job.fleetId}</strong> · {jobText(job)}
+                      <span className="text-slate-500"> · {stageLabel(job.stage)}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ))}
-          </div>
-        )}
-        {allocation.needsName.length > 0 && (
-          <div className="mt-3">
-            <p className="text-sm font-black text-slate-900">Needs a name</p>
-            <ul className="text-sm">
-              {allocation.needsName.map((job, index) => (
-                <li key={`need-${job.fleetId}-${index}`}><strong>{job.fleetId}</strong> · {jobText(job)} · {stageLabel(job.stage)}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {allocation.withOutgoing.length > 0 && (
-          <div className="mt-3">
-            <p className="text-sm font-black text-slate-900">Still with someone going off</p>
-            <ul className="text-sm">
-              {allocation.withOutgoing.map((job, index) => (
-                <li key={`out-${job.fleetId}-${index}`}>
-                  <strong>{job.fleetId}</strong> · {jobText(job)} · {job.names.join(', ')} · {stageLabel(job.stage)}
-                </li>
-              ))}
-            </ul>
+            {allocation.people.some((person) => person.jobs.length === 0) && (
+              <p className="break-inside-avoid text-sm">
+                <strong>Available / Unallocated Crew ({allocation.people.filter((person) => person.jobs.length === 0).length}): </strong>
+                {allocation.people
+                  .filter((person) => person.jobs.length === 0)
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((person) => `${person.name}${person.trade ? ` (${person.trade})` : ''}`)
+                  .join(', ')}
+              </p>
+            )}
           </div>
         )}
       </Section>
@@ -249,41 +322,38 @@ export default function HandoverDocumentView({
         )}
       </Section>
 
-      <Section title={`Still down (${document.handedOver.length})`}>
-        {document.handedOver.length === 0 ? (
+      <Section title={`Still down (${handedOverMachines.length})`}>
+        {handedOverMachines.length === 0 ? (
           <p className="text-sm text-slate-500">No machines handed over.</p>
         ) : (
-          <table className="w-full text-sm text-left">
+          <table className="w-full table-fixed text-sm text-left">
             <thead>
               <tr className="text-xs uppercase text-slate-500">
-                <th className="py-1 pr-3 font-bold">Unit</th>
-                <th className="py-1 pr-3 font-bold">Open job</th>
-                <th className="py-1 pr-3 font-bold">Crew</th>
-                <th className="py-1 font-bold">Expected back</th>
+                <th className="w-[16%] py-1 pr-3 font-bold">Unit</th>
+                <th className="w-[56%] py-1 pr-3 font-bold">Job & shift notes</th>
+                <th className="w-[16%] py-1 pr-3 font-bold">Crew</th>
+                <th className="w-[12%] py-1 font-bold">Expected back</th>
               </tr>
             </thead>
             <tbody>
-              {document.handedOver.map((machine) => (
-                <tr key={machine.fleetId} className="border-t border-slate-200 align-top">
-                  <td className="py-2 pr-3 whitespace-nowrap">
-                    <strong>{machine.fleetId}</strong>
+              {handedOverMachines.map((machine) => (
+                <tr key={machine.fleetId} className="break-inside-avoid border-t border-slate-200 align-top">
+                  <td className="w-[16%] py-2 pr-3 whitespace-nowrap print:py-1.5">
+                    <strong>{machine.fleetId}</strong>{' '}
+                    <span className={`inline-flex items-center rounded border px-1.5 py-0.5 align-middle text-[10px] ${priorityBadgeClass(machine.priority)} print:bg-white print:text-black print:border-black`}>
+                      [{normalizePriority(machine.priority)}]
+                    </span>
                     <span className="block text-xs text-slate-500">{machine.makeModel} · {machine.location}</span>
-                    {machine.priority && <span className="text-xs font-bold">{machine.priority}</span>}
                   </td>
-                  <td className="py-2 pr-3">
-                    {machine.orders.length === 0 ? (
-                      <span className="text-slate-500">No open job</span>
-                    ) : machine.orders.map((order, index) => (
-                      <p key={`${machine.fleetId}-${index}`}>
-                        {order.woNumber ? `WO ${order.woNumber}: ` : ''}{order.task}
-                        <span className="text-slate-500"> · {stageLabel(order.stage)}</span>
-                      </p>
-                    ))}
+                  <td className="w-[56%] py-2 pr-3 print:py-1.5">
+                    <MachineJobNotes machine={machine} summaries={document.machine_summaries} log={document.log} />
                   </td>
-                  <td className="py-2 pr-3 whitespace-nowrap">
-                    {machine.orders.map((order) => order.fitter).filter(Boolean).join(', ') || 'Unassigned'}
+                  <td className="w-[16%] py-2 pr-3 whitespace-nowrap print:py-1.5">
+                    {machine.orders.map((order) => order.fitter).filter(Boolean).join(', ') || (
+                      <span className="font-bold text-amber-800">Unassigned</span>
+                    )}
                   </td>
-                  <td className="py-2 whitespace-nowrap">{formatDateTime(machine.expectedUp)}</td>
+                  <td className="w-[12%] py-2 whitespace-nowrap print:py-1.5">{formatDateTime(machine.expectedUp)}</td>
                 </tr>
               ))}
             </tbody>
@@ -291,11 +361,42 @@ export default function HandoverDocumentView({
         )}
       </Section>
 
-      <Section title={`Released this shift (${document.released.length})`}>
-        {document.released.length === 0 ? (
+      <Section title={`Released this shift (${releasedMachines.length})`}>
+        {releasedMachines.length === 0 ? (
           <p className="text-sm text-slate-500">No machines released.</p>
         ) : (
-          <p className="text-sm font-bold">{document.released.map((machine) => `${machine.fleetId} (${machine.makeModel})`).join(' · ')}</p>
+          <table className="w-full table-fixed text-sm text-left">
+            <thead>
+              <tr className="text-xs uppercase text-slate-500">
+                <th className="w-[16%] py-1 pr-3 font-bold">Unit</th>
+                <th className="w-[56%] py-1 pr-3 font-bold">Job & shift notes</th>
+                <th className="w-[16%] py-1 pr-3 font-bold">Crew</th>
+                <th className="w-[12%] py-1 font-bold">Release time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {releasedMachines.map((machine) => (
+                <tr key={machine.fleetId} className="break-inside-avoid border-t border-slate-200 align-top">
+                  <td className="w-[16%] py-2 pr-3 whitespace-nowrap print:py-1.5">
+                    <strong>{machine.fleetId}</strong>{' '}
+                    <span className={`inline-flex items-center rounded border px-1.5 py-0.5 align-middle text-[10px] ${priorityBadgeClass(machine.priority)} print:bg-white print:text-black print:border-black`}>
+                      [{normalizePriority(machine.priority)}]
+                    </span>
+                    <span className="block text-xs text-slate-500">{machine.makeModel} · {machine.location}</span>
+                  </td>
+                  <td className="w-[56%] py-2 pr-3 print:py-1.5">
+                    <MachineJobNotes machine={machine} summaries={document.machine_summaries} log={document.log} />
+                  </td>
+                  <td className="w-[16%] py-2 pr-3 whitespace-nowrap print:py-1.5">
+                    {machine.orders.map((order) => order.fitter).filter(Boolean).join(', ') || (
+                      <span className="font-bold text-amber-800">Unassigned</span>
+                    )}
+                  </td>
+                  <td className="w-[12%] py-2 whitespace-nowrap print:py-1.5">{formatDateTime(machine.actualUp ?? null)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </Section>
 

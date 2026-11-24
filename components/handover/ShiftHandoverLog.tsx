@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { ReactNode, useState, useEffect, useRef } from 'react';
 import { HandoverLogEntry, HandoverLogCategory } from '@/types';
-import { Plus, Trash2, ClipboardList, AlertTriangle, Printer } from 'lucide-react';
+import { Plus, Trash2, ClipboardList, AlertTriangle, Printer, Sparkles } from 'lucide-react';
 import DictationMicButton, { useDictationTarget } from '@/components/ui/DictationMicButton';
 import ManagementDirectives from '@/components/ManagementDirectives';
 import { clearHandoverDraft, handoverDraftKey, readHandoverDraft, writeHandoverDraft } from '@/utils/handoverDraft';
@@ -44,6 +44,9 @@ interface ShiftHandoverLogProps {
   shiftName?: string | null;
   department?: string;
   canPrint?: boolean;
+  aiNotesLoading?: boolean;
+  onRefreshAiNotes?: () => void;
+  children?: ReactNode;
 }
 
 export default function ShiftHandoverLog({
@@ -63,6 +66,9 @@ export default function ShiftHandoverLog({
   shiftName = null,
   department = 'workshop',
   canPrint = false,
+  aiNotesLoading = false,
+  onRefreshAiNotes,
+  children,
 }: ShiftHandoverLogProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [category, setCategory] = useState<HandoverLogCategory>('SAFETY');
@@ -118,7 +124,7 @@ export default function ShiftHandoverLog({
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl shadow-sm print:border-black print:shadow-none overflow-hidden font-sans">
+    <div aria-busy={aiNotesLoading} className="bg-white border border-slate-200 rounded-xl shadow-sm print:border-black print:shadow-none overflow-hidden font-sans">
       <div className="p-3 border-b border-slate-200">
         <ManagementDirectives actorName={actorName} department="workshop" />
       </div>
@@ -146,6 +152,17 @@ export default function ShiftHandoverLog({
           </h3>
         </div>
         <div className="flex items-center gap-2 print:hidden">
+          {!readOnly && onRefreshAiNotes && (
+            <button
+              type="button"
+              onClick={onRefreshAiNotes}
+              disabled={aiNotesLoading}
+              className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide bg-indigo-600 text-white px-2.5 py-1 rounded hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {aiNotesLoading ? 'Writing AI Notes' : 'Refresh AI Notes'}
+            </button>
+          )}
           {canPrint && (
             <button
               type="button"
@@ -255,7 +272,7 @@ export default function ShiftHandoverLog({
               {entries.map((item) => {
                 const cfg = CATEGORY_CONFIG[item.category] || CATEGORY_CONFIG.SAFETY;
                 return (
-                  <tr key={item.id} className="hover:bg-slate-50/60">
+                  <tr key={item.id} className="break-inside-avoid hover:bg-slate-50/60">
                     <td className="p-2.5">
                       <select
                         value={item.category}
@@ -291,6 +308,7 @@ export default function ShiftHandoverLog({
           </table>
         )}
       </div>
+      {children && <div className="border-t border-slate-200 p-3">{children}</div>}
     </div>
   );
 }

@@ -1,89 +1,207 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Sparkles, Copy, Check, RefreshCw } from 'lucide-react';
-import { Asset, MachineWorkOrder, HistoryNote, ShiftRecord, HandoverLogEntry, HandoverMachineNote } from '@/types';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Check, Copy, RefreshCw, Sparkles } from 'lucide-react';
+import { Asset, CrewMember, HistoryNote, HandoverLogEntry, MachineWorkOrder, ShiftRecord } from '@/types';
+import {
+  fallbackMachineSummaries,
+  HandoverAiMachineContext,
+  limitMachineBullets,
+  normalizeMachineSummaries,
+} from '@/utils/handoverMachineSummaries';
 import { handoverNotesFor } from '@/utils/handoverNotes';
-
+import { comparePriorityThenUnit, effectivePriority, normalizePriority, priorityBadgeClass } from '@/utils/handoverPriority';
 
 interface AiHandoverDigestProps {
   activeShift: ShiftRecord | null;
-  shiftJobs?: Asset[];
-  completedJobs?: Asset[];
-  workOrders?: MachineWorkOrder[];
-  notes?: HistoryNote[];
-  logEntries?: HandoverLogEntry[];
-  summaryText?: string;
-  machineNotes?: HandoverMachineNote[];
-  onSummaryGenerated?: (summary: string, machineNotes: HandoverMachineNote[]) => void;
+  shiftJobs: Asset[];
+  completedJobs: Asset[];
+  workOrders: MachineWorkOrder[];
+  notes: HistoryNote[];
+  logEntries: HandoverLogEntry[];
+  crew: CrewMember[];
+  summaryText: string;
+  machineSummaries: Record<string, string[]>;
+  generateRequest: number;
+  onGeneratingChange: (loading: boolean) => void;
+  onMachineSummariesChange: (summaries: Record<string, string[]>) => void;
+  onSummaryGenerated: (summary: string, summaries: Record<string, string[]>, offlineFallback: boolean) => void;
+}
+
+function isInShift(timestamp: string | null | undefined, shiftStart: number | null) {
+  return shiftStart === null || (timestamp ? new Date(timestamp).getTime() >= shiftStart : false);
+}
+
+function renderInlineMarkdown(value: string) {
+  return value.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index}>{part.slice(2, -2).replaceAll('#', '')}</strong>;
+    }
+    return <React.Fragment key={index}>{part.replaceAll('**', '').replaceAll('#', '')}</React.Fragment>;
+  });
+}
+
+function ExecutiveBriefing({ text }: { text: string }) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  while (lines.length > 0 && /^#{1,6}\s/.test(lines[0])) lines.shift();
+  const bullets = lines.filter((line) => /^[-*]\s+/.test(line));
+  const otherLines = lines.filter((line) => !/^[-*]\s+/.test(line));
+
+  return (
+    <div className="break-inside-avoid space-y-1">
+      {bullets.length > 0 && (
+        <ul className="list-disc space-y-1 pl-5">
+          {bullets.map((line, index) => {
+            const content = line.replace(/^[-*]\s+/, '');
+            const labeled = content.match(/^\*\*(.+?)\*\*:?\s*(.*)$/);
+            if (labeled) {
+              return (
+                <li key={`bullet-${index}`} className="text-sm leading-relaxed">
+                  <strong>{labeled[1].replaceAll('#', '')}{labeled[1].endsWith(':') ? '' : ':'}</strong>
+                  {labeled[2] ? <> {renderInlineMarkdown(labeled[2])}</> : null}
+                </li>
+              );
+            }
+
+            return (
+              <li key={`bullet-${index}`} className="text-sm leading-relaxed">
+                {renderInlineMarkdown(content)}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {otherLines.map((line, index) => (
+        <p key={`line-${index}`} className="text-sm leading-relaxed">
+          {renderInlineMarkdown(line.replace(/^#{1,6}\s*/, ''))}
+        </p>
+      ))}
+    </div>
+  );
 }
 
 export default function AiHandoverDigest({
   activeShift,
-  shiftJobs = [],
-  completedJobs = [],
-  workOrders = [],
-  notes = [],
-  logEntries = [],
-  summaryText = '',
-  machineNotes = [],
+  shiftJobs,
+  completedJobs,
+  workOrders,
+  notes,
+  logEntries,
+  crew,
+  summaryText,
+  machineSummaries,
+  generateRequest,
+  onGeneratingChange,
+  onMachineSummariesChange,
   onSummaryGenerated,
 }: AiHandoverDigestProps) {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [usedOfflineFallback, setUsedOfflineFallback] = useState(false);
+  const generationLock = useRef(false);
+  const handledRequest = useRef(0);
+  const machineLabels = new Map([...shiftJobs, ...completedJobs].map((asset) => {
+    const jobs = workOrders.filter((order) => order.asset_id === asset.id && (
+      order.status === 'OPEN'
+      || order.shift_id === activeShift?.id
+      || (activeShift?.started_at && order.completed_at && order.completed_at >= activeShift.started_at)
+    ));
+    return [asset.id, {
+      unit: asset.fleet_id,
+      model: asset.make_model,
+      priority: effectivePriority(asset.priority, jobs.map((order) => order.priority)),
+    }] as const;
+  }));
+  const machineLabel = (machineId: string) => {
+    const machine = machineLabels.get(machineId);
+    return machine ? `${machine.unit}${machine.model ? ` — ${machine.model}` : ''}` : machineId;
+  };
 
-  const activeDown = shiftJobs.filter((a) => a.in_shift && a.status !== 'OPERATIONAL');
-  const released = completedJobs;
-
-  async function handleGenerateDigest() {
+  const handleGenerateDigest = useCallback(async () => {
+    if (generationLock.current) return;
+    generationLock.current = true;
     setLoading(true);
-    try {
-      // Map rich maintenance context per machine so the LLM doesn't guess
-      const shiftStart = activeShift?.started_at ? new Date(activeShift.started_at).getTime() : null;
-      const notesFor = (assetId: string) =>
-        notes
-          .filter((note) => note.asset_id === assetId && (shiftStart === null || new Date(note.created_at).getTime() >= shiftStart))
-          .sort((a, b) => a.created_at.localeCompare(b.created_at))
-          .slice(-12)
-          .map((note) => ({
-            at: note.created_at,
-            by: note.fitter_name,
-            note: note.note.slice(0, 300),
-          }));
+    onGeneratingChange(true);
 
-      const activePayload = activeDown.map((asset) => {
-        const orders = workOrders.filter((w) => w.asset_id === asset.id && w.status !== 'COMPLETED');
-        const hotshots = orders.flatMap((w) => w.parts || []).filter((p) => p.is_special_run);
-
-        return {
-          fleet_id: asset.fleet_id,
-          model: asset.make_model,
-          location: asset.location || 'Workshop',
-          priority: asset.priority || 'P3',
-          expected_up: asset.expected_up,
-          tasks: orders.map((o) => ({
-            wo_number: o.wo_number || 'N/A',
-            scope: o.task_description,
-            stage: o.stage,
-            fitter: o.fitter_assigned || 'Unassigned',
-          })),
-          hotshots: hotshots.map((h) => ({
-            part: h.description || h.part_number,
-            eta: h.eta,
-          })),
-          shift_notes: notesFor(asset.id),
-        };
+    const shiftStart = activeShift?.started_at ? new Date(activeShift.started_at).getTime() : null;
+    const activeMachines = shiftJobs.filter((asset) => asset.in_shift && asset.status !== 'OPERATIONAL');
+    const uniqueAssets = [...activeMachines, ...completedJobs].filter((asset, index, list) =>
+      list.findIndex((item) => item.id === asset.id) === index
+    );
+    const machines: HandoverAiMachineContext[] = uniqueAssets.map((asset) => {
+      const released = completedJobs.some((item) => item.id === asset.id);
+      const assetComponents = [...new Set([
+        ...(asset.component_systems ?? []),
+        asset.component_system,
+      ].filter((component): component is string => Boolean(component?.trim())))];
+      const orders = workOrders.filter((order) => {
+        if (order.asset_id !== asset.id) return false;
+        if (order.status === 'OPEN' || order.shift_id === activeShift?.id) return true;
+        return shiftStart !== null && isInShift(order.completed_at, shiftStart);
       });
+      const assignedCrew = (order: MachineWorkOrder) => {
+        const linked = (order.crew ?? [])
+          .map((row) => crew.find((person) => person.id === row.crew_member_id)?.display_name)
+          .filter((name): name is string => Boolean(name));
+        const fitter = order.fitter_assigned?.trim();
+        return [...new Set([...linked, ...(fitter && fitter.toLowerCase() !== 'unassigned' ? [fitter] : [])])];
+      };
+      const jobs: HandoverAiMachineContext['jobs'] = orders.map((order) => ({
+        wo_number: order.wo_number,
+        title: order.task_description,
+        components: order.component_systems?.length ? order.component_systems : assetComponents,
+        priority: normalizePriority(order.priority),
+        stage: order.stage,
+        assigned_crew: assignedCrew(order),
+      }));
+      if (jobs.length === 0 && asset.shift_task) {
+        jobs.push({
+          wo_number: asset.work_order_num ?? null,
+          title: asset.shift_task,
+          components: assetComponents,
+          priority: normalizePriority(asset.priority),
+          stage: asset.shift_stage || 'IN_PROGRESS',
+          assigned_crew: asset.fitter_assigned && asset.fitter_assigned.toLowerCase() !== 'unassigned'
+            ? [asset.fitter_assigned]
+            : [],
+        });
+      }
 
-      const watchItems = logEntries
-        .filter((entry) => entry.category === 'WATCHLIST')
-        .map((entry) => ({
-          fleet_id: entry.fleet_id,
-          details: entry.details,
-          action_required: entry.action_required,
-        }));
+      return {
+        machine_id: asset.id,
+        fleet_id: asset.fleet_id,
+        model: asset.make_model,
+        priority: effectivePriority(asset.priority, orders.map((order) => order.priority)),
+        expected_up: asset.expected_up,
+        status: released ? 'RELEASED' : 'DOWN',
+        jobs,
+        parts: orders.flatMap((order) => (order.parts ?? []).map((part) => ({
+          description: part.description || part.part_number || 'Part',
+          part_number: part.part_number ?? null,
+          status: part.status,
+          eta: part.eta ?? null,
+          hotshot: part.is_special_run,
+          carrier: part.carrier_details ?? null,
+        }))),
+        shift_notes: notes
+          .filter((note) => note.asset_id === asset.id && isInShift(note.created_at, shiftStart))
+          .sort((a, b) => a.created_at.localeCompare(b.created_at))
+          .map((note) => ({ at: note.created_at, by: note.fitter_name, note: note.note })),
+        updates: logEntries
+          .filter((entry) => entry.fleet_id?.trim().toUpperCase() === asset.fleet_id.toUpperCase()
+            && isInShift(entry.logged_at, shiftStart))
+          .sort((a, b) => a.logged_at.localeCompare(b.logged_at))
+          .map((entry) => ({
+            at: entry.logged_at,
+            category: entry.category,
+            details: entry.details,
+            action_required: entry.action_required ?? null,
+          })),
+      };
+    });
 
-      const res = await fetch('/api/ai-handover', {
+    try {
+      const response = await fetch('/api/ai-handover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -94,36 +212,55 @@ export default function AiHandoverDigest({
           manningNotes: handoverNotesFor(logEntries, ['MANNING']),
           priorityNotes: handoverNotesFor(logEntries, ['PRIORITY']),
           complianceNotes: handoverNotesFor(logEntries, ['BRAKE_TEST', 'TOOLING']),
-          activeMachines: activePayload,
-          releasedMachines: released.map((asset) => ({
-            fleet_id: asset.fleet_id,
-            model: asset.make_model,
-            shift_notes: notesFor(asset.id),
-          })),
-          machinesWithNotes: [...shiftJobs, ...released]
-            .filter((asset, index, list) => list.findIndex((item) => item.id === asset.id) === index)
-            .map((asset) => ({ fleet_id: asset.fleet_id, shift_notes: notesFor(asset.id) }))
-            .filter((asset) => asset.shift_notes.length > 0),
-          watchItems,
+          activeMachines: machines.filter((machine) => machine.status === 'DOWN'),
+          releasedMachines: machines.filter((machine) => machine.status === 'RELEASED'),
+          machines,
           logEntries,
         }),
       });
-
-      const data = await res.json();
-      if (!res.ok || !data.summary) {
-        alert(data.error || 'Error generating the handover summary');
-        return;
-      }
-      onSummaryGenerated?.(data.summary, Array.isArray(data.machines) ? data.machines : []);
-    } catch {
-      alert('Error generating AI handover summary');
+      if (!response.ok) throw new Error(`Handover summary request failed (${response.status})`);
+      const data = await response.json() as { summary?: unknown; summaries?: unknown; offlineFallback?: unknown };
+      const summaries = normalizeMachineSummaries(data.summaries, machines);
+      const offlineFallback = data.offlineFallback === true;
+      setUsedOfflineFallback(offlineFallback);
+      onSummaryGenerated(
+        typeof data.summary === 'string' && data.summary.trim() ? data.summary : summaryText,
+        summaries,
+        offlineFallback,
+      );
+    } catch (error) {
+      console.error('[ai-handover] falling back to raw machine notes:', error);
+      setUsedOfflineFallback(true);
+      onSummaryGenerated(summaryText, fallbackMachineSummaries(machines), true);
     } finally {
+      generationLock.current = false;
       setLoading(false);
+      onGeneratingChange(false);
     }
-  }
+  }, [
+    activeShift,
+    completedJobs,
+    crew,
+    logEntries,
+    notes,
+    onGeneratingChange,
+    onSummaryGenerated,
+    shiftJobs,
+    summaryText,
+    workOrders,
+  ]);
+
+  useEffect(() => {
+    if (generateRequest > handledRequest.current) {
+      handledRequest.current = generateRequest;
+      void handleGenerateDigest();
+    }
+  }, [generateRequest, handleGenerateDigest]);
 
   async function handleCopy() {
-    const machineLines = machineNotes.map((note) => `${note.fleetId}. ${note.summary}`).join('\n');
+    const machineLines = Object.entries(machineSummaries)
+      .map(([machineId, bullets]) => `${machineLabel(machineId)}\n${bullets.map((bullet) => `- ${bullet}`).join('\n')}`)
+      .join('\n');
     const text = [summaryText, machineLines].filter(Boolean).join('\n\n');
     if (!text) return;
     await navigator.clipboard.writeText(text);
@@ -131,62 +268,112 @@ export default function AiHandoverDigest({
     setTimeout(() => setCopied(false), 2000);
   }
 
+  function updateBullet(machineId: string, index: number, value: string) {
+    const bullets = [...(machineSummaries[machineId] ?? [])];
+    bullets[index] = value;
+    onMachineSummariesChange({ ...machineSummaries, [machineId]: bullets });
+  }
+
+  function finishEditing(machineId: string) {
+    onMachineSummariesChange({
+      ...machineSummaries,
+      [machineId]: limitMachineBullets(machineSummaries[machineId] ?? []),
+    });
+  }
+
+  function addBullet(machineId: string) {
+    onMachineSummariesChange({
+      ...machineSummaries,
+      [machineId]: [...(machineSummaries[machineId] ?? []), ''],
+    });
+  }
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
         <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-bold text-slate-900 text-sm">Shift Operational Summary</h3>
-              <p className="text-xs text-slate-500">A short brief, plus one line on what was written up for each machine this shift</p>
-            </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-100 p-2 text-slate-700">
+            <Sparkles className="h-5 w-5" />
           </div>
-
-        <div className="flex items-center gap-2">
-          {summaryText && (
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition cursor-pointer"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied ? 'Copied' : 'Copy Digest'}
-            </button>
-          )}
-
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">Machine shift notes</h3>
+            <p className="text-xs text-slate-500">One or two pit-ready bullets per machine; 25 words maximum.</p>
+          </div>
+        </div>
+        {Object.keys(machineSummaries).length > 0 && (
           <button
             type="button"
-            onClick={handleGenerateDigest}
-            disabled={loading}
-            className="flex items-center gap-2 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition disabled:opacity-50 cursor-pointer"
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            {loading ? 'Writing...' : summaryText ? 'Re-generate' : 'Generate summary'}
+            {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? 'Copied' : 'Copy notes'}
           </button>
-        </div>
+        )}
       </div>
 
-      {summaryText ? (
-        <div className="space-y-3">
-          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">
-            {summaryText}
-          </div>
-          {machineNotes.length > 0 && (
-            <ul className="text-sm space-y-1">
-              {machineNotes.map((note) => (
-                <li key={note.fleetId}><strong>{note.fleetId}.</strong> {note.summary}</li>
-              ))}
-            </ul>
-          )}
+      {usedOfflineFallback && (
+        <p className="text-xs text-amber-800">Offline fallback: deduplicated raw shift notes are shown.</p>
+      )}
+      {summaryText && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-slate-800">
+          <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Executive shift briefing</p>
+          <ExecutiveBriefing text={summaryText} />
         </div>
+      )}
+      {Object.keys(machineSummaries).length > 0 ? (
+        <ul className="space-y-3">
+          {Object.entries(machineSummaries).sort(([idA], [idB]) => {
+            const machineA = machineLabels.get(idA);
+            const machineB = machineLabels.get(idB);
+            return comparePriorityThenUnit(
+              machineA?.priority,
+              machineA?.unit ?? idA,
+              machineB?.priority,
+              machineB?.unit ?? idB,
+            );
+          }).map(([machineId, bullets]) => (
+            <li key={machineId} className="text-sm">
+              <strong className="text-slate-900">{machineLabel(machineId)}</strong>{' '}
+              <span className={`inline-flex items-center rounded border px-1.5 py-0.5 align-middle text-[10px] ${priorityBadgeClass(machineLabels.get(machineId)?.priority)} print:bg-white print:text-black print:border-black`}>
+                [{normalizePriority(machineLabels.get(machineId)?.priority)}]
+              </span>
+              <div className="mt-1 space-y-1">
+                {bullets.map((bullet, index) => (
+                  <label key={`${machineId}-${index}`} className="flex items-start gap-2 text-xs text-slate-500">
+                    <span className="pt-2">{index + 1}.</span>
+                    <textarea
+                      rows={2}
+                      value={bullet}
+                      onChange={(event) => updateBullet(machineId, index, event.target.value)}
+                      onBlur={() => finishEditing(machineId)}
+                      aria-label={`${machineId} AI note ${index + 1}`}
+                      className="w-full resize-y rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800"
+                    />
+                  </label>
+                ))}
+                {bullets.length < 2 && (
+                  <button
+                    type="button"
+                    onClick={() => addBullet(machineId)}
+                    className="ml-5 text-xs font-bold text-indigo-700 hover:underline"
+                  >
+                    Add second bullet
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
       ) : (
-        <div className="p-6 text-center border border-dashed border-slate-200 rounded-lg bg-slate-50/50">
-          <p className="text-xs text-slate-400">
-            Click &quot;Generate Summary&quot; to compile all shift logs into an executive handover report.
-          </p>
-        </div>
+        <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-5 text-center text-xs text-slate-400">
+          Refresh AI Notes to summarise every down and released machine.
+        </p>
+      )}
+      {loading && (
+        <p className="flex items-center gap-2 text-xs font-bold text-indigo-700">
+          <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Writing machine notes…
+        </p>
       )}
     </div>
   );

@@ -45,7 +45,7 @@ export default function RepeatFailureCallout({
         <button
           type="button"
           onClick={onHide}
-          className="min-h-[40px] px-3 inline-flex items-center gap-1 rounded-lg border-2 border-slate-300 bg-white text-sm font-bold text-slate-800"
+          className="min-h- h-10 px-3 inline-flex items-center gap-1 rounded-lg border-2 border-slate-300 bg-white text-sm font-bold text-slate-800"
         >
           <X className="w-4 h-4" /> Hide
         </button>
