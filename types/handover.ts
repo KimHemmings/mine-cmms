@@ -24,6 +24,10 @@ export interface OceBriefing {
 export interface OceAttachment {
   fileName: string | null;
   briefing: OceBriefing;
+  sourceText?: string | null;
+  storagePath?: string | null;
+  fileSize?: number | null;
+  dataUrl?: string | null;
 }
 
 export interface OceReport {
@@ -32,6 +36,7 @@ export interface OceReport {
   file_name: string;
   storage_path: string | null;
   source_text: string | null;
+  file_size?: number | null;
   briefing: OceBriefing;
   uploaded_at: string;
   uploaded_by: string | null;
@@ -57,6 +62,9 @@ export interface HandoverPartLine {
   eta: string | null;
   hotshot: boolean;
   carrier: string | null;
+  kind?: 'on_order' | 'hotshot' | 'borrowed' | null;
+  orderedOn?: string | null;
+  reason?: string | null;
 }
 
 export interface HandoverCarryJob {

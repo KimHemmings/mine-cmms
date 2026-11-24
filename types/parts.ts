@@ -15,6 +15,22 @@ export interface WorkOrderPart {
   updated_at: string;
 }
 
+export type PartsBoardKind = 'on_order' | 'hotshot' | 'borrowed';
+
+export interface PartsBoardRow {
+  id: string;
+  asset_id: string | null;
+  fleet_id: string;
+  kind: PartsBoardKind;
+  supplier: string | null;
+  ordered_on: string | null;
+  eta: string | null;
+  description: string;
+  reason: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
 export interface CreatePartPayload {
   workOrderId: string;
   partNumber?: string;

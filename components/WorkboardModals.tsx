@@ -37,6 +37,7 @@ interface WorkboardModalsProps {
   unassignedMachines: Asset[];
   defects: DefectItem[];
   notes: HistoryNote[];
+  workOrders?: MachineWorkOrder[];
   userRole: UserRole;
   activeFitter: string;
   onSuccessRefresh: () => void;
@@ -59,6 +60,7 @@ export default function WorkboardModals({
   unassignedMachines,
   defects,
   notes,
+  workOrders = [],
   userRole,
   activeFitter,
   targetPartsWo,
@@ -107,6 +109,8 @@ export default function WorkboardModals({
 
       <QuickEditAssetModal
         asset={quickEditAsset}
+        workOrders={workOrders}
+        activeShiftId={activeShiftId}
         activeFitter={activeFitter}
         onClose={onCloseQuickEditModal}
         onSuccess={onSuccessRefresh}

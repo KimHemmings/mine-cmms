@@ -4,7 +4,6 @@ import React, { ReactNode, useState, useEffect, useRef } from 'react';
 import { HandoverLogEntry, HandoverLogCategory } from '@/types';
 import { Plus, Trash2, ClipboardList, Printer, Sparkles } from 'lucide-react';
 import DictationMicButton, { useDictationTarget } from '@/components/ui/DictationMicButton';
-import ManagementDirectives from '@/components/ManagementDirectives';
 import { clearHandoverDraft, handoverDraftKey, readHandoverDraft, writeHandoverDraft } from '@/utils/handoverDraft';
 
 const CATEGORY_CONFIG: Record<
@@ -56,14 +55,7 @@ export default function ShiftHandoverLog({
   onAddEntry,
   onUpdateCategory,
   onDeleteEntry,
-  manning = null,
-  signers = [],
-  outgoingId = '',
-  oncomingId = '',
-  onOutgoing,
-  onOncoming,
   readOnly = false,
-  actorName = 'Supervisor',
   shiftDate = null,
   shiftName = null,
   department = 'workshop',
@@ -129,27 +121,6 @@ export default function ShiftHandoverLog({
 
   return (
     <div aria-busy={aiNotesLoading} className="bg-white border border-slate-200 border-l-4 border-l-slate-700 rounded-xl shadow-sm print:border-black print:shadow-none overflow-hidden font-sans">
-      <div className="p-3 border-b border-slate-200 bg-white">
-        <ManagementDirectives actorName={actorName} department="workshop" />
-      </div>
-      {manning && (
-        <div className="border-b border-slate-200 bg-white">
-          <h3 className="border-b border-slate-200 bg-slate-50/90 px-5 py-3.5 text-xs font-black uppercase tracking-wider text-slate-800">
-            Workshop crew{manning.panel ? ` · ${manning.panel}` : ''}
-          </h3>
-          <div className="space-y-3 p-3">
-          <ManningLine title={`On-shift trades (${manning.onShift.length})`} names={manning.onShift} empty="No workshop trades are on this crew." />
-          <ManningLine title="Away / sick / leave" names={manning.away} empty="No one from the workshop is away." />
-          <ManningLine title="Overtime and labour hire" names={manning.overtime} empty="No workshop overtime or labour hire on this crew." />
-          <ManningLine title="Unallocated" names={manning.unallocated} empty="Every workshop trade on this crew is on a job." />
-          <ManningLine title="Bay-assigned" names={manning.assigned} empty="No workshop trade is on a job yet." />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <SignOffSelect label="Outgoing" people={signers} value={outgoingId} disabled={readOnly} onChange={onOutgoing} />
-            <SignOffSelect label="Oncoming" people={signers} value={oncomingId} disabled={readOnly} onChange={onOncoming} />
-          </div>
-          </div>
-        </div>
-      )}
       <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between print:bg-white print:border-black">
         <div className="flex items-center gap-2">
           <ClipboardList className="w-4 h-4 text-slate-700" />
@@ -321,45 +292,5 @@ export default function ShiftHandoverLog({
       </div>
       {children && <div className="border-t border-slate-200 p-3">{children}</div>}
     </div>
-  );
-}
-
-function ManningLine({ title, names, empty }: { title: string; names: string[]; empty: string }) {
-  return (
-    <p className="text-sm text-slate-800">
-      <span className="font-black">{title}. </span>
-      {names.length === 0 ? empty : names.join(', ')}
-    </p>
-  );
-}
-
-function SignOffSelect({
-  label,
-  people,
-  value,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  people: { id: string; name: string }[];
-  value: string;
-  disabled?: boolean;
-  onChange?: (id: string) => void;
-}) {
-  return (
-    <label className="block text-xs font-black uppercase tracking-wide text-slate-600">
-      {label}
-      <select
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange?.(event.target.value)}
-        className="mt-1 block w-full min-h-11 rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold normal-case text-slate-900 disabled:bg-slate-100"
-      >
-        <option value="">Workshop supervisor, leading hand, or tradesperson</option>
-        {people.map((person) => (
-          <option key={person.id} value={person.id}>{person.name}</option>
-        ))}
-      </select>
-    </label>
   );
 }

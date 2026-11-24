@@ -148,15 +148,15 @@ export async function exportHandoverPdf(handover: HandoverPdfInput) {
   y += 2;
 
   const shiftSummary = (document.shift_summary ?? document.summary ?? '').trim();
-  const oceSummary = (document.oce_summary ?? document.oce?.briefing.summary ?? '').trim();
-  const twoSummaryCards = Boolean(shiftSummary && oceSummary);
+  const oceName = document.oce?.fileName?.trim() || '';
+  const twoSummaryCards = Boolean(shiftSummary && oceName);
   const summaryColumnWidth = twoSummaryCards ? (contentWidth - 4) / 2 : contentWidth;
   const summaryCards = [
-    ...(shiftSummary || !oceSummary
-      ? [{ title: 'SHIFT SUMMARY', text: shiftSummary || 'No summary recorded.' }]
+    ...(shiftSummary || !oceName
+      ? [{ title: 'SHIFT SUMMARY', text: shiftSummary || 'No summary recorded.', lines: wrapped(shiftSummary || 'No summary recorded.', summaryColumnWidth - 8, 9) }]
       : []),
-    ...(oceSummary ? [{ title: 'OCE SUMMARY', text: oceSummary }] : []),
-  ].map((card) => ({ ...card, lines: wrapped(card.text, summaryColumnWidth - 8, 9) }));
+    ...(oceName ? [{ title: 'OCE REPORT PDF', text: oceName, lines: wrapped(oceName, summaryColumnWidth - 8, 9) }] : []),
+  ];
   const summaryLineCapacity = () => Math.max(1, Math.floor((bottom - y - 12) / lineHeight));
   const summaryOffsets = summaryCards.map(() => 0);
   do {

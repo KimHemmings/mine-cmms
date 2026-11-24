@@ -103,14 +103,10 @@ export async function generateProductionHandoverPptx(input: {
   const oce = document.oce;
   const oceSlide = pptx.addSlide();
   addTitle(oceSlide, 'OCE report', subtitle);
-  if (!oce) {
-    oceSlide.addText('No OCE report uploaded for this shift.', { x: 0.6, y: 1.7, w: 12, h: 0.4, fontSize: 18, color: TEXT });
+  if (!oce?.fileName) {
+    oceSlide.addText('No OCE report PDF uploaded for this shift.', { x: 0.6, y: 1.7, w: 12, h: 0.4, fontSize: 18, color: TEXT });
   } else {
-    card(oceSlide, pptx, oce.fileName || 'Examiner report', [
-      oce.briefing.summary || 'The report is attached. No briefing was written.',
-      oce.briefing.restrictions.length ? `\nRestrictions: ${oce.briefing.restrictions.join('; ')}` : '',
-      oce.briefing.hazards.length ? `\nHazards: ${oce.briefing.hazards.join('; ')}` : '',
-    ].join(''));
+    oceSlide.addText(`OCE Report PDF: ${oce.fileName}`, { x: 0.6, y: 1.7, w: 12, h: 0.5, fontSize: 18, color: TEXT });
   }
 
   chunks(document.allocations, 8).forEach((page, index, pages) => {

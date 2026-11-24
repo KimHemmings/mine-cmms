@@ -25,7 +25,7 @@ import { formatDateTime } from '@/utils/helpers';
 import { formatStartDay, shiftIsPast } from '@/utils/crewStanding';
 import { generateHandoverPptx } from '@/utils/handoverPptx';
 import { buildHandoverSnapshot, normalizeHandoverDocument } from '@/utils/handoverDocument';
-import { HandoverMachineNote, HandoverManning, HandoverSlide, OceReport, SafetyIncident, SavedHandover } from '@/types';
+import { HandoverMachineNote, HandoverManning, HandoverSlide, HandoverSnapshot, OceReport, PartsBoardRow, SafetyIncident, SavedHandover } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
 import IncomingCrewDialog from './crew/IncomingCrewDialog';
@@ -38,6 +38,20 @@ import { fallbackMachineSummaries, HandoverAiMachineContext } from '@/utils/hand
 import { getHandoverCrewsForShift } from '@/utils/rosterCycle';
 import { useRosterCycleSettings } from '@/hooks/useRosterCycleSettings';
 import { leaveCovers, shiftDateIso } from '@/utils/crewLeave';
+
+function attachShiftOce(document: HandoverSnapshot, report: OceReport | null): HandoverSnapshot {
+  if (!report || (!report.storage_path && !(report.source_text ?? '').startsWith('data:application/pdf'))) return document;
+  return {
+    ...document,
+    oce: {
+      fileName: report.file_name,
+      storagePath: report.storage_path,
+      fileSize: report.file_size ?? null,
+      dataUrl: report.storage_path ? null : report.source_text,
+      briefing: document.oce?.briefing ?? { summary: '', hazards: [], incidents: [], restrictions: [], conditions: [] },
+    },
+  };
+}
 import { exportHandoverPdf, handoverPdfFilename, printHandoverDocument } from '@/utils/exportHandoverPdf';
 
 interface SpeechRecognitionResultLike {
@@ -158,11 +172,44 @@ export default function HandoverReportTab({
   const [incidents, setIncidents] = useState<SafetyIncident[]>([]);
   const [safetyFocus, setSafetyFocus] = useState('');
   const [oceReport, setOceReport] = useState<OceReport | null>(null);
+  const [boardParts, setBoardParts] = useState<PartsBoardRow[]>([]);
   const importedShift = React.useRef<string | null>(null);
   const slidesLoadedFor = React.useRef<string | null>(null);
   const speechRecognition = React.useRef<SpeechRecognitionLike | null>(null);
 
   const supabase = React.useMemo(() => createClient(), []);
+
+  useEffect(() => {
+    if (!activeShift?.id) return;
+    let cancelled = false;
+    supabase
+      .from('oce_reports')
+      .select('id, shift_id, file_name, storage_path, source_text, file_size, briefing, uploaded_at, uploaded_by')
+      .eq('shift_id', activeShift.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        const row = data as OceReport;
+        if (row.storage_path || (row.source_text ?? '').startsWith('data:application/pdf')) setOceReport(row);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeShift?.id, supabase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('parts_board')
+      .select('id, asset_id, fleet_id, kind, supplier, ordered_on, eta, description, reason, created_by, created_at')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (!cancelled && data) setBoardParts(data as PartsBoardRow[]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
   const { showToast } = useFeedback();
   const { crew, leave, onShiftIds, authorisations, holdings, supervision } = useCrewData();
   const rosterSettings = useRosterCycleSettings();
@@ -308,11 +355,35 @@ export default function HandoverReportTab({
     manning: manningRecord,
     safetyIncidents: incidents,
     safetyFocus,
-    oce: oceReport ? { fileName: oceReport.file_name, briefing: oceReport.briefing } : null,
+    oce: oceReport && (oceReport.storage_path || (oceReport.source_text ?? '').startsWith('data:application/pdf'))
+      ? {
+          fileName: oceReport.file_name,
+          storagePath: oceReport.storage_path,
+          fileSize: oceReport.file_size ?? null,
+          dataUrl: oceReport.storage_path ? null : oceReport.source_text,
+          briefing: { summary: '', hazards: [], incidents: [], restrictions: [], conditions: [] },
+        }
+      : null,
     inTraining: cover.inTraining,
     ertOnSite: cover.ertOnSite,
     assessorsOnSite: cover.assessorsOnSite,
   });
+  if (boardParts.length > 0) {
+    liveSnapshot.parts = boardParts.map((row) => ({
+      fleetId: row.fleet_id,
+      woNumber: null,
+      description: row.description,
+      partNumber: null,
+      po: row.reason,
+      status: row.kind,
+      eta: row.eta,
+      hotshot: row.kind === 'hotshot',
+      carrier: row.supplier,
+      kind: row.kind,
+      orderedOn: row.ordered_on,
+      reason: row.reason,
+    }));
+  }
 
   const loadHandovers = React.useCallback(async () => {
     const optionalColumns = [
@@ -706,6 +777,32 @@ export default function HandoverReportTab({
     setIncomingOverride(panel ? { key: rosterContextKey, panel } : null);
   };
 
+  const openSavedHandover = async (handover: SavedHandover) => {
+    const { data } = await supabase
+      .from('oce_reports')
+      .select('file_name, storage_path, source_text, file_size')
+      .eq('shift_id', handover.shift_id)
+      .maybeSingle();
+    const row = data as { file_name?: string; storage_path?: string | null; source_text?: string | null; file_size?: number | null } | null;
+    if (!row || (!row.storage_path && !(row.source_text ?? '').startsWith('data:application/pdf'))) {
+      setOpened(handover);
+      return;
+    }
+    setOpened({
+      ...handover,
+      document: {
+        ...handover.document,
+        oce: {
+          fileName: row.file_name || handover.document.oce?.fileName || 'OCE report.pdf',
+          storagePath: row.storage_path ?? null,
+          fileSize: row.file_size ?? null,
+          dataUrl: row.storage_path ? null : row.source_text ?? null,
+          briefing: handover.document.oce?.briefing ?? { summary: '', hazards: [], incidents: [], restrictions: [], conditions: [] },
+        },
+      },
+    });
+  };
+
   const printModel = opened
     ? {
         shiftName: opened.shift_name,
@@ -727,7 +824,7 @@ export default function HandoverReportTab({
         supervisor: supervisorName,
         savedAt: currentSaved?.saved_at ?? null,
         savedBy: currentSaved?.saved_by ?? null,
-        document: currentLocked && currentSaved ? currentSaved.document : liveSnapshot,
+        document: attachShiftOce(currentLocked && currentSaved ? currentSaved.document : liveSnapshot, oceReport),
         outgoingSignedBy: currentSaved?.outgoing_signed_by ?? null,
         outgoingSignedAt: currentSaved?.outgoing_signed_at ?? null,
         oncomingSignedBy: currentSaved?.oncoming_signed_by ?? null,
@@ -785,7 +882,7 @@ export default function HandoverReportTab({
           title={`Previous Handover Ready (${pendingPrevious.crew ?? pendingPrevious.document.outgoingCrew ?? 'Outgoing Crew'} · ${pendingPrevious.shift_name} · Signed by ${pendingPrevious.outgoing_signed_by ?? 'Supervisor'})`}
           action="Review & Sign Oncoming"
           onClick={() => {
-            setOpened(pendingPrevious);
+            void openSavedHandover(pendingPrevious);
             setView('history');
           }}
         />
@@ -899,7 +996,7 @@ export default function HandoverReportTab({
       {view === 'history' && !opened && (
         <div className="mt-4 space-y-4">
           <RecordTrail title="Earlier saves of this handover" tables={['shift_handovers']} />
-          <HandoverHistory handovers={handovers} activeShiftId={activeShift?.id} onOpen={(handover) => { setOpened(handover); }} />
+          <HandoverHistory handovers={handovers} activeShiftId={activeShift?.id} onOpen={(handover) => { void openSavedHandover(handover); }} />
         </div>
       )}
 
@@ -991,11 +1088,7 @@ export default function HandoverReportTab({
             <OceReportPanel
               shiftId={activeShift?.id ?? null}
               onChange={setOceReport}
-              savedOce={currentSaved?.document.oce ?? null}
-              summaryText={currentSaved && (currentSaved.oce_summary != null || Boolean(currentSaved.document.oce))
-                ? oceSummary
-                : undefined}
-              onSummaryChange={setOceSummary}
+              locked={currentLocked || readOnly}
             />
           </div>}
 

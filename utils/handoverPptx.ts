@@ -148,18 +148,10 @@ export async function generateHandoverPptx(input: CrewBriefingInput) {
   const oce = document.oce;
   const oceSlide = pptx.addSlide();
   addTitle(oceSlide, 'OCE report', subtitle);
-  if (!oce) {
-    oceSlide.addText('No OCE report uploaded for this shift.', { x: 0.6, y: 1.7, w: 12, h: 0.4, fontSize: 18, color: TEXT });
+  if (!oce?.fileName) {
+    oceSlide.addText('No OCE report PDF uploaded for this shift.', { x: 0.6, y: 1.7, w: 12, h: 0.4, fontSize: 18, color: TEXT });
   } else {
-    card(oceSlide, pptx, 0.6, 1.45, 12.1, 3.3, oce.fileName || 'Examiner report', oce.briefing.summary || 'The report is attached. No briefing was written.');
-    const points = [
-      ...oce.briefing.restrictions.map((item) => `Restriction: ${item}`),
-      ...oce.briefing.hazards.map((item) => `Hazard: ${item}`),
-      ...oce.briefing.conditions.map((item) => `Condition: ${item}`),
-    ];
-    oceSlide.addText(points.join('\n') || 'No extra restrictions were pulled from the report.', {
-      x: 0.9, y: 4.95, w: 11.5, h: 2, fontSize: 13, color: TEXT, valign: 'top',
-    });
+    oceSlide.addText(`OCE Report PDF: ${oce.fileName}`, { x: 0.6, y: 1.7, w: 12, h: 0.5, fontSize: 18, color: TEXT });
   }
   const coverNotes = [
     safety && { title: 'Safety', body: safety },

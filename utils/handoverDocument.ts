@@ -293,7 +293,10 @@ export function normalizeHandoverDocument(document: Partial<HandoverSnapshot> | 
     oce: document?.oce
       ? {
           fileName: document.oce.fileName ?? null,
-          briefing: { ...normalizeOceBriefing(document.oce.briefing), summary: oceSummary ?? '' },
+          storagePath: document.oce.storagePath ?? null,
+          fileSize: document.oce.fileSize ?? null,
+          dataUrl: document.oce.dataUrl ?? null,
+          briefing: normalizeOceBriefing(document.oce.briefing),
         }
       : null,
     inTraining: document?.inTraining ?? [],

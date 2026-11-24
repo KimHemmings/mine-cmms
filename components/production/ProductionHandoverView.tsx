@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ProductionHandoverDocument } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
+import OcePdfLink, { isPdfDataUrl } from '@/components/handover/OcePdfLink';
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -88,14 +89,10 @@ export default function ProductionHandoverView({
       <Section title="OCE report">
         {!oce ? (
           <p className="text-sm text-slate-500">No OCE report uploaded for this shift.</p>
+        ) : oce.storagePath || isPdfDataUrl(oce.dataUrl) ? (
+          <OcePdfLink fileName={oce.fileName || 'OCE report.pdf'} storagePath={oce.storagePath} dataUrl={oce.dataUrl} fileSize={oce.fileSize} />
         ) : (
-          <div className="text-sm space-y-2">
-            {oce.fileName && <p className="font-bold">{oce.fileName}</p>}
-            <p className="whitespace-pre-wrap">{oce.briefing.summary || 'The report is attached. No briefing was written.'}</p>
-            {oce.briefing.restrictions.length > 0 && <p><strong>Restrictions. </strong>{oce.briefing.restrictions.join(' ')}</p>}
-            {oce.briefing.hazards.length > 0 && <p><strong>Hazards. </strong>{oce.briefing.hazards.join(' ')}</p>}
-            {oce.briefing.conditions.length > 0 && <p><strong>Conditions. </strong>{oce.briefing.conditions.join(' ')}</p>}
-          </div>
+          <p className="text-sm font-bold text-slate-800">{oce.fileName}</p>
         )}
       </Section>
 

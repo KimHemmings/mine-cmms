@@ -18,6 +18,7 @@ import { useFeedback } from '@/components/ui/FeedbackProvider';
 import { useCrewData } from './CrewDataContext';
 import CrewMemberForm from './CrewMemberForm';
 import AllocationPill from './AllocationPill';
+import OcePdfLink, { isPdfDataUrl } from '@/components/handover/OcePdfLink';
 import CompetencyBoard from './CompetencyBoard';
 import ShiftExtraModal from './ShiftExtraModal';
 import {
@@ -133,6 +134,7 @@ export default function CrewTab({
   const [trainingView, setTrainingView] = useState<'passouts' | 'team'>(accessLevel >= 3 ? 'team' : 'passouts');
   const [departmentFilter, setDepartmentFilter] = useState<Department | 'all'>('all');
   const [showPlanner, setShowPlanner] = useState(false);
+  const [ocePdf, setOcePdf] = useState<{ fileName: string; storagePath: string | null; dataUrl: string | null } | null>(null);
   const [loggingLeaveForMember, setLoggingLeaveForMember] = useState<string | null>(null);
 
   const clearExpiredRef = useRef(clearExpiredShiftExtras);
@@ -144,6 +146,28 @@ export default function CrewTab({
     if (personalOnly) return;
     void clearExpiredRef.current(crew);
   }, [crew, personalOnly]);
+
+  useEffect(() => {
+    if (!activeShift?.id) return;
+    let cancelled = false;
+    createClient()
+      .from('oce_reports')
+      .select('file_name, storage_path, source_text')
+      .eq('shift_id', activeShift.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const source = data && isPdfDataUrl(data.source_text) ? data.source_text : null;
+        if (data?.file_name && (data.storage_path || source)) {
+          setOcePdf({ fileName: data.file_name, storagePath: data.storage_path, dataUrl: source });
+        } else {
+          setOcePdf(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeShift?.id]);
 
   const inDepartment = (member: CrewMember) => {
     const memberDepartment = normalizeDepartment(member.department);
@@ -198,6 +222,19 @@ export default function CrewTab({
     const { generatePreStartSheet } = await import('@/utils/generatePreStartPDF');
     const clock = getShiftClock();
     let safetyAwareness = '';
+    let oceReport: { fileName: string; url?: string | null } | null = null;
+    if (activeShift?.id) {
+      const supabase = createClient();
+      const { data: oceRow } = await supabase
+        .from('oce_reports')
+        .select('file_name, storage_path')
+        .eq('shift_id', activeShift.id)
+        .maybeSingle();
+      if (oceRow?.file_name && oceRow.storage_path) {
+        const signed = await supabase.storage.from('oce-reports').createSignedUrl(oceRow.storage_path, 60 * 60 * 12);
+        oceReport = { fileName: oceRow.file_name, url: signed.data?.signedUrl ?? null };
+      }
+    }
     if (production) {
       const letter = crewLetter(selected === 'all' ? activeShift?.crew : selected);
       if (letter) {
@@ -225,6 +262,7 @@ export default function CrewTab({
         shiftName: clock.shiftName,
         crew: selected === 'all' ? 'All crews' : selected,
         safetyAwareness,
+        oceReport,
       },
       siteName,
     );
@@ -412,6 +450,11 @@ export default function CrewTab({
           <div>
             <h3 className="text-lg font-black text-slate-900">{rosterTitle || `${departmentLabel(department)} crew`}</h3>
             <p className="text-sm text-slate-500">{department === 'production' ? 'Operators and the machines they are allocated to.' : 'Trades due on the selected crew. Away stays on the list and off the sign-on sheet.'}</p>
+            {ocePdf && (
+              <div className="mt-3 max-w-xl">
+                <OcePdfLink fileName={ocePdf.fileName} storagePath={ocePdf.storagePath} dataUrl={ocePdf.dataUrl} />
+              </div>
+            )}
             <p className="mt-1 text-xs font-bold text-slate-700">
               {formatSwingDate(activeCrews.swingStartWed, 'short')} – {formatSwingDate(activeCrews.swingEndTue, 'short')}
               {' · '}{activeShift?.shift_type === 'NIGHT' ? 'Night' : 'Day'} {activeCrews.dayOfSwing}/7

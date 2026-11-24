@@ -65,6 +65,11 @@ export default function AssignJobModal({
       const chosen = unassignedMachines.find((machine) => machine.id === id) || preselectedAsset;
       setLocation(chosen?.location || '');
       setSelectedPriority('P3');
+      setOrderType('UNPLANNED');
+      setIsMachineDown(true);
+      setWorkOrderNum('');
+      setSapNotification('');
+      task.setValue('');
       setSelectedSystems([]);
       setCrewIds([]);
       setFormError(null);

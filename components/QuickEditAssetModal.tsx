@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Edit3, Check } from 'lucide-react';
-import { Asset, OrderType } from '@/types';
+import { Asset, MachineWorkOrder, OrderType } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 import PrioritySelector from './quick-edit/PrioritySelector';
 import { getPriorityConfig, workshopPriority } from './workboard/workboardTheme';
@@ -11,13 +11,25 @@ import EtuTimeSection from './quick-edit/EtuTimeSection';
 
 interface QuickEditAssetModalProps {
   asset: Asset | null;
+  workOrders?: MachineWorkOrder[];
+  activeShiftId?: string | null;
   activeFitter: string;
   onClose: () => void;
   onSuccess: () => void;
 }
 
+function jobOnTheBoard(orders: MachineWorkOrder[]) {
+  const open = orders.filter((order) => order.status !== 'COMPLETED');
+  const pool = open.length > 0 ? open : orders;
+  const flagged = pool.filter((order) => order.is_main_event);
+  const chosen = flagged.length > 0 ? flagged : pool;
+  return [...chosen].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0] ?? null;
+}
+
 export default function QuickEditAssetModal({
   asset,
+  workOrders = [],
+  activeShiftId = null,
   activeFitter,
   onClose,
   onSuccess,
@@ -36,7 +48,9 @@ export default function QuickEditAssetModal({
   const [nextServiceSmu, setNextServiceSmu] = useState('');
   const [statutoryDue, setStatutoryDue] = useState('');
 
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const ordersRef = useRef(workOrders);
+  ordersRef.current = workOrders;
 
   useEffect(() => {
     if (asset) {
@@ -89,22 +103,29 @@ export default function QuickEditAssetModal({
         }
       }
 
-      // Fetch the main event work order to read/write its WO number
+      const shown = jobOnTheBoard(ordersRef.current.filter((order) => order.asset_id === asset.id));
+      const seededWo = shown?.wo_number || '';
+      setMainWoId(shown?.id ?? null);
+      setWoNumber(seededWo);
+      if (shown?.order_type) setOrderType(shown.order_type as OrderType);
+
+      let cancelled = false;
       supabase
-  .from('machine_work_orders')
-  .select('id, wo_number, order_type')
-  .eq('asset_id', asset.id)
-  .eq('is_main_event', true)
-  .maybeSingle()
-  .then(({ data }) => {
-    if (data) {
-      setMainWoId(data.id);
-      setWoNumber(data.wo_number || '');
-      if (data.order_type) setOrderType(data.order_type as OrderType);
+        .from('machine_work_orders')
+        .select('id, wo_number, order_type, status, is_main_event, created_at, asset_id')
+        .eq('asset_id', asset.id)
+        .then(({ data }) => {
+          if (cancelled) return;
+          const job = jobOnTheBoard((data ?? []) as MachineWorkOrder[]);
+          setMainWoId(job?.id ?? null);
+          setWoNumber((current) => (current === seededWo ? job?.wo_number || '' : current));
+          if (job?.order_type) setOrderType(job.order_type as OrderType);
+        });
+      return () => {
+        cancelled = true;
+      };
     }
-  });
-    }
-  }, [asset, supabase]);
+  }, [asset?.id, supabase]);
 
   if (!asset) return null;
 
@@ -129,31 +150,63 @@ export default function QuickEditAssetModal({
       })
       .eq('id', asset.id);
 
-    if (mainWoId) {
-      await supabase
-        .from('machine_work_orders')
-        .update({
-          wo_number: woNumber.trim() || null,
-        })
-        .eq('id', mainWoId);
-    }
-
-    if (!assetError) {
-      await supabase.from('asset_history_notes').insert([
-        {
-          asset_id: asset.id,
-          fitter_name: activeFitter || 'Supervisor',
-          note: `Updated banner details: Loc: ${formattedLocation || 'Unassigned'}, Owner: ${machineOwner}, Priority: ${getPriorityConfig(priority).label}, WO: ${woNumber.trim() || 'None'}, ETU: ${expectedUpInput}`,
-          stage: asset.shift_stage || 'IN_PROGRESS',
-        },
-      ]);
-      setSaving(false);
-      onSuccess();
-      onClose();
-    } else {
+    if (assetError) {
       alert('Error updating asset: ' + assetError.message);
       setSaving(false);
+      return;
     }
+
+    const cleanWo = woNumber.trim() || null;
+    if (mainWoId) {
+      const { error: woError } = await supabase
+        .from('machine_work_orders')
+        .update({
+          wo_number: cleanWo,
+          order_type: orderType,
+          is_main_event: true,
+        })
+        .eq('id', mainWoId)
+        .eq('asset_id', asset.id);
+      if (woError) {
+        alert('Machine saved, but the work order number did not: ' + woError.message);
+        setSaving(false);
+        return;
+      }
+      await supabase
+        .from('machine_work_orders')
+        .update({ is_main_event: false })
+        .eq('asset_id', asset.id)
+        .neq('id', mainWoId);
+    } else if (cleanWo) {
+      const { error: insertError } = await supabase.from('machine_work_orders').insert({
+        asset_id: asset.id,
+        shift_id: activeShiftId,
+        wo_number: cleanWo,
+        order_type: orderType,
+        task_description: 'Downtime event',
+        stage: 'IN_PROGRESS',
+        status: 'OPEN',
+        is_main_event: true,
+        takes_machine_down: true,
+      });
+      if (insertError) {
+        alert('Machine saved, but the work order number did not: ' + insertError.message);
+        setSaving(false);
+        return;
+      }
+    }
+
+    await supabase.from('asset_history_notes').insert([
+      {
+        asset_id: asset.id,
+        fitter_name: activeFitter || 'Supervisor',
+        note: `Updated banner details: Loc: ${formattedLocation || 'Unassigned'}, Owner: ${machineOwner}, Priority: ${getPriorityConfig(priority).label}, WO: ${woNumber.trim() || 'None'}, ETU: ${expectedUpInput}`,
+        stage: asset.shift_stage || 'IN_PROGRESS',
+      },
+    ]);
+    setSaving(false);
+    onSuccess();
+    onClose();
   }
 
   return (

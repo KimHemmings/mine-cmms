@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Users,
   GraduationCap,
+  Package,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
@@ -25,7 +26,7 @@ import { formatStartDay, shiftIsPast } from '@/utils/crewStanding';
 import type { SyncStatus } from '@/hooks/useRealtimeWorkboard';
 import { useSiteBrand } from '@/components/SiteBrand';
 
-type Tab = 'management' | 'board' | 'myLeave' | 'handover' | 'dossier' | 'crew' | 'training' | 'status';
+type Tab = 'management' | 'board' | 'myLeave' | 'handover' | 'dossier' | 'crew' | 'training' | 'status' | 'parts';
 
 interface TopHeaderProps {
   activeShift: ShiftRecord | null;
@@ -72,6 +73,7 @@ function screenTitle(tab: Tab, department: Department, siteCommand = false, lens
   if (tab === 'board' && department === 'production') return 'Down Fleet & ETAs';
   if (tab === 'dossier') return 'Fleet directory';
   if (tab === 'handover') return 'Shift handover';
+  if (tab === 'parts') return 'Parts';
   if (tab === 'crew') return department === 'training' ? 'Competencies' : 'Crew';
   return 'Workshop whiteboard';
 }
@@ -151,6 +153,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     { id: 'dossier', label: 'Fleet directory', icon: <BookOpen className="w-4 h-4" />, show: permissions.canViewFleetDirectory },
     { id: 'myLeave', label: 'Leave / Roster', icon: <Users className="w-4 h-4" />, show: permissions.accessLevel === 2 && permissions.department === 'workshop' },
     { id: 'handover', label: 'Shift handover', icon: <FileSpreadsheet className="w-4 h-4" />, show: permissions.canViewHandover },
+    { id: 'parts', label: 'Parts', icon: <Package className="w-4 h-4" />, show: permissions.accessLevel >= 3 },
     { id: 'crew', label: crewTabLabel(permissions.department, permissions.accessLevel, crewAttention), icon: <Users className="w-4 h-4" />, show: permissions.canViewCrew },
     { id: 'training', label: 'Training', icon: <GraduationCap className="w-4 h-4" />, show: permissions.department === 'training' },
   ];

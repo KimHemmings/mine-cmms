@@ -17,6 +17,7 @@ export interface PreStartShiftDetails {
   shiftName: string;
   crew: string | null;
   safetyAwareness?: string | null;
+  oceReport?: { fileName: string; url?: string | null } | null;
 }
 
 function fileDate(date: Date) {
@@ -57,22 +58,33 @@ export function generatePreStartSheet(crewList: PreStartPerson[], shiftDetails: 
   doc.text('Supervisor: ______________', pageWidth / 2, 33, { align: 'center' });
 
   let startY = 38;
+  const oceReport = shiftDetails.oceReport;
+  if (oceReport?.fileName) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text('OCE Report PDF:', 16, startY);
+    doc.setFont('helvetica', 'normal');
+    if (oceReport.url) doc.textWithLink(oceReport.fileName, 52, startY, { url: oceReport.url });
+    else doc.text(oceReport.fileName, 52, startY);
+    startY += 8;
+  }
   const focus = shiftDetails.safetyAwareness?.trim();
   if (focus) {
     const lines = doc.splitTextToSize(focus, pageWidth - 32).slice(0, 8);
     const boxHeight = 14 + lines.length * 5;
     doc.setDrawColor(180, 83, 9);
     doc.setFillColor(255, 251, 235);
-    doc.rect(12, 36, pageWidth - 24, boxHeight, 'FD');
+    doc.rect(12, startY, pageWidth - 24, boxHeight, 'FD');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(146, 64, 14);
-    doc.text('SAFETY AWARENESS / PRE-START FOCUS', 16, 42);
+    doc.text('SAFETY AWARENESS / PRE-START FOCUS', 16, startY + 6);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(15, 23, 42);
-    doc.text(lines, 16, 48);
-    startY = 36 + boxHeight + 4;
+    doc.text(lines, 16, startY + 12);
+    startY = startY + boxHeight + 4;
   }
 
   const people = crewList.filter((person) => !person.away).sort((a, b) => a.display_name.localeCompare(b.display_name));

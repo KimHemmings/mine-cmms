@@ -1,10 +1,11 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { HandoverCarryJob, HandoverLogCategory, HandoverMachineLine, HandoverSnapshot } from '@/types';
+import { HandoverLogCategory, HandoverMachineLine, HandoverPartLine, HandoverSnapshot } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
-import { partStatusLabel, stageLabel } from '@/utils/handoverDocument';
+import { stageLabel } from '@/utils/handoverDocument';
 import { compareHandoverMachines, normalizePriority, priorityBadgeClass } from '@/utils/handoverPriority';
+import OcePdfLink, { isPdfDataUrl } from './OcePdfLink';
 
 interface HandoverDocumentViewProps {
   shiftName: string;
@@ -43,8 +44,11 @@ function Section({ title, children, className = '' }: { title: string; children:
   );
 }
 
-function jobText(job: HandoverCarryJob) {
-  return `${workOrderLabel(job.woNumber, ': ')}${job.task}`;
+function partRowClass(part: HandoverPartLine) {
+  if (part.kind === 'borrowed') return 'border-l-rose-600 bg-rose-50';
+  if (part.kind === 'hotshot' || part.hotshot) return 'border-l-orange-500 bg-orange-50';
+  if (part.kind === 'on_order') return 'border-l-emerald-600 bg-emerald-50';
+  return 'border-l-slate-300';
 }
 
 function workOrderLabel(value: string | null, suffix: string) {
@@ -120,7 +124,7 @@ function MachineJobNotes({
       )}
       {rawNotes.length > 0 && (
         <details className="print:hidden">
-          <summary className="cursor-pointer text-xs font-bold text-slate-500">View raw shift notes ({rawNotes.length})</summary>
+          <summary className="cursor-pointer text-xs font-bold text-slate-500">View job notes ({rawNotes.length})</summary>
           <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-slate-600">
             {rawNotes.map((note, index) => <li key={`${machine.fleetId}-raw-${index}`}>{note}</li>)}
           </ul>
@@ -138,19 +142,15 @@ export default function HandoverDocumentView({
   savedAt,
   savedBy,
   document,
-  emptyCrewMessage = 'The crew coming on was not recorded on this handover.',
   isLivePreview = false,
-  outgoingSignedBy = null,
-  outgoingSignedAt = null,
-  oncomingSignedBy = null,
-  oncomingSignedAt = null,
 }: HandoverDocumentViewProps) {
   const dateLabel = shiftDate ? new Date(shiftDate).toLocaleDateString() : '';
   const allocation = document.allocation ?? { panel: null, people: [], withOutgoing: [], needsName: [] };
   const outgoingCrew = document.outgoingCrew ?? crew;
   const incomingCrew = document.incomingCrew ?? allocation.panel;
   const shiftSummary = (document.shift_summary ?? document.summary ?? '').trim();
-  const oceSummary = (document.oce_summary ?? document.oce?.briefing.summary ?? '').trim();
+  const oceFile = document.oce?.fileName?.trim() || '';
+  const oceDataUrl = isPdfDataUrl(document.oce?.dataUrl) ? document.oce?.dataUrl : null;
   const handedOverMachines = [...document.handedOver].sort(compareHandoverMachines);
   const releasedMachines = [...document.released].sort(compareHandoverMachines);
   const parts = document.parts ?? [];
@@ -176,22 +176,43 @@ export default function HandoverDocumentView({
         </p>
       </header>
 
-      <div className={`mt-4 grid gap-3 ${shiftSummary && oceSummary ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
-        {(shiftSummary || !oceSummary) && (
-          <section className="handover-briefing break-inside-avoid rounded-lg border-2 border-slate-300 bg-slate-50/50 p-4">
-            <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Shift Summary</h3>
-            <div className="mt-2">
-              <BriefingNotes text={shiftSummary || 'No summary recorded.'} />
-            </div>
-          </section>
-        )}
-        {oceSummary && (
-          <section className="handover-briefing break-inside-avoid rounded-lg border-2 border-slate-300 bg-slate-50/50 p-4">
-            <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">OCE Summary</h3>
-            <div className="mt-2">
-              <BriefingNotes text={oceSummary} />
-            </div>
-          </section>
+      <div className="mt-4 grid gap-3 grid-cols-1">
+        <section className="handover-briefing break-inside-avoid rounded-lg border-2 border-slate-300 bg-slate-50/50 p-4">
+          <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Shift summary</h3>
+          <div className="mt-2">
+            <BriefingNotes text={shiftSummary || 'No summary recorded.'} />
+          </div>
+          <div className="mt-4 border-t border-slate-200 pt-3">
+            <h4 className="text-xs font-black uppercase tracking-wide text-slate-600">Notes for the next shift</h4>
+            {notes.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-500">Nothing logged for safety, weather, manning, or priorities.</p>
+            ) : (
+              <div className="mt-2 space-y-3">
+                {notes.map((group) => (
+                  <div key={group.category}>
+                    <p className="text-sm font-black text-slate-900">{group.title}</p>
+                    <ul className="text-sm">
+                      {group.entries.map((entry) => (
+                        <li key={entry.id}>
+                          {entry.fleet_id ? <strong>{entry.fleet_id} · </strong> : null}
+                          {entry.details}
+                          {entry.action_required ? <span className="text-slate-600"> · Action: {entry.action_required}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+        {(oceFile && (document.oce?.storagePath || oceDataUrl)) && (
+          <OcePdfLink
+            fileName={oceFile}
+            storagePath={document.oce?.storagePath}
+            dataUrl={oceDataUrl}
+            fileSize={document.oce?.fileSize}
+          />
         )}
       </div>
 
@@ -222,7 +243,7 @@ export default function HandoverDocumentView({
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{document.safetyFocus || 'No safety share recorded.'}</p>
       </Section>
 
-      <Section title="Training and ERT">
+      <Section title="Training, ERT and workshop crew">
         {(document.inTraining ?? []).length === 0 ? (
           <p className="text-sm text-slate-500">No one on this crew is under supervision.</p>
         ) : (
@@ -237,6 +258,15 @@ export default function HandoverDocumentView({
         )}
         <p className="text-sm mt-2"><strong>Trainer assessors. </strong>{(document.assessorsOnSite ?? []).join(', ') || 'None on this crew.'}</p>
         <p className="text-sm"><strong>ERT. </strong>{(document.ertOnSite ?? []).join(', ') || 'No ERT member is on this crew.'}</p>
+        {document.manning && (
+          <ul className="mt-3 space-y-1 border-t border-slate-200 pt-3 text-sm">
+            <li><strong>On-shift trades ({document.manning.onShift.length}). </strong>{document.manning.onShift.join(', ') || 'None.'}</li>
+            <li><strong>Away / sick / leave. </strong>{document.manning.away.join(', ') || 'None.'}</li>
+            <li><strong>Overtime and labour hire. </strong>{document.manning.overtime.join(', ') || 'None.'}</li>
+            <li><strong>Unallocated. </strong>{document.manning.unallocated.join(', ') || 'None.'}</li>
+            <li><strong>Bay-assigned. </strong>{document.manning.assigned.join(', ') || 'None.'}</li>
+          </ul>
+        )}
       </Section>
 
       {(document.machineNotes ?? []).length > 0 && (
@@ -249,54 +279,6 @@ export default function HandoverDocumentView({
         </Section>
       )}
 
-      {document.manning && (
-        <Section title={document.manning.panel ? `Workshop crew · ${document.manning.panel}` : 'Workshop crew'}>
-          <ul className="text-sm space-y-1">
-            <li><strong>On-shift trades ({document.manning.onShift.length}). </strong>{document.manning.onShift.join(', ') || 'None.'}</li>
-            <li><strong>Away / sick / leave. </strong>{document.manning.away.join(', ') || 'None.'}</li>
-            <li><strong>Overtime and labour hire. </strong>{document.manning.overtime.join(', ') || 'None.'}</li>
-            <li><strong>Unallocated. </strong>{document.manning.unallocated.join(', ') || 'None.'}</li>
-            <li><strong>Bay-assigned. </strong>{document.manning.assigned.join(', ') || 'None.'}</li>
-          </ul>
-        </Section>
-      )}
-
-      <Section title={allocation.panel ? `Jobs for ${allocation.panel}` : 'Jobs for the crew coming on'}>
-        {!allocation.panel ? (
-          <p className="text-sm text-slate-500">{emptyCrewMessage}</p>
-        ) : allocation.people.length === 0 ? (
-          <p className="text-sm text-slate-500">No one is rostered on {allocation.panel}.</p>
-        ) : (
-          <div className="space-y-2">
-            {allocation.people.filter((person) => person.jobs.length > 0).map((person) => (
-              <div key={person.name}>
-                <p className="text-sm font-black text-slate-900">
-                  {person.name}{person.trade ? <span className="font-bold text-slate-500"> · {person.trade}</span> : null}
-                </p>
-                <ul className="text-sm">
-                  {person.jobs.map((job, index) => (
-                    <li key={`${person.name}-${job.fleetId}-${index}`}>
-                      <strong>{job.fleetId}</strong> · {jobText(job)}
-                      <span className="text-slate-500"> · {stageLabel(job.stage)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-            {allocation.people.some((person) => person.jobs.length === 0) && (
-              <p className="break-inside-avoid text-sm">
-                <strong>Available / Unallocated Crew ({allocation.people.filter((person) => person.jobs.length === 0).length}): </strong>
-                {allocation.people
-                  .filter((person) => person.jobs.length === 0)
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map((person) => `${person.name}${person.trade ? ` (${person.trade})` : ''}`)
-                  .join(', ')}
-              </p>
-            )}
-          </div>
-        )}
-      </Section>
-
       <Section title={`Parts and hotshots (${parts.length})`}>
         {parts.length === 0 ? (
           <p className="text-sm text-slate-500">No parts logged on the jobs carrying over.</p>
@@ -304,25 +286,23 @@ export default function HandoverDocumentView({
           <table className="w-full text-sm text-left">
             <thead>
               <tr className="text-xs uppercase text-slate-500">
-                <th className="py-1 pr-3 font-bold">Unit</th>
-                <th className="py-1 pr-3 font-bold">Part</th>
-                <th className="py-1 pr-3 font-bold">Status</th>
-                <th className="py-1 font-bold">ETA</th>
+                <th className="py-1 pr-3 font-bold">Machine</th>
+                <th className="py-1 pr-3 font-bold">Supplier</th>
+                <th className="py-1 pr-3 font-bold">Ordered</th>
+                <th className="py-1 pr-3 font-bold">ETA</th>
+                <th className="py-1 pr-3 font-bold">Description</th>
+                <th className="py-1 font-bold">Reason</th>
               </tr>
             </thead>
             <tbody>
               {parts.map((part, index) => (
-                <tr key={`${part.fleetId}-${part.description}-${index}`} className="border-t border-slate-200 align-top">
+                <tr key={`${part.fleetId}-${part.description}-${index}`} className={`border-t border-l-4 border-slate-200 align-top ${partRowClass(part)}`}>
                   <td className="py-2 pr-3 whitespace-nowrap font-bold">{part.fleetId}</td>
-                  <td className="py-2 pr-3">
-                    {part.hotshot && <span className="font-black uppercase text-amber-700">Hotshot · </span>}
-                    {part.description}
-                    {part.partNumber ? <span className="text-slate-500"> · {part.partNumber}</span> : null}
-                    {part.po ? <span className="block text-xs text-slate-500">Order {part.po}</span> : null}
-                    {part.carrier ? <span className="block text-xs text-slate-500">{part.carrier}</span> : null}
-                  </td>
-                  <td className="py-2 pr-3 whitespace-nowrap">{partStatusLabel(part.status)}</td>
-                  <td className="py-2 whitespace-nowrap">{part.eta ? formatDateTime(part.eta) : '—'}</td>
+                  <td className="py-2 pr-3">{part.carrier || '—'}</td>
+                  <td className="py-2 pr-3 whitespace-nowrap">{part.orderedOn ? part.orderedOn.slice(0, 10) : '—'}</td>
+                  <td className="py-2 pr-3 whitespace-nowrap">{part.eta ? (part.eta.length <= 10 ? part.eta : formatDateTime(part.eta)) : '—'}</td>
+                  <td className="py-2 pr-3">{part.description}</td>
+                  <td className="py-2">{part.reason || part.po || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -414,73 +394,6 @@ export default function HandoverDocumentView({
         )}
       </Section>
 
-      <Section title="Notes for the next shift">
-        {notes.length === 0 ? (
-          <p className="text-sm text-slate-500">Nothing logged for safety, weather, manning, or priorities.</p>
-        ) : (
-          <div className="space-y-3">
-            {notes.map((group) => (
-              <div key={group.category}>
-                <p className="text-sm font-black text-slate-900">{group.title}</p>
-                <ul className="text-sm">
-                  {group.entries.map((entry) => (
-                    <li key={entry.id}>
-                      {entry.fleet_id ? <strong>{entry.fleet_id} · </strong> : null}
-                      {entry.details}
-                      {entry.action_required ? <span className="text-slate-600"> · Action: {entry.action_required}</span> : null}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      <Section title="Defects" className="break-inside-avoid">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-          <div>
-            <p className="font-bold mb-1">Fixed this shift ({document.defectsFixed.length})</p>
-            {document.defectsFixed.length === 0 ? <p className="text-slate-500">None closed this shift.</p> : (
-              <ul className="space-y-1">
-                {document.defectsFixed.map((defect, index) => (
-                  <li key={`fixed-${index}`}><strong>[{defect.severity}]{defect.fleetId ? ` ${defect.fleetId}` : ''}</strong> {defect.description}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div>
-            <p className="font-bold mb-1">Still outstanding ({document.defectsOpen.length})</p>
-            {document.defectsOpen.length === 0 ? <p className="text-slate-500">None.</p> : (
-              <ul className="space-y-1">
-                {document.defectsOpen.map((defect, index) => (
-                  <li key={`open-${index}`}><strong>[{defect.severity}]{defect.fleetId ? ` ${defect.fleetId}` : ''}</strong> {defect.description}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      </Section>
-
-      <footer className="mt-8 break-inside-avoid border-t-2 border-slate-900 pt-4">
-        <h3 className="text-sm font-black uppercase tracking-wide">Statutory sign-off</h3>
-        <p className="mt-2 text-sm">
-          <strong>Outgoing:</strong>{' '}
-          {outgoingSignedBy && outgoingSignedAt
-            ? `${outgoingSignedBy} · ${formatDateTime(outgoingSignedAt)}`
-            : 'Pending outgoing sign-off'}
-        </p>
-        <p className="text-sm">
-          <strong>Oncoming:</strong>{' '}
-          {oncomingSignedBy && oncomingSignedAt
-            ? `${oncomingSignedBy} · ${formatDateTime(oncomingSignedAt)}`
-            : 'Pending oncoming sign-off'}
-        </p>
-        <div className="mt-6 hidden grid-cols-2 gap-10 print:grid">
-          <div className="border-t border-slate-700 pt-1 text-xs">Outgoing supervisor signature</div>
-          <div className="border-t border-slate-700 pt-1 text-xs">Oncoming supervisor signature</div>
-        </div>
-      </footer>
     </article>
   );
 }

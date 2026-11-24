@@ -115,7 +115,15 @@ export default function ProductionHandover({
     delays: delays.filter((row) => row.reason.trim()),
     safetyIncidents: incidents.filter((row) => row.what.trim() || row.where.trim() || row.action.trim()),
     safetyFocus: safetyFocus.trim() || null,
-    oce: oceReport ? { fileName: oceReport.file_name, briefing: oceReport.briefing } : null,
+    oce: oceReport && (oceReport.storage_path || (oceReport.source_text ?? '').startsWith('data:application/pdf'))
+      ? {
+          fileName: oceReport.file_name,
+          storagePath: oceReport.storage_path,
+          fileSize: oceReport.file_size ?? null,
+          dataUrl: oceReport.storage_path ? null : oceReport.source_text,
+          briefing: oceReport.briefing,
+        }
+      : null,
     inTraining: cover.inTraining,
     ertOnSite: cover.ertOnSite,
     assessorsOnSite: cover.assessorsOnSite,
