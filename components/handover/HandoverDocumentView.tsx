@@ -21,6 +21,7 @@ interface HandoverDocumentViewProps {
   summaryControls?: ReactNode;
   canAcknowledge?: boolean;
   onAcknowledge?: () => void;
+  onUndoOutgoing?: () => void;
   outgoingSignedBy?: string | null;
   outgoingSignedAt?: string | null;
   oncomingSignedBy?: string | null;
@@ -174,6 +175,7 @@ export default function HandoverDocumentView({
   oncomingSignedAt = null,
   canAcknowledge = false,
   onAcknowledge,
+  onUndoOutgoing,
 }: HandoverDocumentViewProps) {
   const dateLabel = shiftDate ? new Date(shiftDate).toLocaleDateString() : '';
   const allocation = document.allocation ?? { panel: null, people: [], withOutgoing: [], needsName: [] };
@@ -355,17 +357,29 @@ export default function HandoverDocumentView({
         <h3 className="handover-heading text-sm font-black uppercase tracking-wide">Electronic sign-off</h3>
         <p className="mt-2 text-sm">
           <strong>Outgoing supervisor:</strong>{' '}
-          {outgoingSignedBy && outgoingSignedAt
-            ? `${outgoingSignedBy} · electronically signed ${formatDateTime(outgoingSignedAt)}`
-            : 'Not signed'}
+          {outgoingSignedBy && outgoingSignedAt ? (
+            onUndoOutgoing ? (
+              <button type="button" onClick={onUndoOutgoing} className="underline decoration-slate-400 underline-offset-2 print:no-underline">
+                {outgoingSignedBy} · electronically signed {formatDateTime(outgoingSignedAt)}
+              </button>
+            ) : (
+              `${outgoingSignedBy} · electronically signed ${formatDateTime(outgoingSignedAt)}`
+            )
+          ) : 'Not signed'}
         </p>
         <p className="text-sm">
           <strong>Oncoming supervisor:</strong>{' '}
-          {oncomingSignedBy && oncomingSignedAt
-            ? `${oncomingSignedBy} · acknowledged ${formatDateTime(oncomingSignedAt)}`
-            : 'Not acknowledged'}
+          {oncomingSignedBy && oncomingSignedAt ? (
+            canAcknowledge && onAcknowledge ? (
+              <button type="button" onClick={onAcknowledge} className="underline decoration-slate-400 underline-offset-2 print:no-underline">
+                {oncomingSignedBy} · acknowledged {formatDateTime(oncomingSignedAt)}
+              </button>
+            ) : (
+              `${oncomingSignedBy} · acknowledged ${formatDateTime(oncomingSignedAt)}`
+            )
+          ) : 'Not acknowledged'}
         </p>
-        {canAcknowledge && onAcknowledge && (
+        {canAcknowledge && onAcknowledge && !oncomingSignedAt && (
           <button type="button" onClick={onAcknowledge} className="mt-3 min-h-10 rounded-lg bg-slate-950 px-3 text-sm font-black text-white print:hidden">
             Acknowledge handover
           </button>

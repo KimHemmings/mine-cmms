@@ -490,8 +490,7 @@ export default function HandoverReportTab({
       return false;
     }
     if (currentLocked) {
-      alert('This handover is locked after outgoing sign-off.');
-      return false;
+      return undoOutgoingSignature();
     }
     if (!activeShift?.id) {
       alert('There is no active shift to save.');
@@ -524,6 +523,32 @@ export default function HandoverReportTab({
       return false;
     }
     showToast({ message: `Electronically signed by ${signedByLabel(outgoingSignerName)}` });
+    await loadHandovers();
+    return true;
+  };
+
+  const undoOutgoingSignature = async (handover: SavedHandover | null = currentSaved) => {
+    if (accessLevel < 3 || readOnly || !handover?.id) return false;
+    setSaving(true);
+    const { error } = await supabase
+      .from('shift_handovers')
+      .update({
+        outgoing_signed_by: null,
+        outgoing_signed_at: null,
+        oncoming_signed_by: null,
+        oncoming_signed_at: null,
+      })
+      .eq('id', handover.id)
+      .not('outgoing_signed_at', 'is', null);
+    setSaving(false);
+    if (error) {
+      alert(`Couldn't remove the signature: ${error.message}`);
+      return false;
+    }
+    setOpened((current) => current?.id === handover.id
+      ? { ...current, outgoing_signed_by: null, outgoing_signed_at: null, oncoming_signed_by: null, oncoming_signed_at: null }
+      : current);
+    showToast({ message: 'Signature removed' });
     await loadHandovers();
     return true;
   };
@@ -778,6 +803,22 @@ export default function HandoverReportTab({
 
   const acknowledgeOncoming = async (handover: SavedHandover) => {
     if (accessLevel < 3 || readOnly) return;
+    if (handover.oncoming_signed_at) {
+      const { error } = await supabase
+        .from('shift_handovers')
+        .update({ oncoming_signed_by: null, oncoming_signed_at: null })
+        .eq('id', handover.id)
+        .not('oncoming_signed_at', 'is', null);
+      if (error) {
+        alert(`Couldn't remove the acknowledgement: ${error.message}`);
+        return;
+      }
+      setHandovers((current) => current.map((item) => item.id === handover.id ? { ...item, oncoming_signed_by: null, oncoming_signed_at: null } : item));
+      setOpened((current) => current?.id === handover.id ? { ...current, oncoming_signed_by: null, oncoming_signed_at: null } : current);
+      showToast({ message: 'Acknowledgement removed' });
+      await loadHandovers();
+      return;
+    }
     if (!outgoingSignerName) {
       alert('Your supervisor name is not available for statutory sign-off.');
       return;
@@ -983,8 +1024,8 @@ export default function HandoverReportTab({
       {view === 'current' && !opened && !readOnly && (
         <div className="sticky top-0 z-10 bg-white py-3 space-y-3">
           <div className="flex flex-wrap gap-2">
-            {!currentLocked && accessLevel >= 3 && <button type="button" onClick={() => void saveHandover()} disabled={saving} className={`${actionClass} bg-emerald-600 text-white`}>
-              {saving ? 'Signing...' : 'Save and sign'}
+            {accessLevel >= 3 && <button type="button" onClick={() => void saveHandover()} disabled={saving} className={`${actionClass} ${currentLocked ? 'border border-slate-900 bg-white text-slate-900' : 'bg-emerald-600 text-white'}`}>
+              {saving ? 'Saving...' : currentLocked ? 'Undo signature' : 'Save and sign'}
             </button>}
             {accessLevel >= 3 && (
               <button
@@ -999,7 +1040,7 @@ export default function HandoverReportTab({
           </div>
           <p className="text-sm text-slate-600">
             {currentLocked
-              ? 'Outgoing sign-off is on the document. The oncoming supervisor acknowledges it there.'
+              ? 'Click Undo signature, or the signed line, to take the signature off.'
               : accessLevel >= 3
                 ? 'Save and sign records you as the outgoing supervisor, with the time.'
                 : 'A Level 3+ supervisor must save and sign this handover.'}
@@ -1044,7 +1085,12 @@ export default function HandoverReportTab({
               onClick={() => void acknowledgeOncoming(opened)}
             />
           )}
-          <HandoverDocumentView {...printModel} />
+          <HandoverDocumentView
+            {...printModel}
+            canAcknowledge={Boolean(opened.outgoing_signed_at && accessLevel >= 3 && !readOnly)}
+            onAcknowledge={() => { void acknowledgeOncoming(opened); }}
+            onUndoOutgoing={opened.outgoing_signed_at && accessLevel >= 3 && !readOnly ? () => { void undoOutgoingSignature(opened); } : undefined}
+          />
         </div>
       )}
 
@@ -1097,8 +1143,9 @@ export default function HandoverReportTab({
               outgoingSignedAt={currentSaved?.outgoing_signed_at ?? null}
               oncomingSignedBy={currentSaved?.oncoming_signed_by ?? null}
               oncomingSignedAt={currentSaved?.oncoming_signed_at ?? null}
-              canAcknowledge={Boolean(currentLocked && currentSaved && !currentSaved.oncoming_signed_at && accessLevel >= 3 && !readOnly)}
+              canAcknowledge={Boolean(currentLocked && currentSaved && accessLevel >= 3 && !readOnly)}
               onAcknowledge={() => { if (currentSaved) void acknowledgeOncoming(currentSaved); }}
+              onUndoOutgoing={currentLocked && accessLevel >= 3 && !readOnly ? () => { void undoOutgoingSignature(); } : undefined}
               summaryControls={!currentLocked && !readOnly ? (
                 <div className="space-y-3">
                   <textarea
