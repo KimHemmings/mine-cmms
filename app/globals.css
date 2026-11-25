@@ -53,17 +53,30 @@ body {
     overflow: visible !important;
   }
 
-  .handover-print-document section {
-    overflow: visible !important;
-  }
-
-  .handover-print-document tr {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
+  .handover-print-document section,
+  .handover-print-document .handover-section,
   .handover-print-document .handover-briefing {
+    overflow: visible !important;
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  .handover-print-document h2,
+  .handover-print-document h3,
+  .handover-print-document h4,
+  .handover-print-document .handover-heading {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .handover-print-document tr,
+  .handover-print-document .handover-row {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .handover-print-document .handover-oce {
+    break-inside: auto;
+    page-break-inside: auto;
   }
 }

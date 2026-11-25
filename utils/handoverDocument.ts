@@ -295,6 +295,7 @@ export function normalizeHandoverDocument(document: Partial<HandoverSnapshot> | 
           fileName: document.oce.fileName ?? null,
           storagePath: document.oce.storagePath ?? null,
           fileSize: document.oce.fileSize ?? null,
+          sourceText: document.oce.sourceText ?? null,
           dataUrl: document.oce.dataUrl ?? null,
           briefing: normalizeOceBriefing(document.oce.briefing),
         }

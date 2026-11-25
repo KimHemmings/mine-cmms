@@ -18,6 +18,8 @@ import WorkboardTab from '@/components/WorkboardTab';
 import FleetDossierTab from '@/components/FleetDossierTab';
 import HandoverReportTab from '@/components/HandoverReportTab';
 import PartsBoard from '@/components/parts/PartsBoard';
+import DailyReportsTab, { DailyReportsUnauthorized } from '@/components/reports/DailyReportsTab';
+import { canViewDailyMaintenanceReports } from '@/utils/dailyReportsAccess';
 import WorkboardModals from '@/components/WorkboardModals';
 import { getPermissions, operationalLens, type Department } from '@/utils/permissions';
 import { SiteBrandProvider } from '@/components/SiteBrand';
@@ -65,7 +67,7 @@ function Workboard() {
   }
   const viewDepartment = showLens ? viewedDepartment : permissions.department;
   const viewPermissions = showLens ? operationalLens(permissions, viewedDepartment) : permissions;
-  const [currentTab, setCurrentTab] = useState<'management' | 'board' | 'myLeave' | 'handover' | 'dossier' | 'crew' | 'training' | 'status' | 'parts'>('board');
+  const [currentTab, setCurrentTab] = useState<'management' | 'board' | 'myLeave' | 'handover' | 'dossier' | 'crew' | 'training' | 'status' | 'parts' | 'reports'>('board');
   const [trainingSection, setTrainingSection] = useState<'tickets' | 'passouts' | 'supervision'>('tickets');
   const [routedProfile, setRoutedProfile] = useState<string | null>(null);
   const homeTab = permissions.canViewManagementDashboard ? 'management' : permissions.department === 'training' ? 'training' : 'board';
@@ -83,7 +85,8 @@ function Workboard() {
       || (currentTab === 'handover' && permissions.canViewHandover)
       || (currentTab === 'crew' && permissions.canViewCrew)
       || (currentTab === 'training' && permissions.department === 'training')
-      || (currentTab === 'parts' && permissions.accessLevel >= 3);
+      || (currentTab === 'parts' && permissions.accessLevel >= 3)
+      || currentTab === 'reports';
     if (!allowed) setCurrentTab(homeTab);
   }, [profile, permissions, currentTab, homeTab]);
   const { showToast } = useFeedback();
@@ -361,6 +364,12 @@ function Workboard() {
 
         {currentTab === 'parts' && permissions.accessLevel >= 3 && (
           <PartsBoard assets={allAssets} actorName={activeFitter} readOnly={permissions.accessLevel >= 5} />
+        )}
+
+        {currentTab === 'reports' && (
+          canViewDailyMaintenanceReports(permissions)
+            ? <DailyReportsTab />
+            : <DailyReportsUnauthorized />
         )}
 
         {currentTab === 'handover' && permissions.canViewHandover && ((showLens && viewDepartment === 'workshop') || (!showLens && permissions.department !== 'production')) && (

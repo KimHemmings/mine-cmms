@@ -1,22 +1,26 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FileUp } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
-import { OceReport } from '@/types';
+import { OceBriefing, OceReport } from '@/types';
 import { EMPTY_OCE_BRIEFING } from '@/utils/oce';
 import { useFeedback } from '@/components/ui/FeedbackProvider';
-import OcePdfLink, { isPdfDataUrl } from './OcePdfLink';
 
 const SELECT = 'id, shift_id, file_name, storage_path, source_text, file_size, briefing, uploaded_at, uploaded_by';
 
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
+function reportText(value: string | null | undefined) {
+  if (!value || value.startsWith('data:application/pdf')) return '';
+  return value;
+}
+
+export function blankPageMessage(blankPages: number[], pageCount?: number) {
+  if (blankPages.length === 0) return '';
+  if (pageCount && blankPages.length >= pageCount) {
+    return 'This PDF has no extractable text layer. It may be a scan. Paste the report so a section is not missed.';
+  }
+  const pages = blankPages.join(', ');
+  return `Page ${pages} ${blankPages.length === 1 ? 'has' : 'have'} no extractable text layer. Check ${blankPages.length === 1 ? 'that page' : 'those pages'} so a section is not missed.`;
 }
 
 export default function OceReportPanel({
@@ -33,9 +37,10 @@ export default function OceReportPanel({
 }) {
   const supabase = useMemo(() => createClient(), []);
   const { showToast } = useFeedback();
-  const fileRef = useRef<HTMLInputElement>(null);
   const [report, setReport] = useState<OceReport | null>(null);
+  const [paste, setPaste] = useState('');
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
 
   useEffect(() => {
     if (!shiftId) return;
@@ -51,15 +56,50 @@ export default function OceReportPanel({
           console.error('OCE report load failed:', error.message);
           return;
         }
-        const row = data as OceReport | null;
-        const attached = row && (row.storage_path || isPdfDataUrl(row.source_text)) ? row : null;
-        setReport(attached);
-        onChange(attached);
+        const row = (data as OceReport | null) ?? null;
+        setReport(row);
+        setPaste(reportText(row?.source_text));
+        setNotice(blankPageMessage(row?.briefing?.blankPages ?? []));
+        onChange(row && (row.storage_path || reportText(row.source_text)) ? row : null);
       });
     return () => {
       cancelled = true;
     };
   }, [shiftId, supabase, onChange]);
+
+  async function saveRow(input: {
+    fileName: string;
+    storagePath: string | null;
+    fileSize: number | null;
+    text: string;
+    briefing: OceBriefing;
+    previousPath?: string | null;
+  }) {
+    if (!shiftId) return;
+    const saved = await supabase.from('oce_reports').upsert(
+      {
+        shift_id: shiftId,
+        file_name: input.fileName,
+        storage_path: input.storagePath,
+        source_text: input.text,
+        file_size: input.fileSize,
+        briefing: input.briefing,
+      },
+      { onConflict: 'shift_id' },
+    ).select(SELECT).single();
+    if (saved.error || !saved.data) {
+      showToast({ message: 'Could not save the OCE report.', tone: 'error' });
+      return;
+    }
+    if (input.previousPath && input.previousPath !== input.storagePath) {
+      await supabase.storage.from('oce-reports').remove([input.previousPath]);
+    }
+    const row = saved.data as OceReport;
+    setReport(row);
+    setPaste(reportText(row.source_text));
+    onChange(row);
+    showToast({ message: 'OCE report saved.', tone: 'success' });
+  }
 
   async function upload(file: File) {
     if (!shiftId) {
@@ -76,78 +116,67 @@ export default function OceReportPanel({
       return;
     }
     setBusy(true);
-    const previousPath = report?.storage_path ?? null;
-    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const path = `${shiftId}/${Date.now()}-${safe}`;
-    const stored = await supabase.storage.from('oce-reports').upload(path, file, {
-      contentType: 'application/pdf',
-      upsert: false,
-    });
-    let storagePath: string | null = path;
-    let dataUrl: string | null = null;
-    if (stored.error) {
-      try {
-        dataUrl = await fileToDataUrl(file);
-        storagePath = null;
-      } catch {
-        setBusy(false);
+    setNotice('');
+    try {
+      const form = new FormData();
+      form.set('file', file);
+      const response = await fetch('/api/oce-text', { method: 'POST', body: form });
+      const payload = await response.json() as { text?: string; blankPages?: number[]; pages?: number; error?: string };
+      if (!response.ok) {
+        showToast({ message: payload.error || 'Could not read that PDF.', tone: 'error' });
+        return;
+      }
+      const text = typeof payload.text === 'string' ? payload.text : '';
+      const blankPages = Array.isArray(payload.blankPages) ? payload.blankPages : [];
+      const message = blankPageMessage(blankPages, payload.pages);
+      setNotice(message);
+      const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${shiftId}/${Date.now()}-${safe}`;
+      const stored = await supabase.storage.from('oce-reports').upload(path, file, {
+        contentType: 'application/pdf',
+        upsert: false,
+      });
+      if (stored.error) {
         showToast({ message: 'Could not store that PDF.', tone: 'error' });
         return;
       }
+      await saveRow({
+        fileName: file.name,
+        storagePath: path,
+        fileSize: file.size,
+        text,
+        briefing: { ...EMPTY_OCE_BRIEFING, blankPages },
+        previousPath: report?.storage_path,
+      });
+    } finally {
+      setBusy(false);
     }
-    const saved = await supabase.from('oce_reports').upsert(
-      {
-        shift_id: shiftId,
-        file_name: file.name,
-        storage_path: storagePath,
-        source_text: dataUrl,
-        file_size: file.size,
-        briefing: EMPTY_OCE_BRIEFING,
-      },
-      { onConflict: 'shift_id' },
-    ).select(SELECT).single();
-    setBusy(false);
-    if (saved.error || !saved.data) {
-      showToast({ message: 'Could not save the OCE report.', tone: 'error' });
-      return;
-    }
-    if (previousPath && previousPath !== storagePath) {
-      await supabase.storage.from('oce-reports').remove([previousPath]);
-    }
-    const row = saved.data as OceReport;
-    setReport(row);
-    onChange(row);
-    showToast({
-      message: storagePath ? 'OCE report PDF saved.' : 'Storage was unavailable. The PDF is kept with this shift.',
-      tone: 'success',
-    });
   }
 
-  async function remove() {
-    if (!shiftId || !report || locked) return;
+  async function savePaste() {
+    if (!shiftId) {
+      showToast({ message: 'There is no active shift to attach this report to.', tone: 'error' });
+      return;
+    }
     setBusy(true);
-    if (report.storage_path) await supabase.storage.from('oce-reports').remove([report.storage_path]);
-    const { error } = await supabase.from('oce_reports').delete().eq('id', report.id);
+    setNotice('');
+    await saveRow({
+      fileName: report?.file_name && report.storage_path ? report.file_name : 'Pasted OCE report',
+      storagePath: report?.storage_path ?? null,
+      fileSize: report?.file_size ?? null,
+      text: paste,
+      briefing: { ...EMPTY_OCE_BRIEFING, blankPages: [] },
+    });
     setBusy(false);
-    if (error) {
-      showToast({ message: 'Could not remove the OCE report.', tone: 'error' });
-      return;
-    }
-    setReport(null);
-    onChange(null);
   }
-
-  const dataUrl = isPdfDataUrl(report?.source_text) ? report?.source_text : null;
 
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-300 border-l-4 border-l-slate-700 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/90 px-5 py-3.5">
-        <h3 className="text-base font-black text-slate-900">OCE report</h3>
-        {!locked && (
+    <div className="mb-3 space-y-3 print:hidden">
+      {!locked && (
+        <div className="flex flex-wrap items-center gap-2">
           <label className={`min-h-10 px-3 rounded-lg bg-slate-900 text-white text-sm font-bold inline-flex items-center gap-1.5 cursor-pointer ${busy ? 'opacity-50 pointer-events-none' : ''}`}>
-            <FileUp className="w-4 h-4" /> {busy ? 'Saving...' : report ? 'Replace PDF' : 'Upload PDF'}
+            <FileUp className="w-4 h-4" /> {busy ? 'Reading...' : report ? 'Replace PDF' : 'Upload PDF'}
             <input
-              ref={fileRef}
               type="file"
               accept=".pdf,application/pdf"
               className="sr-only"
@@ -158,32 +187,9 @@ export default function OceReportPanel({
               }}
             />
           </label>
-        )}
-      </div>
-      <div className="space-y-3 p-4">
-        {!report ? (
-          <p className="text-sm text-slate-500">No OCE report PDF for this shift yet.</p>
-        ) : (
-          <div className="space-y-2">
-            <OcePdfLink
-              fileName={report.file_name}
-              storagePath={report.storage_path}
-              dataUrl={dataUrl}
-              fileSize={report.file_size}
-            />
-            {!locked && (
-              <button
-                type="button"
-                onClick={() => void remove()}
-                disabled={busy}
-                className="text-sm font-bold text-rose-700 underline disabled:opacity-50"
-              >
-                Remove PDF
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </section>
+        </div>
+      )}
+      {notice && <p className="text-sm font-bold text-amber-900">{notice}</p>}
+    </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   Users,
   GraduationCap,
   Package,
+  BarChart3,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
@@ -21,12 +22,13 @@ import { useFeedback } from '@/components/ui/FeedbackProvider';
 import { CREW_PANELS, CrewMember, ShiftRecord, UserRole } from '@/types';
 import ShiftChatDrawer from '@/components/ShiftChatDrawer';
 import { Permissions, isWorkshopRoster, type Department } from '@/utils/permissions';
+import { canViewDailyMaintenanceReports } from '@/utils/dailyReportsAccess';
 import { getShiftClock, type ShiftClock } from '@/utils/shiftClock';
 import { formatStartDay, shiftIsPast } from '@/utils/crewStanding';
 import type { SyncStatus } from '@/hooks/useRealtimeWorkboard';
 import { useSiteBrand } from '@/components/SiteBrand';
 
-type Tab = 'management' | 'board' | 'myLeave' | 'handover' | 'dossier' | 'crew' | 'training' | 'status' | 'parts';
+type Tab = 'management' | 'board' | 'myLeave' | 'handover' | 'dossier' | 'crew' | 'training' | 'status' | 'parts' | 'reports';
 
 interface TopHeaderProps {
   activeShift: ShiftRecord | null;
@@ -74,6 +76,7 @@ function screenTitle(tab: Tab, department: Department, siteCommand = false, lens
   if (tab === 'dossier') return 'Fleet directory';
   if (tab === 'handover') return 'Shift handover';
   if (tab === 'parts') return 'Parts';
+  if (tab === 'reports') return 'Daily Maintenance Reports';
   if (tab === 'crew') return department === 'training' ? 'Competencies' : 'Crew';
   return 'Workshop whiteboard';
 }
@@ -154,6 +157,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     { id: 'myLeave', label: 'Leave / Roster', icon: <Users className="w-4 h-4" />, show: permissions.accessLevel === 2 && permissions.department === 'workshop' },
     { id: 'handover', label: 'Shift handover', icon: <FileSpreadsheet className="w-4 h-4" />, show: permissions.canViewHandover },
     { id: 'parts', label: 'Parts', icon: <Package className="w-4 h-4" />, show: permissions.accessLevel >= 3 },
+    { id: 'reports', label: 'Daily reports', icon: <BarChart3 className="w-4 h-4" />, show: canViewDailyMaintenanceReports(permissions) },
     { id: 'crew', label: crewTabLabel(permissions.department, permissions.accessLevel, crewAttention), icon: <Users className="w-4 h-4" />, show: permissions.canViewCrew },
     { id: 'training', label: 'Training', icon: <GraduationCap className="w-4 h-4" />, show: permissions.department === 'training' },
   ];

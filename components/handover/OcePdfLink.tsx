@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FileText } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 
@@ -27,6 +27,54 @@ export async function openOcePdf(storagePath: string | null | undefined, dataUrl
   if (error || !data?.signedUrl) return false;
   window.open(data.signedUrl, '_blank', 'noopener');
   return true;
+}
+
+export function OcePdfFrame({
+  fileName,
+  storagePath,
+  dataUrl,
+}: {
+  fileName: string;
+  storagePath?: string | null;
+  dataUrl?: string | null;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = '';
+    async function load() {
+      try {
+        let blob: Blob | null = null;
+        if (isPdfDataUrl(dataUrl)) {
+          const response = await fetch(dataUrl!);
+          blob = await response.blob();
+        } else if (storagePath) {
+          const { data, error } = await createClient().storage.from('oce-reports').download(storagePath);
+          if (error || !data) throw error ?? new Error('missing');
+          blob = data;
+        }
+        if (!blob) return;
+        const pdf = blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' });
+        objectUrl = URL.createObjectURL(pdf);
+        if (!cancelled) setUrl(objectUrl);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [storagePath, dataUrl]);
+
+  if (failed) return <p className="text-sm font-bold text-rose-800">The OCE PDF is saved, but it could not be opened.</p>;
+  if (!url) return <p className="text-sm text-slate-500">Opening {fileName}…</p>;
+  return (
+    <iframe title={fileName} src={url} className="h-[720px] w-full rounded-lg border border-slate-300 bg-white" />
+  );
 }
 
 export default function OcePdfLink({

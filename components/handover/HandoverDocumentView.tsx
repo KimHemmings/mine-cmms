@@ -1,11 +1,11 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { HandoverLogCategory, HandoverMachineLine, HandoverPartLine, HandoverSnapshot } from '@/types';
+import { HandoverMachineLine, HandoverPartLine, HandoverSnapshot } from '@/types';
 import { formatDateTime } from '@/utils/helpers';
 import { stageLabel } from '@/utils/handoverDocument';
 import { compareHandoverMachines, normalizePriority, priorityBadgeClass } from '@/utils/handoverPriority';
-import OcePdfLink, { isPdfDataUrl } from './OcePdfLink';
+import { OcePdfFrame, isPdfDataUrl } from './OcePdfLink';
 
 interface HandoverDocumentViewProps {
   shiftName: string;
@@ -17,26 +17,21 @@ interface HandoverDocumentViewProps {
   document: HandoverSnapshot;
   emptyCrewMessage?: string;
   isLivePreview?: boolean;
+  oceControls?: ReactNode;
+  summaryControls?: ReactNode;
+  canAcknowledge?: boolean;
+  onAcknowledge?: () => void;
   outgoingSignedBy?: string | null;
   outgoingSignedAt?: string | null;
   oncomingSignedBy?: string | null;
   oncomingSignedAt?: string | null;
 }
 
-const NOTE_ORDER: { category: HandoverLogCategory; title: string }[] = [
-  { category: 'WEATHER', title: 'Weather and roads' },
-  { category: 'MANNING', title: 'Manning' },
-  { category: 'PRIORITY', title: 'Priorities for the next shift' },
-  { category: 'WATCHLIST', title: 'Watch' },
-  { category: 'BRAKE_TEST', title: 'Brake tests' },
-  { category: 'TOOLING', title: 'Tooling and rigging' },
-];
-
 function Section({ title, children, className = '' }: { title: string; children: ReactNode; className?: string }) {
   const accent = title.toLowerCase().includes('safety') ? 'border-l-amber-500' : 'border-l-slate-700';
   return (
-    <section className={`mt-6 overflow-hidden rounded-xl border border-slate-200 border-l-4 ${accent} bg-white print:overflow-visible ${className}`}>
-      <h3 className="border-b border-slate-200 bg-slate-50/90 px-5 py-3.5 text-sm font-black uppercase tracking-wide text-slate-800">
+    <section className={`handover-section mt-6 overflow-hidden rounded-xl border border-slate-200 border-l-4 ${accent} bg-white print:overflow-visible ${className}`}>
+      <h3 className="handover-heading border-b border-slate-200 bg-slate-50/90 px-5 py-3.5 text-sm font-black uppercase tracking-wide text-slate-800">
         {title}
       </h3>
       <div className="p-4">{children}</div>
@@ -115,22 +110,50 @@ function MachineJobNotes({
           <p className="text-xs text-slate-500">{workOrderLabel(order.woNumber, ' · ')}{stageLabel(order.stage)}</p>
         </div>
       ))}
-      {machineSummary && machineSummary.length > 0 && (
-        <div className="break-inside-avoid rounded-md bg-indigo-50/70 px-2.5 py-2 print:bg-transparent print:p-0">
-          <ul className="list-disc pl-4 text-sm">
+      {machineSummary && machineSummary.length > 0 ? (
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">This shift</p>
+          <ul className="mt-1 list-disc pl-4 text-sm">
             {machineSummary.map((bullet, index) => <li key={`${machine.fleetId}-summary-${index}`}>{bullet}</li>)}
           </ul>
         </div>
-      )}
-      {rawNotes.length > 0 && (
-        <details className="print:hidden">
-          <summary className="cursor-pointer text-xs font-bold text-slate-500">View job notes ({rawNotes.length})</summary>
-          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-slate-600">
-            {rawNotes.map((note, index) => <li key={`${machine.fleetId}-raw-${index}`}>{note}</li>)}
-          </ul>
-        </details>
-      )}
+      ) : rawNotes.length > 0 ? (
+        <p className="text-sm text-slate-700">{rawNotes[0]}</p>
+      ) : null}
     </div>
+  );
+}
+
+function MachineCard({
+  machine,
+  summaries,
+  log,
+  whenLabel,
+  when,
+}: {
+  machine: HandoverMachineLine;
+  summaries?: Record<string, string[]>;
+  log: HandoverSnapshot['log'];
+  whenLabel: string;
+  when: string;
+}) {
+  const crew = machine.orders.map((order) => order.fitter).filter(Boolean).join(', ');
+  return (
+    <article className="handover-row break-inside-avoid rounded-lg border border-slate-200 border-l-4 border-l-slate-800 bg-white p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-base font-black">{machine.fleetId}</p>
+          <p className="text-xs text-slate-600">{machine.makeModel || 'Model not recorded'} · {machine.location || 'Location not recorded'}</p>
+        </div>
+        <span className={`rounded border px-1.5 py-0.5 text-[10px] font-black ${priorityBadgeClass(machine.priority)}`}>
+          {normalizePriority(machine.priority)}
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-slate-600">{crew || 'Unassigned'} · {whenLabel} {when}</p>
+      <div className="mt-2">
+        <MachineJobNotes machine={machine} summaries={summaries ?? {}} log={log} />
+      </div>
+    </article>
   );
 }
 
@@ -143,6 +166,14 @@ export default function HandoverDocumentView({
   savedBy,
   document,
   isLivePreview = false,
+  oceControls = null,
+  summaryControls = null,
+  outgoingSignedBy = null,
+  outgoingSignedAt = null,
+  oncomingSignedBy = null,
+  oncomingSignedAt = null,
+  canAcknowledge = false,
+  onAcknowledge,
 }: HandoverDocumentViewProps) {
   const dateLabel = shiftDate ? new Date(shiftDate).toLocaleDateString() : '';
   const allocation = document.allocation ?? { panel: null, people: [], withOutgoing: [], needsName: [] };
@@ -151,133 +182,102 @@ export default function HandoverDocumentView({
   const shiftSummary = (document.shift_summary ?? document.summary ?? '').trim();
   const oceFile = document.oce?.fileName?.trim() || '';
   const oceDataUrl = isPdfDataUrl(document.oce?.dataUrl) ? document.oce?.dataUrl : null;
+  const ocePath = document.oce?.storagePath ?? null;
   const handedOverMachines = [...document.handedOver].sort(compareHandoverMachines);
   const releasedMachines = [...document.released].sort(compareHandoverMachines);
   const parts = document.parts ?? [];
   const safetyLog = document.log.filter((entry) => entry.category === 'SAFETY');
   const incidents = document.safetyIncidents ?? [];
-  const notes = NOTE_ORDER
-    .map((group) => ({
-      ...group,
-      entries: document.log.filter((entry) => entry.category === group.category),
-    }))
-    .filter((group) => group.entries.length > 0);
 
   return (
     <article className="handover-print-document bg-white text-slate-900 print:overflow-visible">
-      <header className={`border-b-4 border-slate-900 pb-3 ${isLivePreview ? 'hidden print:block' : ''}`}>
+      <header className="handover-section border-b-4 border-slate-900 pb-3">
         <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Maintenance shift handover</p>
-        <h2 className="text-2xl font-black tracking-tight mt-1">{shiftName}{outgoingCrew ? ` · ${outgoingCrew}` : ''}</h2>
-        <p className="text-sm mt-1">
-          {dateLabel && <span>{dateLabel} · </span>}
-          Supervisor: <strong>{supervisor || 'Not recorded'}</strong>
-          {incomingCrew && <span> · Incoming crew: <strong>{incomingCrew}</strong></span>}
-          {savedAt && <span> · Saved {formatDateTime(savedAt)}{savedBy ? ` by ${savedBy}` : ''}</span>}
-        </p>
+        <h2 className="handover-heading text-2xl font-black tracking-tight mt-1">Bowen Basin workshop</h2>
+        <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-5">
+          <div><dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">Shift</dt><dd className="font-bold">{shiftName}</dd></div>
+          <div><dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">Crew</dt><dd className="font-bold">{outgoingCrew || 'Not recorded'}</dd></div>
+          <div><dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">Date</dt><dd className="font-bold">{dateLabel || 'Not recorded'}</dd></div>
+          <div><dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">Supervisor</dt><dd className="font-bold">{supervisor || 'Not recorded'}</dd></div>
+          <div><dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">Incoming crew</dt><dd className="font-bold">{incomingCrew || 'Not recorded'}</dd></div>
+        </dl>
+        {savedAt && <p className="mt-2 text-xs text-slate-500">Saved {formatDateTime(savedAt)}{savedBy ? ` by ${savedBy}` : ''}</p>}
       </header>
 
       <div className="mt-4 grid gap-3 grid-cols-1">
-        <section className="handover-briefing break-inside-avoid rounded-lg border-2 border-slate-300 bg-slate-50/50 p-4">
-          <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Shift summary</h3>
-          <div className="mt-2">
+        <section className="handover-briefing handover-section break-inside-avoid rounded-lg border-2 border-slate-300 bg-slate-50/50 p-4">
+          <h3 className="handover-heading text-sm font-black uppercase tracking-wide text-slate-800">Shift summary and safety</h3>
+          {summaryControls && <div className="mt-3 print:hidden">{summaryControls}</div>}
+          <div className={summaryControls ? 'mt-4 hidden print:block' : 'mt-3'}>
             <BriefingNotes text={shiftSummary || 'No summary recorded.'} />
           </div>
-          <div className="mt-4 border-t border-slate-200 pt-3">
-            <h4 className="text-xs font-black uppercase tracking-wide text-slate-600">Notes for the next shift</h4>
-            {notes.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-500">Nothing logged for safety, weather, manning, or priorities.</p>
+          <div className={`mt-4 border-t border-slate-200 pt-3 ${summaryControls ? 'hidden print:block' : ''}`}>
+            <h4 className="handover-heading text-xs font-black uppercase tracking-wide text-slate-600">Safety and incidents</h4>
+            {incidents.length === 0 && safetyLog.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-500">Nothing reported this shift.</p>
             ) : (
-              <div className="mt-2 space-y-3">
-                {notes.map((group) => (
-                  <div key={group.category}>
-                    <p className="text-sm font-black text-slate-900">{group.title}</p>
-                    <ul className="text-sm">
-                      {group.entries.map((entry) => (
-                        <li key={entry.id}>
-                          {entry.fleet_id ? <strong>{entry.fleet_id} · </strong> : null}
-                          {entry.details}
-                          {entry.action_required ? <span className="text-slate-600"> · Action: {entry.action_required}</span> : null}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+              <ul className="mt-2 space-y-1 text-sm">
+                {incidents.map((incident) => (
+                  <li key={incident.id}>
+                    <strong>{incident.what || 'Incident'}</strong>
+                    {incident.where ? ` · ${incident.where}` : ''}
+                    {incident.action ? <span className="text-slate-600"> · {incident.action}</span> : null}
+                  </li>
                 ))}
-              </div>
+                {safetyLog.map((entry) => (
+                  <li key={entry.id}>
+                    {entry.fleet_id ? <strong>{entry.fleet_id} · </strong> : null}
+                    {entry.details}
+                    {entry.action_required ? <span className="text-slate-600"> · {entry.action_required}</span> : null}
+                  </li>
+                ))}
+              </ul>
             )}
+            {document.safetyFocus ? <p className="mt-2 text-sm whitespace-pre-wrap">{document.safetyFocus}</p> : null}
           </div>
         </section>
-        {(oceFile && (document.oce?.storagePath || oceDataUrl)) && (
-          <OcePdfLink
-            fileName={oceFile}
-            storagePath={document.oce?.storagePath}
-            dataUrl={oceDataUrl}
-            fileSize={document.oce?.fileSize}
-          />
-        )}
       </div>
 
-      <Section title="Safety and incidents" className={isLivePreview ? 'hidden print:block' : ''}>
-        {incidents.length === 0 && safetyLog.length === 0 ? (
-          <p className="text-sm text-slate-500">Nothing reported this shift.</p>
-        ) : (
-          <ul className="text-sm space-y-1">
-            {incidents.map((incident) => (
-              <li key={incident.id}>
-                <strong>{incident.what || 'Incident'}</strong>
-                {incident.where ? ` · ${incident.where}` : ''}
-                {incident.action ? <span className="text-slate-600"> · {incident.action}</span> : null}
-              </li>
-            ))}
-            {safetyLog.map((entry) => (
-              <li key={entry.id}>
-                {entry.fleet_id ? <strong>{entry.fleet_id} · </strong> : null}
-                {entry.details}
-                {entry.action_required ? <span className="text-slate-600"> · {entry.action_required}</span> : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-
-      <Section title="Safety focus / share" className={isLivePreview ? 'hidden print:block' : ''}>
-        <p className="text-sm leading-relaxed whitespace-pre-wrap">{document.safetyFocus || 'No safety share recorded.'}</p>
-      </Section>
-
       <Section title="Training, ERT and workshop crew">
-        {(document.inTraining ?? []).length === 0 ? (
-          <p className="text-sm text-slate-500">No one on this crew is under supervision.</p>
-        ) : (
-          <ul className="text-sm space-y-1">
-            {(document.inTraining ?? []).map((row) => (
-              <li key={row.name}>
-                <strong>{row.name}</strong> · {row.startsLabel ? `${row.startsLabel} · ` : ''}{row.level} · {row.skill} · Assessor {row.assessor}
-                {!row.assessorOnSite && <span className="font-bold text-rose-700"> · Assessor is not on this shift</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-        <p className="text-sm mt-2"><strong>Trainer assessors. </strong>{(document.assessorsOnSite ?? []).join(', ') || 'None on this crew.'}</p>
-        <p className="text-sm"><strong>ERT. </strong>{(document.ertOnSite ?? []).join(', ') || 'No ERT member is on this crew.'}</p>
-        {document.manning && (
-          <ul className="mt-3 space-y-1 border-t border-slate-200 pt-3 text-sm">
-            <li><strong>On-shift trades ({document.manning.onShift.length}). </strong>{document.manning.onShift.join(', ') || 'None.'}</li>
-            <li><strong>Away / sick / leave. </strong>{document.manning.away.join(', ') || 'None.'}</li>
-            <li><strong>Overtime and labour hire. </strong>{document.manning.overtime.join(', ') || 'None.'}</li>
-            <li><strong>Unallocated. </strong>{document.manning.unallocated.join(', ') || 'None.'}</li>
-            <li><strong>Bay-assigned. </strong>{document.manning.assigned.join(', ') || 'None.'}</li>
-          </ul>
-        )}
+        <dl className="grid gap-3 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">In training</dt>
+            <dd className="mt-1">
+              {(document.inTraining ?? []).length === 0 ? 'No one on this crew is under supervision.' : (document.inTraining ?? []).map((row) => (
+                <span key={row.name} className="block"><strong>{row.name}</strong> · {row.level} · {row.skill} · {row.assessor}</span>
+              ))}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">Assessors on site</dt>
+            <dd className="mt-1">{(document.assessorsOnSite ?? []).join(', ') || 'None on this crew.'}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">ERT</dt>
+            <dd className="mt-1">{(document.ertOnSite ?? []).join(', ') || 'No ERT member is on this crew.'}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">On-shift trades</dt>
+            <dd className="mt-1">{document.manning?.onShift.join(', ') || 'None.'}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">Away, sick or leave</dt>
+            <dd className="mt-1">{document.manning?.away.join(', ') || 'None.'}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">Overtime and labour hire</dt>
+            <dd className="mt-1">{document.manning?.overtime.join(', ') || 'None.'}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">Not yet on a job</dt>
+            <dd className="mt-1">{document.manning?.unallocated.join(', ') || 'None.'}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">On a job</dt>
+            <dd className="mt-1">{document.manning?.assigned.join(', ') || 'None.'}</dd>
+          </div>
+        </dl>
       </Section>
-
-      {(document.machineNotes ?? []).length > 0 && (
-        <Section title="What was noted this shift" className="break-inside-avoid">
-          <ul className="text-sm space-y-1">
-            {(document.machineNotes ?? []).map((note) => (
-              <li key={note.fleetId}><strong>{note.fleetId}.</strong> {note.summary}</li>
-            ))}
-          </ul>
-        </Section>
-      )}
 
       <Section title={`Parts and hotshots (${parts.length})`}>
         {parts.length === 0 ? (
@@ -296,7 +296,7 @@ export default function HandoverDocumentView({
             </thead>
             <tbody>
               {parts.map((part, index) => (
-                <tr key={`${part.fleetId}-${part.description}-${index}`} className={`border-t border-l-4 border-slate-200 align-top ${partRowClass(part)}`}>
+                <tr key={`${part.fleetId}-${part.description}-${index}`} className={`handover-row break-inside-avoid border-t border-l-4 border-slate-200 align-top ${partRowClass(part)}`}>
                   <td className="py-2 pr-3 whitespace-nowrap font-bold">{part.fleetId}</td>
                   <td className="py-2 pr-3">{part.carrier || '—'}</td>
                   <td className="py-2 pr-3 whitespace-nowrap">{part.orderedOn ? part.orderedOn.slice(0, 10) : '—'}</td>
@@ -310,45 +310,15 @@ export default function HandoverDocumentView({
         )}
       </Section>
 
-      <Section title={`Still down (${handedOverMachines.length})`}>
+      <Section title={`Whiteboard (${handedOverMachines.length})`}>
         {handedOverMachines.length === 0 ? (
-          <p className="text-sm text-slate-500">No machines handed over.</p>
+          <p className="text-sm text-slate-500">No machines are still down.</p>
         ) : (
-          <table className="w-full table-fixed text-sm text-left">
-            <thead>
-              <tr className="text-xs uppercase text-slate-500">
-                <th className="w-[16%] py-1 pr-4 align-top wrap-break-word font-bold">Unit</th>
-                <th className="w-[56%] py-1 pr-4 align-top wrap-break-word font-bold">Job & shift notes</th>
-                <th className="w-[16%] py-1 pr-4 align-top wrap-break-word font-bold">Crew</th>
-                <th className="w-[12%] py-1 pr-4 align-top wrap-break-word font-bold">Expected back</th>
-              </tr>
-            </thead>
-            <tbody>
-              {handedOverMachines.map((machine) => (
-                <tr key={machine.fleetId} className="break-inside-avoid border-t border-slate-200 align-top">
-                  <td className="w-[16%] py-2 pr-4 align-top wrap-break-word leading-snug print:py-1.5">
-                    <div className="wrap-break-word">
-                      <strong>{machine.fleetId}</strong>{' '}
-                      <span className={`inline-flex items-center rounded border px-1.5 py-0.5 align-middle text-[10px] ${priorityBadgeClass(machine.priority)} print:bg-white print:text-black print:border-black`}>
-                        [{normalizePriority(machine.priority)}]
-                      </span>
-                    </div>
-                    <span className="block wrap-break-word text-xs text-slate-700">{machine.makeModel || 'Model not recorded'}</span>
-                    <span className="block wrap-break-word text-xs text-slate-500">{machine.location || 'Location not recorded'}</span>
-                  </td>
-                  <td className="w-[56%] py-2 pr-4 align-top wrap-break-word print:py-1.5">
-                    <MachineJobNotes machine={machine} summaries={document.machine_summaries} log={document.log} />
-                  </td>
-                  <td className="w-[16%] py-2 pr-4 align-top wrap-break-word print:py-1.5">
-                    {machine.orders.map((order) => order.fitter).filter(Boolean).join(', ') || (
-                      <span className="font-bold text-amber-800">Unassigned</span>
-                    )}
-                  </td>
-                  <td className="w-[12%] py-2 pr-4 align-top wrap-break-word print:py-1.5">{formatDateTime(machine.expectedUp)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="grid gap-3 md:grid-cols-2">
+            {handedOverMachines.map((machine) => (
+              <MachineCard key={machine.fleetId} machine={machine} summaries={document.machine_summaries} log={document.log} whenLabel="Expected back" when={formatDateTime(machine.expectedUp)} />
+            ))}
+          </div>
         )}
       </Section>
 
@@ -356,43 +326,51 @@ export default function HandoverDocumentView({
         {releasedMachines.length === 0 ? (
           <p className="text-sm text-slate-500">No machines released.</p>
         ) : (
-          <table className="w-full table-fixed text-sm text-left">
-            <thead>
-              <tr className="text-xs uppercase text-slate-500">
-                <th className="w-[16%] py-1 pr-4 align-top wrap-break-word font-bold">Unit</th>
-                <th className="w-[56%] py-1 pr-4 align-top wrap-break-word font-bold">Job & shift notes</th>
-                <th className="w-[16%] py-1 pr-4 align-top wrap-break-word font-bold">Crew</th>
-                <th className="w-[12%] py-1 pr-4 align-top wrap-break-word font-bold">Release time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {releasedMachines.map((machine) => (
-                <tr key={machine.fleetId} className="break-inside-avoid border-t border-slate-200 align-top">
-                  <td className="w-[16%] py-2 pr-4 align-top wrap-break-word leading-snug print:py-1.5">
-                    <div className="wrap-break-word">
-                      <strong>{machine.fleetId}</strong>{' '}
-                      <span className={`inline-flex items-center rounded border px-1.5 py-0.5 align-middle text-[10px] ${priorityBadgeClass(machine.priority)} print:bg-white print:text-black print:border-black`}>
-                        [{normalizePriority(machine.priority)}]
-                      </span>
-                    </div>
-                    <span className="block wrap-break-word text-xs text-slate-700">{machine.makeModel || 'Model not recorded'}</span>
-                    <span className="block wrap-break-word text-xs text-slate-500">{machine.location || 'Location not recorded'}</span>
-                  </td>
-                  <td className="w-[56%] py-2 pr-4 align-top wrap-break-word print:py-1.5">
-                    <MachineJobNotes machine={machine} summaries={document.machine_summaries} log={document.log} />
-                  </td>
-                  <td className="w-[16%] py-2 pr-4 align-top wrap-break-word print:py-1.5">
-                    {machine.orders.map((order) => order.fitter).filter(Boolean).join(', ') || (
-                      <span className="font-bold text-amber-800">Unassigned</span>
-                    )}
-                  </td>
-                  <td className="w-[12%] py-2 pr-4 align-top wrap-break-word print:py-1.5">{formatDateTime(machine.actualUp ?? null)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="grid gap-3 md:grid-cols-2">
+            {releasedMachines.map((machine) => (
+              <MachineCard key={machine.fleetId} machine={machine} summaries={document.machine_summaries} log={document.log} whenLabel="Released" when={formatDateTime(machine.actualUp ?? null)} />
+            ))}
+          </div>
         )}
       </Section>
+
+      <section className="handover-oce mt-6 overflow-visible rounded-xl border border-slate-200 border-l-4 border-l-slate-700 bg-white print:overflow-visible">
+        <h3 className="handover-heading border-b border-slate-200 bg-slate-50/90 px-5 py-3.5 text-sm font-black uppercase tracking-wide text-slate-800">
+          OCE report
+        </h3>
+        <div className="space-y-3 p-4">
+          {oceControls}
+          {ocePath || oceDataUrl ? (
+            <>
+              <p className="text-sm font-bold text-slate-800">{oceFile || 'OCE report.pdf'}</p>
+              <OcePdfFrame fileName={oceFile || 'OCE report.pdf'} storagePath={ocePath} dataUrl={oceDataUrl} />
+            </>
+          ) : (
+            <p className="text-sm text-slate-500">No OCE report PDF for this shift.</p>
+          )}
+        </div>
+      </section>
+
+      <footer className="handover-section mt-6 break-inside-avoid rounded-xl border-2 border-slate-900 p-4">
+        <h3 className="handover-heading text-sm font-black uppercase tracking-wide">Electronic sign-off</h3>
+        <p className="mt-2 text-sm">
+          <strong>Outgoing supervisor:</strong>{' '}
+          {outgoingSignedBy && outgoingSignedAt
+            ? `${outgoingSignedBy} · electronically signed ${formatDateTime(outgoingSignedAt)}`
+            : 'Not signed'}
+        </p>
+        <p className="text-sm">
+          <strong>Oncoming supervisor:</strong>{' '}
+          {oncomingSignedBy && oncomingSignedAt
+            ? `${oncomingSignedBy} · acknowledged ${formatDateTime(oncomingSignedAt)}`
+            : 'Not acknowledged'}
+        </p>
+        {canAcknowledge && onAcknowledge && (
+          <button type="button" onClick={onAcknowledge} className="mt-3 min-h-10 rounded-lg bg-slate-950 px-3 text-sm font-black text-white print:hidden">
+            Acknowledge handover
+          </button>
+        )}
+      </footer>
 
     </article>
   );

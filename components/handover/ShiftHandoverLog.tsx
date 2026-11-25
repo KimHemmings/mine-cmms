@@ -47,6 +47,8 @@ interface ShiftHandoverLogProps {
   homeCrew?: string | null;
   coveringCrew?: string | null;
   onRefreshAiNotes?: () => void;
+  downtimeMachines?: { id: string; fleetId: string }[];
+  onAddDowntime?: (assetId: string, reason: string) => Promise<boolean>;
   children?: ReactNode;
 }
 
@@ -64,9 +66,14 @@ export default function ShiftHandoverLog({
   homeCrew = null,
   coveringCrew = null,
   onRefreshAiNotes,
+  downtimeMachines = [],
+  onAddDowntime,
   children,
 }: ShiftHandoverLogProps) {
   const [isAdding, setIsAdding] = useState(false);
+  const [addingDowntime, setAddingDowntime] = useState(false);
+  const [downtimeAssetId, setDowntimeAssetId] = useState('');
+  const [downtimeReason, setDowntimeReason] = useState('');
   const [category, setCategory] = useState<HandoverLogCategory>('SAFETY');
   const [fleetId, setFleetId] = useState('');
   const detailsField = useDictationTarget();
@@ -154,6 +161,15 @@ export default function ShiftHandoverLog({
               <Printer className="w-3.5 h-3.5" /> Print Handover
             </button>
           )}
+          {!readOnly && onAddDowntime && (
+            <button
+              type="button"
+              onClick={() => setAddingDowntime(true)}
+              className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide bg-slate-900 text-white px-2.5 py-1 rounded cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add downtime event
+            </button>
+          )}
           {!readOnly && <button
             type="button"
             onClick={() => setIsAdding(true)}
@@ -163,6 +179,35 @@ export default function ShiftHandoverLog({
           </button>}
         </div>
       </div>
+
+      {addingDowntime && onAddDowntime && (
+        <form
+          className="flex flex-wrap items-end gap-2 border-b border-slate-200 bg-slate-50 p-3 print:hidden"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onAddDowntime(downtimeAssetId, downtimeReason).then((saved) => {
+              if (!saved) return;
+              setAddingDowntime(false);
+              setDowntimeAssetId('');
+              setDowntimeReason('');
+            });
+          }}
+        >
+          <label className="text-xs font-bold text-slate-700">
+            Machine
+            <select value={downtimeAssetId} onChange={(event) => setDowntimeAssetId(event.target.value)} className="mt-1 block min-h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm" required>
+              <option value="">Choose a machine</option>
+              {downtimeMachines.map((machine) => <option key={machine.id} value={machine.id}>{machine.fleetId}</option>)}
+            </select>
+          </label>
+          <label className="min-w-64 flex-1 text-xs font-bold text-slate-700">
+            What is down
+            <input value={downtimeReason} onChange={(event) => setDowntimeReason(event.target.value)} className="mt-1 block min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm" required />
+          </label>
+          <button type="submit" className="min-h-10 rounded-lg bg-slate-950 px-3 text-sm font-black text-white">Add to whiteboard</button>
+          <button type="button" onClick={() => setAddingDowntime(false)} className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold">Cancel</button>
+        </form>
+      )}
 
       {isAdding && (
         <div className="p-3 bg-amber-50/40 border-b border-amber-200 flex flex-wrap gap-2 items-end print:hidden">

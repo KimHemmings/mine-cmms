@@ -19,6 +19,7 @@ export interface OceBriefing {
   incidents: string[];
   restrictions: string[];
   conditions: string[];
+  blankPages?: number[];
 }
 
 export interface OceAttachment {

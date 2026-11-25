@@ -6,6 +6,7 @@ export const EMPTY_OCE_BRIEFING: OceBriefing = {
   incidents: [],
   restrictions: [],
   conditions: [],
+  blankPages: [],
 };
 
 function points(value: unknown) {
@@ -24,5 +25,8 @@ export function normalizeOceBriefing(value: unknown): OceBriefing {
     incidents: points(row.incidents),
     restrictions: points(row.restrictions),
     conditions: points(row.conditions),
+    blankPages: Array.isArray(row.blankPages)
+      ? row.blankPages.filter((page): page is number => typeof page === 'number' && page > 0)
+      : [],
   };
 }

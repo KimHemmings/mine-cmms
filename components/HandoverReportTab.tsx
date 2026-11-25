@@ -39,18 +39,25 @@ import { getHandoverCrewsForShift } from '@/utils/rosterCycle';
 import { useRosterCycleSettings } from '@/hooks/useRosterCycleSettings';
 import { leaveCovers, shiftDateIso } from '@/utils/crewLeave';
 
-function attachShiftOce(document: HandoverSnapshot, report: OceReport | null): HandoverSnapshot {
-  if (!report || (!report.storage_path && !(report.source_text ?? '').startsWith('data:application/pdf'))) return document;
+function oceText(value: string | null | undefined) {
+  if (!value || value.startsWith('data:application/pdf')) return null;
+  return value;
+}
+
+function oceAttachment(report: OceReport, briefing = report.briefing): HandoverSnapshot['oce'] {
   return {
-    ...document,
-    oce: {
-      fileName: report.file_name,
-      storagePath: report.storage_path,
-      fileSize: report.file_size ?? null,
-      dataUrl: report.storage_path ? null : report.source_text,
-      briefing: document.oce?.briefing ?? { summary: '', hazards: [], incidents: [], restrictions: [], conditions: [] },
-    },
+    fileName: report.file_name,
+    storagePath: report.storage_path,
+    fileSize: report.file_size ?? null,
+    sourceText: oceText(report.source_text),
+    dataUrl: report.source_text?.startsWith('data:application/pdf') ? report.source_text : null,
+    briefing: briefing ?? { summary: '', hazards: [], incidents: [], restrictions: [], conditions: [] },
   };
+}
+
+function attachShiftOce(document: HandoverSnapshot, report: OceReport | null): HandoverSnapshot {
+  if (!report || (!report.storage_path && !oceText(report.source_text))) return document;
+  return { ...document, oce: oceAttachment(report, report.briefing ?? document.oce?.briefing) };
 }
 import { exportHandoverPdf, handoverPdfFilename, printHandoverDocument } from '@/utils/exportHandoverPdf';
 
@@ -190,7 +197,7 @@ export default function HandoverReportTab({
       .then(({ data }) => {
         if (cancelled || !data) return;
         const row = data as OceReport;
-        if (row.storage_path || (row.source_text ?? '').startsWith('data:application/pdf')) setOceReport(row);
+        if (row.storage_path || row.source_text) setOceReport(row);
       });
     return () => {
       cancelled = true;
@@ -355,14 +362,8 @@ export default function HandoverReportTab({
     manning: manningRecord,
     safetyIncidents: incidents,
     safetyFocus,
-    oce: oceReport && (oceReport.storage_path || (oceReport.source_text ?? '').startsWith('data:application/pdf'))
-      ? {
-          fileName: oceReport.file_name,
-          storagePath: oceReport.storage_path,
-          fileSize: oceReport.file_size ?? null,
-          dataUrl: oceReport.storage_path ? null : oceReport.source_text,
-          briefing: { summary: '', hazards: [], incidents: [], restrictions: [], conditions: [] },
-        }
+    oce: oceReport && (oceReport.storage_path || oceText(oceReport.source_text))
+      ? oceAttachment(oceReport)
       : null,
     inTraining: cover.inTraining,
     ertOnSite: cover.ertOnSite,
@@ -496,6 +497,10 @@ export default function HandoverReportTab({
       alert('There is no active shift to save.');
       return false;
     }
+    if (!outgoingSignerName) {
+      alert('Your supervisor name is not available to sign the handover.');
+      return false;
+    }
     setSaving(true);
     const { error } = await supabase.from('shift_handovers').upsert(
       {
@@ -508,6 +513,8 @@ export default function HandoverReportTab({
         document: liveSnapshot,
         shift_summary: shiftSummary.trim() || null,
         oce_summary: oceSummary.trim() || null,
+        outgoing_signed_by: signedByLabel(outgoingSignerName),
+        outgoing_signed_at: new Date().toISOString(),
       },
       { onConflict: 'shift_id' }
     );
@@ -516,7 +523,7 @@ export default function HandoverReportTab({
       alert(`Couldn't save the handover: ${error.message}`);
       return false;
     }
-    showToast({ message: 'Handover saved for all supervisors' });
+    showToast({ message: `Electronically signed by ${signedByLabel(outgoingSignerName)}` });
     await loadHandovers();
     return true;
   };
@@ -692,6 +699,40 @@ export default function HandoverReportTab({
     onRefresh();
   };
 
+  const createDowntime = async (assetId: string, reason: string) => {
+    if (!activeShift?.id || readOnly || accessLevel < 3) return false;
+    const task = reason.trim();
+    if (!assetId || !task) return false;
+    await supabase.from('machine_work_orders').update({ is_main_event: false }).eq('asset_id', assetId).eq('is_main_event', true);
+    const { error } = await supabase.from('machine_work_orders').insert({
+      asset_id: assetId,
+      shift_id: activeShift.id,
+      order_type: 'UNPLANNED',
+      task_description: task,
+      component_systems: ['General'],
+      fitter_assigned: 'Unassigned',
+      stage: 'IN_PROGRESS',
+      status: 'OPEN',
+      is_main_event: true,
+      takes_machine_down: true,
+    });
+    if (error) {
+      alert(`Couldn't add that downtime event: ${error.message}`);
+      return false;
+    }
+    const back = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+    await supabase.from('assets').update({
+      in_shift: true,
+      status: 'DOWN_UNPLANNED',
+      priority: 'P3',
+      down_since: new Date().toISOString(),
+      expected_up: back,
+    }).eq('id', assetId);
+    showToast({ message: 'Downtime event is on the whiteboard' });
+    onRefresh();
+    return true;
+  };
+
   const handleFinalizeAndRoll = async (nextCrew: string) => {
     if (accessLevel < 3 || readOnly) {
       alert('A Level 3+ supervisor must finish and sign off this shift.');
@@ -780,11 +821,11 @@ export default function HandoverReportTab({
   const openSavedHandover = async (handover: SavedHandover) => {
     const { data } = await supabase
       .from('oce_reports')
-      .select('file_name, storage_path, source_text, file_size')
+      .select('file_name, storage_path, source_text, file_size, briefing')
       .eq('shift_id', handover.shift_id)
       .maybeSingle();
-    const row = data as { file_name?: string; storage_path?: string | null; source_text?: string | null; file_size?: number | null } | null;
-    if (!row || (!row.storage_path && !(row.source_text ?? '').startsWith('data:application/pdf'))) {
+    const row = data as OceReport | null;
+    if (!row || (!row.storage_path && !oceText(row.source_text))) {
       setOpened(handover);
       return;
     }
@@ -792,13 +833,7 @@ export default function HandoverReportTab({
       ...handover,
       document: {
         ...handover.document,
-        oce: {
-          fileName: row.file_name || handover.document.oce?.fileName || 'OCE report.pdf',
-          storagePath: row.storage_path ?? null,
-          fileSize: row.file_size ?? null,
-          dataUrl: row.storage_path ? null : row.source_text ?? null,
-          briefing: handover.document.oce?.briefing ?? { summary: '', hazards: [], incidents: [], restrictions: [], conditions: [] },
-        },
+        oce: oceAttachment(row, row.briefing ?? handover.document.oce?.briefing),
       },
     });
   };
@@ -948,8 +983,8 @@ export default function HandoverReportTab({
       {view === 'current' && !opened && !readOnly && (
         <div className="sticky top-0 z-10 bg-white py-3 space-y-3">
           <div className="flex flex-wrap gap-2">
-            {!currentLocked && accessLevel >= 3 && <button type="button" onClick={saveHandover} disabled={saving} className={`${actionClass} bg-emerald-600 text-white`}>
-              {saving ? 'Saving...' : 'Save handover'}
+            {!currentLocked && accessLevel >= 3 && <button type="button" onClick={() => void saveHandover()} disabled={saving} className={`${actionClass} bg-emerald-600 text-white`}>
+              {saving ? 'Signing...' : 'Save and sign'}
             </button>}
             {accessLevel >= 3 && (
               <button
@@ -964,10 +999,10 @@ export default function HandoverReportTab({
           </div>
           <p className="text-sm text-slate-600">
             {currentLocked
-              ? 'Outgoing sign-off is complete. This handover is locked.'
+              ? 'Outgoing sign-off is on the document. The oncoming supervisor acknowledges it there.'
               : accessLevel >= 3
-                ? 'Save the handover, then finish the shift for the crew coming on.'
-                : 'A Level 3+ supervisor must finish and sign off this shift.'}
+                ? 'Save and sign records you as the outgoing supervisor, with the time.'
+                : 'A Level 3+ supervisor must save and sign this handover.'}
           </p>
         </div>
       )}
@@ -1013,9 +1048,9 @@ export default function HandoverReportTab({
         </div>
       )}
 
-      {view === 'current' && !opened && !currentLocked && !readOnly && (
+      {view === 'current' && !opened && (
         <>
-          <details className="mt-4 overflow-hidden rounded-xl border border-slate-800 bg-white shadow-sm">
+          {!currentLocked && !readOnly && <details className="mt-4 overflow-hidden rounded-xl border border-slate-800 bg-white shadow-sm">
             <summary className="flex min-h-12 cursor-pointer items-center gap-2 bg-slate-900 px-4 py-3 text-sm font-black text-white">
               <Presentation className="h-4 w-4" />
               Make the briefing
@@ -1039,59 +1074,14 @@ export default function HandoverReportTab({
               </div>
               <BriefingSlides slides={slides} onChange={setSlides} />
             </div>
-          </details>
-          {shiftIsPast(activeShift?.shift_date) && (
+          </details>}
+          {!currentLocked && !readOnly && shiftIsPast(activeShift?.shift_date) && (
             <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
               <p className="text-sm font-bold text-amber-950">
                 This shift is still {formatStartDay(activeShift?.shift_date ?? '')}. Save the handover, then finish it so the next crew can start.
               </p>
             </div>
           )}
-          {!currentLocked && !readOnly && <div className="mt-6 space-y-4">
-            <SafetyBriefingFields incidents={incidents} focus={safetyFocus} onIncidents={setIncidents} onFocus={setSafetyFocus} />
-            <section className="overflow-hidden rounded-xl border border-slate-300 border-l-4 border-l-slate-700 bg-white">
-              <div className="border-b border-slate-200 bg-slate-50/90 px-5 py-3.5">
-                <h3 className="text-base font-black text-slate-900">Shift summary</h3>
-              </div>
-              <div className="space-y-3 p-4">
-                <textarea
-                  value={shiftSummary}
-                  onChange={(event) => setShiftSummary(event.target.value)}
-                  rows={4}
-                  placeholder="Record the key work completed, outstanding risks and priorities for the next crew."
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm leading-relaxed"
-                />
-                <div className="flex flex-wrap gap-2">
-                  {speechAvailable && (
-                    <button
-                      type="button"
-                      onClick={toggleDictation}
-                      className={`${actionClass} ${isDictating ? 'animate-pulse bg-rose-700 text-white' : 'border border-slate-300 bg-white text-slate-700'}`}
-                      aria-label={isDictating ? 'Stop dictating' : 'Dictate'}
-                    >
-                      {isDictating ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                      {isDictating ? 'Listening... · Stop dictating' : 'Dictate'}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => void refineShiftSummary()}
-                    disabled={!shiftSummary.trim() || isRefiningSummary}
-                    className={`${actionClass} border border-slate-200 bg-slate-50 text-slate-600`}
-                  >
-                    <PenLine className="h-4 w-4" />
-                    {isRefiningSummary ? 'Refining...' : 'Refine notes'}
-                  </button>
-                </div>
-              </div>
-            </section>
-            <OceReportPanel
-              shiftId={activeShift?.id ?? null}
-              onChange={setOceReport}
-              locked={currentLocked || readOnly}
-            />
-          </div>}
-
           <div className="mt-6">
             <HandoverDocumentView
               shiftName={activeShift?.shift_name || 'Active shift'}
@@ -1100,17 +1090,59 @@ export default function HandoverReportTab({
               supervisor={supervisorName}
               savedAt={currentSaved?.saved_at}
               savedBy={currentSaved?.saved_by}
-              document={currentLocked && currentSaved ? currentSaved.document : liveSnapshot}
+              document={attachShiftOce(currentLocked && currentSaved ? currentSaved.document : liveSnapshot, oceReport)}
               emptyCrewMessage="Choose the crew coming on. Their names and current jobs will show here."
               isLivePreview={true}
               outgoingSignedBy={currentSaved?.outgoing_signed_by ?? null}
               outgoingSignedAt={currentSaved?.outgoing_signed_at ?? null}
               oncomingSignedBy={currentSaved?.oncoming_signed_by ?? null}
               oncomingSignedAt={currentSaved?.oncoming_signed_at ?? null}
+              canAcknowledge={Boolean(currentLocked && currentSaved && !currentSaved.oncoming_signed_at && accessLevel >= 3 && !readOnly)}
+              onAcknowledge={() => { if (currentSaved) void acknowledgeOncoming(currentSaved); }}
+              summaryControls={!currentLocked && !readOnly ? (
+                <div className="space-y-3">
+                  <textarea
+                    value={shiftSummary}
+                    onChange={(event) => setShiftSummary(event.target.value)}
+                    rows={4}
+                    placeholder="Dictate or type the shift. Include the safety share and anything the next crew must know."
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    {speechAvailable && (
+                      <button
+                        type="button"
+                        onClick={toggleDictation}
+                        className={`${actionClass} ${isDictating ? 'animate-pulse bg-rose-700 text-white' : 'border border-slate-300 bg-white text-slate-700'}`}
+                      >
+                        {isDictating ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                        {isDictating ? 'Listening... · Stop dictating' : 'Dictate'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void refineShiftSummary()}
+                      disabled={!shiftSummary.trim() || isRefiningSummary}
+                      className={`${actionClass} border border-slate-200 bg-white text-slate-700`}
+                    >
+                      <PenLine className="h-4 w-4" />
+                      {isRefiningSummary ? 'Refining...' : 'Refine notes'}
+                    </button>
+                  </div>
+                  <SafetyBriefingFields incidents={incidents} focus={safetyFocus} onIncidents={setIncidents} onFocus={setSafetyFocus} />
+                </div>
+              ) : null}
+              oceControls={!currentLocked && !readOnly ? (
+                <OceReportPanel
+                  shiftId={activeShift?.id ?? null}
+                  onChange={setOceReport}
+                  locked={currentLocked || readOnly}
+                />
+              ) : null}
             />
           </div>
 
-          {!currentLocked && <div className="mt-6">
+          {!currentLocked && <div className="mt-6 print:hidden">
             <ShiftHandoverLog
               readOnly={readOnly || currentLocked}
               shiftDate={activeShift?.shift_date ?? null}
@@ -1132,6 +1164,11 @@ export default function HandoverReportTab({
               homeCrew={homeCrew}
               coveringCrew={coveringCrew}
               onRefreshAiNotes={() => setAiRefreshRequest((request) => request + 1)}
+              downtimeMachines={assets
+                .filter((asset) => !shiftJobs.some((down) => down.id === asset.id))
+                .map((asset) => ({ id: asset.id, fleetId: asset.fleet_id }))
+                .sort((a, b) => a.fleetId.localeCompare(b.fleetId))}
+              onAddDowntime={accessLevel >= 3 && !readOnly ? createDowntime : undefined}
             >
               <AiHandoverDigest
                 activeShift={activeShift}
@@ -1146,8 +1183,7 @@ export default function HandoverReportTab({
                 generateRequest={aiRefreshRequest}
                 onGeneratingChange={setAiNotesLoading}
                 onMachineSummariesChange={setMachineSummaries}
-                onSummaryGenerated={(text, summaries) => {
-                  setShiftSummary(text);
+                onSummaryGenerated={(_text, summaries) => {
                   setMachineSummaries(summaries);
                   setMachineNotes([]);
                 }}

@@ -148,14 +148,9 @@ export async function exportHandoverPdf(handover: HandoverPdfInput) {
   y += 2;
 
   const shiftSummary = (document.shift_summary ?? document.summary ?? '').trim();
-  const oceName = document.oce?.fileName?.trim() || '';
-  const twoSummaryCards = Boolean(shiftSummary && oceName);
-  const summaryColumnWidth = twoSummaryCards ? (contentWidth - 4) / 2 : contentWidth;
+  const summaryColumnWidth = contentWidth;
   const summaryCards = [
-    ...(shiftSummary || !oceName
-      ? [{ title: 'SHIFT SUMMARY', text: shiftSummary || 'No summary recorded.', lines: wrapped(shiftSummary || 'No summary recorded.', summaryColumnWidth - 8, 9) }]
-      : []),
-    ...(oceName ? [{ title: 'OCE REPORT PDF', text: oceName, lines: wrapped(oceName, summaryColumnWidth - 8, 9) }] : []),
+    { title: 'SHIFT SUMMARY', text: shiftSummary || 'No summary recorded.', lines: wrapped(shiftSummary || 'No summary recorded.', summaryColumnWidth - 8, 9) },
   ];
   const summaryLineCapacity = () => Math.max(1, Math.floor((bottom - y - 12) / lineHeight));
   const summaryOffsets = summaryCards.map(() => 0);
@@ -292,45 +287,25 @@ export async function exportHandoverPdf(handover: HandoverPdfInput) {
   drawMachineTable('Still Down', document.handedOver ?? [], 'Expected Back', false);
   drawMachineTable('Released', document.released ?? [], 'Release Time', true);
 
-  drawSectionTitle('Workshop Crew');
-  const manning = document.manning;
-  if (!manning) {
-    drawParagraph('Workshop crew summary not recorded.');
+  drawSectionTitle('OCE report');
+  const oceBody = document.oce?.sourceText ?? '';
+  if (!oceBody.trim()) {
+    drawParagraph(document.oce?.fileName
+      ? 'This PDF has no extractable text layer. Paste the report so a section is not missed.'
+      : 'No OCE report for this shift.');
   } else {
-    if (manning.panel) drawParagraph(`Panel: ${manning.panel}`, 9, true);
-    drawParagraph(`On-shift trades (${manning.onShift.length}): ${manning.onShift.join(', ') || 'None.'}`);
-    drawParagraph(`Away / sick / leave: ${manning.away.join(', ') || 'None.'}`);
-    drawParagraph(`Overtime and labour hire: ${manning.overtime.join(', ') || 'None.'}`);
-    drawParagraph(`Unallocated: ${manning.unallocated.join(', ') || 'None.'}`);
-    drawParagraph(`Bay-assigned: ${manning.assigned.join(', ') || 'None.'}`);
-  }
-
-  ensureSpace(39);
-  drawSectionTitle('Statutory Sign-Off');
-  const signatureColumnWidth = contentWidth / 2;
-  const drawSignature = (label: string, name: string | null, timestamp: string | null, index: number) => {
-    const x = PAGE_MARGIN + index * signatureColumnWidth + 2;
-    const columnWidth = signatureColumnWidth - 8;
-    const status = name && timestamp
-      ? `${label}: ${name} - ${timestampLabel(timestamp)}`
-      : `Pending ${label.toLowerCase()} sign-off`;
-    const statusLines = wrapped(status, columnWidth, 8);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(9);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text(label, x, y + 2);
-    pdf.setFont('helvetica', 'normal');
+    pdf.setFont('courier', 'normal');
     pdf.setFontSize(8);
-    pdf.setTextColor(30, 41, 59);
-    statusLines.forEach((line, lineIndex) => pdf.text(line, x, y + 7 + lineIndex * lineHeight));
-    pdf.setDrawColor(71, 85, 105);
-    pdf.line(x, y + 19, x + Math.min(columnWidth, 75), y + 19);
-    pdf.setFontSize(7);
-    pdf.text('Supervisor signature / date', x, y + 23);
-  };
-  drawSignature('Outgoing', handover.outgoing_signed_by, handover.outgoing_signed_at, 0);
-  drawSignature('Oncoming', handover.oncoming_signed_by, handover.oncoming_signed_at, 1);
-  y += 27;
+    pdf.setTextColor(15, 23, 42);
+    oceBody.replace(/\r\n/g, '\n').split('\n').forEach((line) => {
+      const pieces = pdf.splitTextToSize(line.length ? line : ' ', contentWidth) as string[];
+      pieces.forEach((piece) => {
+        ensureSpace(lineHeight);
+        pdf.text(piece, PAGE_MARGIN, y);
+        y += lineHeight;
+      });
+    });
+  }
 
   pdf.save(`${handoverPdfFilename(handover)}.pdf`);
 }

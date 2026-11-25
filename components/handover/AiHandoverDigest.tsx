@@ -313,63 +313,9 @@ export default function AiHandoverDigest({
       </div>
 
       {usedOfflineFallback && (
-        <p className="text-xs text-amber-800">Offline fallback: deduplicated raw shift notes are shown.</p>
+        <p className="text-xs text-amber-800">Offline fallback: the machine cards are using the shift notes as written.</p>
       )}
-      {summaryText && (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-slate-800">
-          <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Executive shift briefing</p>
-          <ExecutiveBriefing text={summaryText} />
-        </div>
-      )}
-      {Object.keys(machineSummaries).length > 0 ? (
-        <ul className="space-y-3">
-          {Object.entries(machineSummaries).sort(([idA], [idB]) => {
-            const machineA = machineLabels.get(idA);
-            const machineB = machineLabels.get(idB);
-            return comparePriorityThenUnit(
-              machineA?.priority,
-              machineA?.unit ?? idA,
-              machineB?.priority,
-              machineB?.unit ?? idB,
-            );
-          }).map(([machineId, bullets]) => (
-            <li key={machineId} className="text-sm">
-              <strong className="text-slate-900">{machineLabel(machineId)}</strong>{' '}
-              <span className={`inline-flex items-center rounded border px-1.5 py-0.5 align-middle text-[10px] ${priorityBadgeClass(machineLabels.get(machineId)?.priority)} print:bg-white print:text-black print:border-black`}>
-                [{normalizePriority(machineLabels.get(machineId)?.priority)}]
-              </span>
-              <div className="mt-1 space-y-1">
-                {bullets.map((bullet, index) => (
-                  <label key={`${machineId}-${index}`} className="flex items-start gap-2 text-xs text-slate-500">
-                    <span className="pt-2">{index + 1}.</span>
-                    <textarea
-                      rows={2}
-                      value={bullet}
-                      onChange={(event) => updateBullet(machineId, index, event.target.value)}
-                      onBlur={() => finishEditing(machineId)}
-                      aria-label={`${machineId} AI note ${index + 1}`}
-                      className="w-full resize-y rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800"
-                    />
-                  </label>
-                ))}
-                {bullets.length < 2 && (
-                  <button
-                    type="button"
-                    onClick={() => addBullet(machineId)}
-                    className="ml-5 text-xs font-bold text-indigo-700 hover:underline"
-                  >
-                    Add second bullet
-                  </button>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-5 text-center text-xs text-slate-400">
-          Refresh AI Notes to summarise every down and released machine.
-        </p>
-      )}
+      <p className="text-sm text-slate-600">Each machine on the whiteboard shows the overview of this shift’s notes.</p>
       {loading && (
         <p className="flex items-center gap-2 text-xs font-bold text-indigo-700">
           <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Writing machine notes…

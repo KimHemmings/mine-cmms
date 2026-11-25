@@ -145,14 +145,6 @@ export async function generateHandoverPptx(input: CrewBriefingInput) {
     x: 0.6, y: 1.5, w: 12, h: 5.2, fontSize: 16, color: TEXT, valign: 'top',
   });
 
-  const oce = document.oce;
-  const oceSlide = pptx.addSlide();
-  addTitle(oceSlide, 'OCE report', subtitle);
-  if (!oce?.fileName) {
-    oceSlide.addText('No OCE report PDF uploaded for this shift.', { x: 0.6, y: 1.7, w: 12, h: 0.4, fontSize: 18, color: TEXT });
-  } else {
-    oceSlide.addText(`OCE Report PDF: ${oce.fileName}`, { x: 0.6, y: 1.7, w: 12, h: 0.5, fontSize: 18, color: TEXT });
-  }
   const coverNotes = [
     safety && { title: 'Safety', body: safety },
     weather && { title: 'Weather and roads', body: weather },
@@ -161,38 +153,6 @@ export async function generateHandoverPptx(input: CrewBriefingInput) {
     const x = index === 0 ? 0.6 : 6.95;
     card(cover, pptx, coverNotes.length === 1 ? 0.6 : x, 2.55, coverNotes.length === 1 ? 12.1 : 5.8, 4.3, note.title, note.body);
   });
-
-  if (panel) {
-    const allocated = [
-      ...allocation.people.flatMap((person) =>
-        person.jobs.map((job) => [person.name, job.fleetId, jobLine(job), stageLabel(job.stage)])
-      ),
-      ...allocation.people
-        .filter((person) => person.jobs.length === 0)
-        .map((person) => [person.name, '—', 'No job allocated', '—']),
-    ];
-    chunks(allocated, ROWS_PER_SLIDE).forEach((slice, page, pages) => {
-      const slide = pptx.addSlide();
-      addTitle(slide, `Jobs for ${panel}${pages.length > 1 ? ` (${page + 1}/${pages.length})` : ''}`, subtitle);
-      if (slice.length === 0) {
-        slide.addText(`No one is rostered on ${panel}.`, { x: 0.6, y: 1.7, w: 12, h: 0.4, fontSize: 18, color: TEXT });
-      } else {
-        addTable(slide, ['Who', 'Unit', 'Job', 'Status'], slice, [2.4, 1.6, 6.1, 2.2]);
-      }
-    });
-
-    const notTheirs = [
-      ...allocation.needsName.map((job) => ['Needs a name', job.fleetId, jobLine(job), stageLabel(job.stage)]),
-      ...allocation.withOutgoing.map((job) => [job.names.join(', ') || 'Outgoing crew', job.fleetId, jobLine(job), stageLabel(job.stage)]),
-    ];
-    if (notTheirs.length > 0) {
-      chunks(notTheirs, ROWS_PER_SLIDE).forEach((slice, page, pages) => {
-        const slide = pptx.addSlide();
-        addTitle(slide, `Not with ${panel} yet${pages.length > 1 ? ` (${page + 1}/${pages.length})` : ''}`, subtitle);
-        addTable(slide, ['Who', 'Unit', 'Job', 'Status'], slice, [2.4, 1.6, 6.1, 2.2]);
-      });
-    }
-  }
 
   if (parts.length > 0) {
     chunks(parts, ROWS_PER_SLIDE).forEach((slice, page, pages) => {
@@ -256,6 +216,25 @@ export async function generateHandoverPptx(input: CrewBriefingInput) {
     addTitle(slide, custom.title.trim() || `Extra slide ${index + 1}`, subtitle);
     card(slide, pptx, 0.6, 1.5, 12.1, 5.4, 'Notes', custom.notes.trim() || 'No notes added.');
   });
+
+  const oceText = document.oce?.sourceText ?? '';
+  const oceLines = oceText ? oceText.replace(/\r\n/g, '\n').split('\n') : [];
+  if (oceLines.length === 0) {
+    const slide = pptx.addSlide();
+    addTitle(slide, 'OCE report', subtitle);
+    slide.addText(
+      document.oce?.fileName
+        ? 'This PDF has no extractable text layer. Paste the report so a section is not missed.'
+        : 'No OCE report for this shift.',
+      { x: 0.6, y: 1.7, w: 12, h: 0.8, fontSize: 18, color: TEXT },
+    );
+  } else {
+    chunks(oceLines, 24).forEach((slice, page, pages) => {
+      const slide = pptx.addSlide();
+      addTitle(slide, `OCE report${pages.length > 1 ? ` (${page + 1}/${pages.length})` : ''}`, subtitle);
+      slide.addText(slice.join('\n'), { x: 0.6, y: 1.5, w: 12.1, h: 5.4, fontSize: 12, fontFace: 'Courier New', color: TEXT, valign: 'top' });
+    });
+  }
 
   const fileBits = ['Crew_Briefing', panel, input.shiftName, input.shiftDate].filter(Boolean);
   await pptx.writeFile({ fileName: `${fileBits.join('_').replace(/\s+/g, '_')}.pptx` });
